@@ -142,12 +142,35 @@ export async function assertGuestAccess(
     return { organizationId: guest.organizationId, propertyId: guest.propertyId, guestId: guest.id }
   }
 
-  assertOrganizationAccess(actor, guest.organizationId, Role.OWNER, Role.STAFF, Role.ADMIN)
+  const membership = assertOrganizationAccess(
+    actor,
+    guest.organizationId,
+    Role.OWNER,
+    Role.STAFF,
+    Role.ADMIN,
+  )
+
+  // Honour the property pin, as assertPropertyAccess does. Front-desk staff at
+  // one property must not reach another property's guests, even inside the
+  // same organization.
+  if (membership.propertyId && membership.propertyId !== guest.propertyId) {
+    throw forbidden('Your access is limited to a different property.')
+  }
+
   return { organizationId: guest.organizationId, propertyId: guest.propertyId, guestId: guest.id }
 }
 
+/**
+ * Platform administration.
+ *
+ * Gated on `User.isPlatformAdmin` alone. An earlier version also accepted a
+ * membership with `role: ADMIN`, which meant a single row scoped to one
+ * organization conferred cross-tenant authority over every supplier and
+ * property in the database — including the only route to a VERIFIED status.
+ * Organization-level administration is what OWNER is for.
+ */
 export function assertPlatformAdmin(actor: ActorContext): void {
-  if (!actor.isPlatformAdmin && !hasRole(actor, Role.ADMIN)) {
+  if (!actor.isPlatformAdmin) {
     throw forbidden('Platform administrator access required.')
   }
 }

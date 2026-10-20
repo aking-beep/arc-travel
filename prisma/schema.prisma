@@ -638,6 +638,12 @@ model Activity {
   maxAbility  AbilityLevel @default(EXPERT)
   /// Whether a certified guide is mandatory. Enforced, not advisory.
   guideRequired Boolean @default(false)
+  /// Whether ocean or weather conditions govern this activity. Lives here
+  /// rather than being derived from the place's kind: a surf lesson depends on
+  /// the water wherever it is held, and an owner choosing the wrong place must
+  /// not be able to switch the conditions gate off. Defaults to true so a new
+  /// activity is gated until someone decides otherwise.
+  conditionsSensitive Boolean @default(true)
   /// Highest ocean/terrain risk at which this may be recommended at all.
   maxSafeRisk ConditionsRisk @default(MODERATE)
   minAgeYears Int?

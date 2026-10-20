@@ -7,13 +7,15 @@ import {
   CartStatus,
   OrderItemStatus,
   OrderStatus,
+  Role,
   type ExperienceCategory,
 } from '@/lib/prisma-types'
+import { assertPropertyAccess, type ActorContext } from '@/modules/tenancy/context'
 import { consumeHold, inSerializableTransaction, returnCapacity } from '@/modules/inventory/service'
 import { recordAudit } from '@/modules/workflows/audit'
 import { track } from '@/modules/analytics/track'
 import { resolveCommission, splitEarnings, type CommissionRuleInput } from './commission'
-import { computeRefund } from './pricing'
+import { computeCartTotals, computeRefund } from './pricing'
 import { validateCart } from './cart'
 
 /**
@@ -48,6 +50,8 @@ export interface CheckoutResult {
   totalMinor: number
   currency: string
   isSimulated: boolean
+  /** How many lines the order holds. Taken from the committed transaction. */
+  itemCount: number
   /** True when this response was replayed from a previous identical request. */
   replayed: boolean
 }
@@ -119,54 +123,101 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
     throw error
   }
 
-  if (cart.status !== CartStatus.OPEN) {
-    throw conflict('This basket has already been checked out.')
-  }
-
-  const validation = await validateCart(cart.id, now)
-  if (!validation.ok) {
-    await releaseIdempotencyKey(cart.organizationId, input.idempotencyKey)
-    throw invalid('Your basket needs attention before checkout.', {
-      problems: validation.problems,
-    })
-  }
-
-  const [items, commissionRules] = await Promise.all([
-    prisma.cartItem.findMany({
-      where: { cartId: cart.id },
-      include: {
-        experience: {
-          select: {
-            id: true,
-            titleEn: true,
-            category: true,
-            supplierId: true,
-            cancellationPolicyHours: true,
-          },
-        },
-        slot: { select: { id: true, startsAt: true } },
-      },
-    }),
-    prisma.commissionRule.findMany({
-      where: { organizationId: cart.organizationId, isActive: true },
-    }),
-  ])
-
-  const organization = await prisma.organization.findUnique({
-    where: { id: cart.organizationId },
-    select: { defaultCommissionBps: true },
-  })
-
-  const holds = await prisma.inventoryHold.findMany({
-    where: { cartId: cart.id, status: 'ACTIVE' },
-    select: { id: true, slotId: true, quantity: true },
-  })
-  const holdBySlot = new Map(holds.map((h) => [h.slotId, h]))
-
   let result: CheckoutResult
   try {
+    if (cart.status !== CartStatus.OPEN) {
+      throw conflict('This basket has already been checked out.')
+    }
+
+    // Friendly, user-facing validation first, outside the transaction. The
+    // transaction then re-checks the same things as hard assertions — this
+    // pass exists to give the guest a sentence they can act on, not to be the
+    // guarantee.
+    const validation = await validateCart(cart.id, now)
+    if (!validation.ok) {
+      throw invalid('Your basket needs attention before checkout.', {
+        problems: validation.problems,
+      })
+    }
+
+    const [commissionRules, organization] = await Promise.all([
+      prisma.commissionRule.findMany({
+        where: { organizationId: cart.organizationId, isActive: true },
+      }),
+      prisma.organization.findUnique({
+        where: { id: cart.organizationId },
+        select: { defaultCommissionBps: true },
+      }),
+    ])
+
     result = await inSerializableTransaction(async (tx) => {
       const reference = orderReference()
+
+      /**
+       * Cart, lines and holds are read **inside** the transaction.
+       *
+       * Reading them outside was a real defect. `placeHold` resizes an
+       * existing hold in place rather than stacking (ADR-014), so a concurrent
+       * add-to-basket from a second tab mutated the very hold this checkout was
+       * about to consume. The order was then written from the stale line
+       * quantity while `consumeHold` moved the live hold quantity — booking
+       * four seats on a boat while charging for two, or charging for four while
+       * booking two. Either way `booked + held <= capacity` still held
+       * numerically while the boat was oversold, so nothing fired.
+       */
+      const liveCart = await tx.cart.findUnique({
+        where: { id: cart.id },
+        select: { id: true, status: true, currency: true },
+      })
+      if (!liveCart) throw notFound('Basket')
+      if (liveCart.status !== CartStatus.OPEN) {
+        throw conflict('This basket has already been checked out.')
+      }
+
+      const items = await tx.cartItem.findMany({
+        where: { cartId: cart.id },
+        include: {
+          experience: {
+            select: {
+              id: true,
+              titleEn: true,
+              category: true,
+              supplierId: true,
+              cancellationPolicyHours: true,
+            },
+          },
+          slot: { select: { id: true, startsAt: true } },
+        },
+      })
+      if (items.length === 0) {
+        throw invalid('Your basket is empty.')
+      }
+
+      const holds = await tx.inventoryHold.findMany({
+        where: { cartId: cart.id, status: 'ACTIVE' },
+        select: { id: true, slotId: true, quantity: true },
+      })
+      const holdBySlot = new Map(holds.map((h) => [h.slotId, h]))
+
+      // Every line must be backed by a hold for exactly its quantity. A
+      // mismatch means the basket changed under us, and the right answer is to
+      // fail rather than to pick one of the two numbers.
+      for (const item of items) {
+        const hold = holdBySlot.get(item.slotId)
+        if (!hold) {
+          throw new AppError(
+            'HOLD_EXPIRED',
+            'Your reservation lapsed during checkout. Nothing has been charged.',
+          )
+        }
+        if (hold.quantity !== item.quantity) {
+          throw conflict(
+            'Your basket changed while checkout was running. Review it and try again.',
+          )
+        }
+      }
+
+      const totals = computeCartTotals(items, liveCart.currency)
 
       const order = await tx.order.create({
         data: {
@@ -177,9 +228,9 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
           reference,
           status: OrderStatus.PENDING,
           currency: cart.currency,
-          subtotalMinor: validation.totals.subtotalMinor,
-          feesMinor: validation.totals.feesMinor,
-          totalMinor: validation.totals.totalMinor,
+          subtotalMinor: totals.subtotalMinor,
+          feesMinor: totals.feesMinor,
+          totalMinor: totals.totalMinor,
           isSimulated: true,
           paymentProvider: 'simulated',
           // Marked unmistakably as fake so it can never be reconciled against
@@ -231,12 +282,10 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
           select: { id: true },
         })
 
+        // Present and correctly sized: asserted for every line above.
         const hold = holdBySlot.get(item.slotId)
         if (!hold) {
-          throw new AppError(
-            'HOLD_EXPIRED',
-            'Your reservation lapsed during checkout. Nothing has been charged.',
-          )
+          throw new AppError('HOLD_EXPIRED', 'Your reservation lapsed during checkout.')
         }
 
         // This is where capacity actually moves from held to booked.
@@ -281,7 +330,7 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
 
       // The ledger must balance against the order total, or the split logic has
       // a bug and we fail the checkout rather than record nonsense.
-      if (hotelTotal + platformTotal + supplierTotal !== validation.totals.totalMinor) {
+      if (hotelTotal + platformTotal + supplierTotal !== totals.totalMinor) {
         throw new AppError(
           'INTERNAL',
           'Earnings split did not reconcile with the order total.',
@@ -330,33 +379,49 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
         tx,
       )
 
-      return {
+      const response: CheckoutResult = {
         orderId: confirmed.id,
         reference: confirmed.reference,
         status: confirmed.status,
         totalMinor: confirmed.totalMinor,
         currency: confirmed.currency,
         isSimulated: true,
+        itemCount: items.length,
         replayed: false,
       }
+
+      /**
+       * The completion record commits with the order.
+       *
+       * Writing it afterwards meant a crash in the gap left a confirmed, paid,
+       * ledger-written order whose key was stuck "in progress" — so the
+       * guest's retry could never retrieve the response, which is the one case
+       * idempotency exists for.
+       */
+      await tx.idempotencyKey.update({
+        where: {
+          organizationId_scope_key: {
+            organizationId: cart.organizationId,
+            scope: CHECKOUT_SCOPE,
+            key: input.idempotencyKey,
+          },
+        },
+        data: {
+          completedAt: new Date(),
+          responseJson: response as unknown as Prisma.InputJsonValue,
+        },
+      })
+
+      return response
     })
   } catch (error) {
     // Free the key so the guest can fix the problem and try again. The holds
     // survive — the transaction rolled back, so capacity was never consumed.
+    // Every throw between the claim and the commit is inside this try, so no
+    // path can orphan the key.
     await releaseIdempotencyKey(cart.organizationId, input.idempotencyKey)
     throw error
   }
-
-  await prisma.idempotencyKey.update({
-    where: {
-      organizationId_scope_key: {
-        organizationId: cart.organizationId,
-        scope: CHECKOUT_SCOPE,
-        key: input.idempotencyKey,
-      },
-    },
-    data: { completedAt: new Date(), responseJson: result as unknown as Prisma.InputJsonValue },
-  })
 
   await track({
     organizationId: cart.organizationId,
@@ -366,7 +431,7 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
     subject: cart.guestId ?? cart.id,
     properties: {
       orderId: result.orderId,
-      itemCount: items.length,
+      itemCount: result.itemCount,
       totalMinor: result.totalMinor,
       currency: result.currency,
       simulated: true,
@@ -397,17 +462,36 @@ export interface CancelResult {
  * Per line rather than per order: a guest who cancels tomorrow's boat should
  * keep Friday's cooking class. The order's status is then derived from what
  * remains.
+ *
+ * Ownership is proved here, not assumed from the caller. An earlier version
+ * loaded the item by id alone, so any holder of any portal token could cancel
+ * any other guest's booking — freeing their place and writing a refund against
+ * a different hotel's ledger. The caller must now say *who* is cancelling:
+ * `guestId` for the guest surface, or an `ActorContext` for staff and owners,
+ * and the lookup is scoped by it.
  */
+export type CancelAuthority =
+  | { kind: 'guest'; guestId: string }
+  | { kind: 'operator'; actor: ActorContext }
+
 export async function cancelOrderItem(options: {
   orderItemId: string
   reason: string
-  actorKind?: 'guest' | 'owner' | 'staff' | 'supplier' | 'admin'
+  /** Who is cancelling. Required: there is no unauthenticated cancellation. */
+  authority: CancelAuthority
   now?: Date
 }): Promise<CancelResult> {
   const now = options.now ?? new Date()
 
-  const item = await prisma.orderItem.findUnique({
-    where: { id: options.orderItemId },
+  // The scope is part of the query, so a mismatched owner is a miss rather
+  // than a row we then have to remember to check.
+  const scope =
+    options.authority.kind === 'guest'
+      ? { order: { guestId: options.authority.guestId } }
+      : {}
+
+  const item = await prisma.orderItem.findFirst({
+    where: { id: options.orderItemId, ...scope },
     select: {
       id: true,
       organizationId: true,
@@ -419,9 +503,22 @@ export async function cancelOrderItem(options: {
       status: true,
       experience: { select: { titleEn: true, cancellationPolicyHours: true } },
       slot: { select: { startsAt: true } },
+      order: { select: { propertyId: true, guestId: true } },
     },
   })
   if (!item) throw notFound('Booking')
+
+  // An operator must additionally hold a role on the owning property. The
+  // guest branch is already scoped by the query above.
+  if (options.authority.kind === 'operator') {
+    await assertPropertyAccess(
+      options.authority.actor,
+      item.order.propertyId,
+      Role.OWNER,
+      Role.STAFF,
+      Role.ADMIN,
+    )
+  }
 
   if (item.status === OrderItemStatus.CANCELLED || item.status === OrderItemStatus.REFUNDED) {
     throw conflict('That booking has already been cancelled.')
@@ -436,6 +533,29 @@ export async function cancelOrderItem(options: {
   })
 
   return inSerializableTransaction(async (tx) => {
+    /**
+     * Re-read the status inside the transaction.
+     *
+     * The guard above is outside it, so two concurrent cancellations — a
+     * double-tapped button, or a guest and the front desk at once — both
+     * passed it. Under Serializable the loser gets a 40001, and
+     * `inSerializableTransaction` retries by re-running this function: without
+     * this re-read it applied everything a second time, decrementing `booked`
+     * twice and writing a second refund entry. The counter then sat below the
+     * real number of bookings and `placeHold` sold seats that were gone.
+     */
+    const current = await tx.orderItem.findUnique({
+      where: { id: item.id },
+      select: { status: true },
+    })
+    if (!current) throw notFound('Booking')
+    if (
+      current.status === OrderItemStatus.CANCELLED ||
+      current.status === OrderItemStatus.REFUNDED
+    ) {
+      throw conflict('That booking has already been cancelled.')
+    }
+
     await tx.orderItem.update({
       where: { id: item.id },
       data: {
@@ -504,7 +624,8 @@ export async function cancelOrderItem(options: {
     await recordAudit(
       {
         organizationId: item.organizationId,
-        actorKind: options.actorKind ?? 'guest',
+        actor: options.authority.kind === 'operator' ? options.authority.actor : null,
+        actorKind: options.authority.kind === 'operator' ? undefined : 'guest',
         action: 'commerce.orderItem.cancelled',
         entityType: 'OrderItem',
         entityId: item.id,

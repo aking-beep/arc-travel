@@ -121,8 +121,10 @@ export async function getRevenueAnalytics(
     }),
     // Every order, in any status: the ledger holds entries for cancelled and
     // refunded orders too, so the reconciliation has to span all of them.
+    // Scoped by organization as well as property, so both sides of the
+    // equality carry the same predicate as the ledger side above.
     prisma.order.aggregate({
-      where: { propertyId },
+      where: { organizationId, propertyId },
       _sum: { totalMinor: true, refundedMinor: true },
     }),
   ])

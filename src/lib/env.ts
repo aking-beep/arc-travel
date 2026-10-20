@@ -18,6 +18,12 @@ const envSchema = z.object({
   TEST_DATABASE_URL: z.string().optional(),
 
   AUTH_SECRET: z.string().default(''),
+  /**
+   * Salt for analytics pseudonyms. Deliberately separate from AUTH_SECRET:
+   * reusing the session-signing key would let anyone who can read the
+   * analytics table test guesses against it.
+   */
+  ANALYTICS_SALT: z.string().default(''),
 
   ARC_DATA_MODE: z.enum(['demo', 'pilot', 'live']).default('demo'),
   ARC_ENABLE_OUTBOUND_MESSAGING: booleanish.default(false),
@@ -49,8 +55,9 @@ export type Env = z.infer<typeof envSchema>
 
 let cached: Env | null = null
 
-/** Development-only fallback so `npm run dev` works with a bare .env. */
+/** Development-only fallbacks so `npm run dev` works with a bare .env. */
 const DEV_AUTH_SECRET = 'arc-stay-development-only-secret-do-not-use-in-production'
+const DEV_ANALYTICS_SALT = 'arc-stay-development-only-analytics-salt-not-for-production'
 
 export function getEnv(): Env {
   if (cached) return cached
@@ -68,6 +75,13 @@ export function getEnv(): Env {
       throw new Error('AUTH_SECRET must be set to at least 32 characters in production.')
     }
     env.AUTH_SECRET = DEV_AUTH_SECRET
+  }
+
+  if (!env.ANALYTICS_SALT || env.ANALYTICS_SALT.length < 32) {
+    if (env.NODE_ENV === 'production') {
+      throw new Error('ANALYTICS_SALT must be set to at least 32 characters in production.')
+    }
+    env.ANALYTICS_SALT = DEV_ANALYTICS_SALT
   }
 
   if (env.AI_PROVIDER === 'anthropic' && !env.ANTHROPIC_API_KEY) {

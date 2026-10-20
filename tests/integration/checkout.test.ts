@@ -5,7 +5,7 @@ import { isAppError } from '@/lib/errors'
 import { CartStatus, OrderItemStatus, OrderStatus } from '@/lib/prisma-types'
 import { addToCart, getOrCreateCart, removeFromCart, validateCart } from '@/modules/commerce/cart'
 import { cancelOrderItem, checkout, confirmOrderItemBySupplier } from '@/modules/commerce/checkout'
-import { createTenant, resetDatabase, slotState, type TenantFixture } from '../helpers/factory'
+import { actorFor, createTenant, resetDatabase, slotState, type TenantFixture } from '../helpers/factory'
 
 let tenant: TenantFixture
 
@@ -308,7 +308,11 @@ describe('cancellation and refunds', () => {
     })
 
     const item = await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.orderId } })
-    const result = await cancelOrderItem({ orderItemId: item.id, reason: 'test' })
+    const result = await cancelOrderItem({
+      orderItemId: item.id,
+      reason: 'test',
+      authority: { kind: 'guest', guestId: tenant.guestId },
+    })
 
     expect(result.withinWindow).toBe(true)
     expect(result.refundMinor).toBe(190_000)
@@ -338,7 +342,11 @@ describe('cancellation and refunds', () => {
     const order = await checkout({ cartId, guestId: soon.guestId, idempotencyKey: randomUUID() })
 
     const item = await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.orderId } })
-    const result = await cancelOrderItem({ orderItemId: item.id, reason: 'late' })
+    const result = await cancelOrderItem({
+      orderItemId: item.id,
+      reason: 'late',
+      authority: { kind: 'guest', guestId: soon.guestId },
+    })
 
     expect(result.withinWindow).toBe(false)
     expect(result.refundMinor).toBe(0)
@@ -367,11 +375,136 @@ describe('cancellation and refunds', () => {
     const items = await prisma.orderItem.findMany({ where: { orderId: order.orderId } })
     expect(items).toHaveLength(2)
 
-    const result = await cancelOrderItem({ orderItemId: items[0]!.id, reason: 'one only' })
+    const result = await cancelOrderItem({
+      orderItemId: items[0]!.id,
+      reason: 'one only',
+      authority: { kind: 'guest', guestId: tenant.guestId },
+    })
     expect(result.orderStatus).toBe(OrderStatus.PARTIALLY_CANCELLED)
 
     const refreshed = await prisma.order.findUniqueOrThrow({ where: { id: order.orderId } })
     expect(refreshed.hotelEarningsMinor).toBeGreaterThan(0)
+  })
+
+  it('refuses to cancel another guest’s booking', async () => {
+    // Regression: cancelOrderItem loaded the item by id alone, so anyone
+    // holding any portal token could cancel any other guest's booking —
+    // freeing their place and writing a refund against a different hotel's
+    // ledger. Ownership is now part of the query.
+    const other = await createTenant({ capacity: 2 })
+
+    const cartId = await cartFor(tenant)
+    await addToCart({ cartId, slotId: tenant.slotId, quantity: 1 })
+    const order = await checkout({
+      cartId,
+      guestId: tenant.guestId,
+      idempotencyKey: randomUUID(),
+    })
+    const item = await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.orderId } })
+
+    await expect(
+      cancelOrderItem({
+        orderItemId: item.id,
+        reason: 'not mine to cancel',
+        authority: { kind: 'guest', guestId: other.guestId },
+      }),
+    ).rejects.toSatisfy((error: unknown) => isAppError(error) && error.code === 'NOT_FOUND')
+
+    // Nothing moved: the booking stands and the capacity is still committed.
+    const untouched = await prisma.orderItem.findUniqueOrThrow({ where: { id: item.id } })
+    expect(untouched.status).toBe(OrderItemStatus.CONFIRMED)
+    expect((await slotState(tenant.slotId)).booked).toBe(1)
+    expect(await prisma.ledgerEntry.count({ where: { account: 'refund' } })).toBe(0)
+  })
+
+  it('refuses an operator from another tenant', async () => {
+    const other = await createTenant({ capacity: 2 })
+
+    const cartId = await cartFor(tenant)
+    await addToCart({ cartId, slotId: tenant.slotId, quantity: 1 })
+    const order = await checkout({
+      cartId,
+      guestId: tenant.guestId,
+      idempotencyKey: randomUUID(),
+    })
+    const item = await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.orderId } })
+
+    const foreignOwner = await actorFor(other.ownerUserId)
+    await expect(
+      cancelOrderItem({
+        orderItemId: item.id,
+        reason: 'not my property',
+        authority: { kind: 'operator', actor: foreignOwner },
+      }),
+    ).rejects.toSatisfy((error: unknown) => isAppError(error) && error.code === 'FORBIDDEN')
+  })
+
+  it('lets the owning hotel cancel on a guest’s behalf', async () => {
+    const cartId = await cartFor(tenant)
+    await addToCart({ cartId, slotId: tenant.slotId, quantity: 1 })
+    const order = await checkout({
+      cartId,
+      guestId: tenant.guestId,
+      idempotencyKey: randomUUID(),
+    })
+    const item = await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.orderId } })
+
+    const owner = await actorFor(tenant.ownerUserId)
+    const result = await cancelOrderItem({
+      orderItemId: item.id,
+      reason: 'guest called the front desk',
+      authority: { kind: 'operator', actor: owner },
+    })
+
+    expect(result.refundMinor).toBeGreaterThan(0)
+    expect((await slotState(tenant.slotId)).booked).toBe(0)
+
+    // The audit trail names the person, not an anonymous "guest".
+    const audit = await prisma.auditEvent.findFirstOrThrow({
+      where: { action: 'commerce.orderItem.cancelled' },
+      orderBy: { createdAt: 'desc' },
+    })
+    expect(audit.actorUserId).toBe(tenant.ownerUserId)
+  })
+
+  it('applies a concurrent double-cancellation exactly once', async () => {
+    // Regression: the "already cancelled" guard was read outside the
+    // transaction and the body never re-read the status. Two concurrent
+    // cancellations both passed the guard; the loser hit a serialization
+    // failure, and the retry re-ran the whole body — decrementing `booked`
+    // twice and writing a second refund entry, so `booked` sat below the real
+    // number of bookings and placeHold would sell seats that were gone.
+    const cartId = await cartFor(tenant)
+    await addToCart({ cartId, slotId: tenant.slotId, quantity: 2 })
+    const order = await checkout({
+      cartId,
+      guestId: tenant.guestId,
+      idempotencyKey: randomUUID(),
+    })
+    const item = await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.orderId } })
+
+    expect((await slotState(tenant.slotId)).booked).toBe(2)
+
+    const authority = { kind: 'guest' as const, guestId: tenant.guestId }
+    const results = await Promise.allSettled([
+      cancelOrderItem({ orderItemId: item.id, reason: 'double tap A', authority }),
+      cancelOrderItem({ orderItemId: item.id, reason: 'double tap B', authority }),
+    ])
+
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
+
+    // Capacity returned once, not twice.
+    expect((await slotState(tenant.slotId)).booked).toBe(0)
+
+    // And exactly one refund entry.
+    const refunds = await prisma.ledgerEntry.findMany({
+      where: { orderItemId: item.id, account: 'refund' },
+    })
+    expect(refunds).toHaveLength(1)
+    expect(refunds[0]?.amountMinor).toBe(-190_000)
+
+    const refreshed = await prisma.order.findUniqueOrThrow({ where: { id: order.orderId } })
+    expect(refreshed.refundedMinor).toBe(190_000)
   })
 
   it('refuses to cancel the same line twice', async () => {
@@ -380,10 +513,11 @@ describe('cancellation and refunds', () => {
     const order = await checkout({ cartId, guestId: tenant.guestId, idempotencyKey: randomUUID() })
     const item = await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.orderId } })
 
-    await cancelOrderItem({ orderItemId: item.id, reason: 'first' })
-    await expect(cancelOrderItem({ orderItemId: item.id, reason: 'second' })).rejects.toThrow(
-      /already been cancelled/,
-    )
+    const authority = { kind: 'guest' as const, guestId: tenant.guestId }
+    await cancelOrderItem({ orderItemId: item.id, reason: 'first', authority })
+    await expect(
+      cancelOrderItem({ orderItemId: item.id, reason: 'second', authority }),
+    ).rejects.toThrow(/already been cancelled/)
   })
 })
 

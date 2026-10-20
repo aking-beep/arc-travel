@@ -412,3 +412,90 @@ describe('consumeHold', () => {
     ).rejects.toThrow(/already been used/)
   })
 })
+
+describe('database-level invariants', () => {
+  it('refuses a write that would oversell, even bypassing the service layer', async () => {
+    // The application enforces `booked + held <= capacity` in every
+    // transaction, but a bug in that code used to corrupt the counters
+    // silently. The CHECK constraint makes the same rule true of any writer.
+    await expect(
+      prisma.availabilitySlot.update({
+        where: { id: tenant.slotId },
+        data: { booked: 99 },
+      }),
+    ).rejects.toThrow(/slot_capacity_invariant|constraint/i)
+
+    expect((await slotState(tenant.slotId)).booked).toBe(0)
+  })
+
+  it('refuses a negative counter', async () => {
+    await expect(
+      prisma.availabilitySlot.update({ where: { id: tenant.slotId }, data: { held: -1 } }),
+    ).rejects.toThrow(/slot_capacity_invariant|constraint/i)
+  })
+
+  it('refuses a confirmed order whose split does not account for its total', async () => {
+    await expect(
+      prisma.order.create({
+        data: {
+          organizationId: tenant.organizationId,
+          propertyId: tenant.propertyId,
+          guestId: tenant.guestId,
+          reference: `BAD-${Date.now()}`,
+          status: 'CONFIRMED',
+          currency: 'MXN',
+          totalMinor: 100_000,
+          hotelEarningsMinor: 1,
+          platformEarningsMinor: 1,
+          supplierPayableMinor: 1,
+        },
+      }),
+    ).rejects.toThrow(/order_split_reconciles|constraint/i)
+  })
+
+  it('refuses a refund larger than the line it refunds', async () => {
+    const order = await prisma.order.create({
+      data: {
+        organizationId: tenant.organizationId,
+        propertyId: tenant.propertyId,
+        guestId: tenant.guestId,
+        reference: `REF-${Date.now()}`,
+        currency: 'MXN',
+        totalMinor: 95_000,
+      },
+      select: { id: true },
+    })
+
+    await expect(
+      prisma.orderItem.create({
+        data: {
+          organizationId: tenant.organizationId,
+          orderId: order.id,
+          experienceId: tenant.experienceId,
+          slotId: tenant.slotId,
+          supplierId: tenant.supplierId,
+          quantity: 1,
+          unitPriceMinor: 95_000,
+          lineTotalMinor: 95_000,
+          refundedMinor: 200_000,
+          currency: 'MXN',
+        },
+      }),
+    ).rejects.toThrow(/order_item_money_sane|constraint/i)
+  })
+
+  it('refuses a conditions reading whose maximum is below its minimum', async () => {
+    await expect(
+      prisma.conditionReport.create({
+        data: {
+          placeId: tenant.placeId,
+          forDate: new Date('2026-12-01T00:00:00.000Z'),
+          waveHeightMinM: 2.5,
+          waveHeightMaxM: 0.5,
+          risk: 'LOW',
+          minAbilityRequired: 'BEGINNER',
+        },
+      }),
+    ).rejects.toThrow(/conditions_wave_range|constraint/i)
+  })
+})

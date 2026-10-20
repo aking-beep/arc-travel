@@ -93,6 +93,22 @@ Anything touching `booked` or `held` goes through
 its execution, checkout and its ledger — shares one transaction. Pass `tx` to
 `recordAudit` so an action and its audit record cannot diverge.
 
+**Read inside the transaction what you will write on.** `inSerializableTransaction`
+retries on a serialization failure by re-running the whole function, so a body
+whose guard was read outside it applies twice. Two real bugs came from this: a
+concurrent cancellation double-decremented `booked` and wrote a second refund,
+and checkout committed a stale line quantity while consuming the live hold
+quantity. Re-read and re-assert inside.
+
+### Authorisation on the guest surface
+
+Every guest-surface service takes *who is asking* and scopes its lookup by it.
+`cancelOrderItem` takes a `CancelAuthority`, not an optional `actorKind`: it
+loaded the order item by id alone, so any holder of any portal token could
+cancel any other guest's booking. If a new service accepts a client-supplied
+entity id, the ownership predicate belongs in the `where` clause, not in a check
+you have to remember afterwards.
+
 ### Audit and analytics
 
 Consequential writes call `recordAudit`. Metadata is PII-redacted on the way in
@@ -152,6 +168,13 @@ Two E2E habits, learned the hard way and recorded in the specs:
 | Holds are taken at add-to-basket | ADR-014 |
 | No destination photography | Unlicensed images of a real place in a commercial demo is not a corner worth cutting |
 | The seed writes earnings entries for refunded orders too | It mirrors checkout-then-refund exactly. Writing only the refund left the ledger short by the order total — a real bug, now regression-tested |
+| `conditionsSensitive` is on `Activity`, not derived from `PlaceKind` | ADR-018. Inferring it from the place let one wrong dropdown choice switch the safety gate off for the heaviest wave in Mexico |
+| The gate derives a demanded ability when there is no reading | ADR-017. Guarding the ability rules on a snapshot meant a guest who stated no level was offered an advanced-only break on any undated day |
+| `addToCart` re-runs the safety gate | ADR-019. The itinerary was not the only route to a booking, so gating only the recommendation left the commitment open |
+| CHECK constraints live in `prisma/constraints.sql`, not the schema | ADR-020. Prisma cannot express them, and application-only invariants fail silently |
+| `returnCapacity` throws instead of clamping | ADR-020. The clamp kept the counter non-negative while hiding the double-cancellation that caused it |
+| `invitePartner` refuses an email that already has an account | ADR-021. It used to `upsert`, rewriting a stranger's profile and grafting a membership onto it |
+| `/sign-in` 404s outside demo mode and lists no guests | ADR-023. The page was public and rendered every guest's portal token into the markup |
 
 ## Review
 

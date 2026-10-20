@@ -62,7 +62,7 @@ export class MockAIProvider implements AIProvider {
 
     const paragraphs: string[] = []
     const scheduled = days.reduce<number>(
-      (n, day) => n + (Array.isArray((day as { titles?: unknown[] }).titles) ? ((day as { titles: unknown[] }).titles.length) : 0),
+      (n, day) => n + Number((day as { scheduledCount?: unknown }).scheduledCount ?? 0),
       0,
     )
 

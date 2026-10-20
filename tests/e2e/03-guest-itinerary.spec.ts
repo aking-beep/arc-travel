@@ -99,3 +99,51 @@ test.describe('guest itinerary', () => {
     await expect(page.getByText(/Before you book/)).toBeVisible()
   })
 })
+
+test.describe('suitability at the point of booking', () => {
+  test('a beginner is refused the advanced-only session, with the reason', async ({ page }) => {
+    // The experience page is a route to a booking that does not pass through
+    // the itinerary. It used to render an Add-to-basket button for every
+    // departure without consulting the safety gate at all, so a beginner could
+    // open the Zicatela session and buy it.
+    await page.goto(
+      `/g/${GUEST_PORTAL_TOKENS.completedIntake}/experience/zicatela-guided-advanced-session`,
+    )
+
+    await expect(
+      page.getByRole('heading', { name: /Zicatela guided session/ }),
+    ).toBeVisible()
+
+    // No way to buy it.
+    await expect(page.getByRole('button', { name: /add to basket/i })).toHaveCount(0)
+    await expect(page.getByText(/Not bookable for you/).first()).toBeVisible()
+
+    // And the reason is stated rather than hidden behind "unavailable".
+    await expect(
+      page.getByText(/experience or above|demands|does not run above/i).first(),
+    ).toBeVisible()
+  })
+
+  test('the same guest can still book what suits them', async ({ page }) => {
+    await page.goto(
+      `/g/${GUEST_PORTAL_TOKENS.completedIntake}/experience/carrizalillo-beginner-surf-lesson`,
+    )
+
+    await expect(page.getByRole('button', { name: /add to basket/i }).first()).toBeVisible()
+  })
+
+  test('ocean readings carry their disclaimer on the booking screen too', async ({ page }) => {
+    // The compact card used to drop the disclaimer and the rip-current notes,
+    // and the only screens that passed `compact` were the ones with a buy
+    // button — so a guest saw the warning only on pages that sell nothing.
+    await page.goto(
+      `/g/${GUEST_PORTAL_TOKENS.completedIntake}/experience/carrizalillo-beginner-surf-lesson`,
+    )
+
+    await expect(page.getByText(/Conditions for/).first()).toBeVisible()
+    await expect(page.getByText(/Reading taken/).first()).toBeVisible()
+    await expect(
+      page.getByText(/it cannot tell you a beach is safe/i).first(),
+    ).toBeVisible()
+  })
+})

@@ -14,11 +14,19 @@ const RISK_TONE = {
 /**
  * One day's ocean reading for one place.
  *
- * The non-negotiable parts of this component: the risk band, the timestamp the
- * reading was taken, its source, and the disclaimer. It has no "safe" state and
- * there is no variant that omits the timestamp — a reading without its age is
- * worse than no reading, because it invites a guest to treat yesterday's calm
- * as today's.
+ * The non-negotiable parts: the day the reading describes, the risk band, the
+ * time it was taken, its source, the current notes, and the disclaimer. It has
+ * no "safe" state, and `compact` trims only the secondary metrics.
+ *
+ * `compact` used to drop the disclaimer and the rip-current description, and
+ * both screens that pass it are the ones with a buy button — so the only
+ * places a guest saw "ARC cannot tell you a beach is safe" and "strong rip
+ * running north along the beach" were pages that sell nothing. The full
+ * warnings now render in both variants.
+ *
+ * `forDate` is rendered explicitly because it is distinct from `observedAt`:
+ * a fresh reading *about tomorrow* is not a reading about today, and the guide
+ * page falls back to the next available day when today has none.
  */
 export function ConditionsCard({
   snapshot,
@@ -49,7 +57,12 @@ export function ConditionsCard({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="flex items-center gap-2">
           <Waves className="text-jade-700 size-4" aria-hidden />
-          <p className="font-medium">{placeName}</p>
+          <div>
+            <p className="font-medium">{placeName}</p>
+            <p className="text-sand-500 text-xs tabular-nums">
+              {t('conditions.forDate')} {snapshot.forDate}
+            </p>
+          </div>
         </div>
         <Badge tone={RISK_TONE[snapshot.risk]}>{t(`conditions.risk.${snapshot.risk}`)}</Badge>
       </div>
@@ -97,14 +110,14 @@ export function ConditionsCard({
         </div>
       </dl>
 
-      {currentNotes && !compact ? (
+      {currentNotes ? (
         <p className="text-sand-600 mt-3 text-sm">
           <span className="text-sand-500 text-xs uppercase">{t('conditions.currents')}: </span>
           {currentNotes}
         </p>
       ) : null}
 
-      {safetyNotes && !compact ? (
+      {safetyNotes ? (
         <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">{safetyNotes}</p>
       ) : null}
 
@@ -119,9 +132,7 @@ export function ConditionsCard({
         <p className="mt-1.5 text-xs font-medium text-amber-800">{t('conditions.stale')}</p>
       ) : null}
 
-      {!compact ? (
-        <p className="text-sand-500 mt-2 text-xs leading-relaxed">{t('conditions.disclaimer')}</p>
-      ) : null}
+      <p className="text-sand-500 mt-2 text-xs leading-relaxed">{t('conditions.disclaimer')}</p>
     </div>
   )
 }

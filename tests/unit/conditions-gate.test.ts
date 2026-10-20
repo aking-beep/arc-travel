@@ -132,6 +132,86 @@ describe('gateByConditions', () => {
     expect(gate.allowed).toBe(true)
   })
 
+  describe('a missing reading is judged by the same scale as a present one', () => {
+    it('refuses a guest who stated no ability on a demanding spot', () => {
+      // Regression, and the worst bug the review found. Both ability rules
+      // were guarded on the presence of a snapshot, so a date we had no
+      // reading for skipped them entirely — and for an activity whose
+      // maxSafeRisk is EXTREME the risk comparison can never fire either.
+      // A guest who answered "I'd rather not say" was therefore offered the
+      // Mexican Pipeline, while a guest who answered BEGINNER was protected.
+      const gate = gateByConditions({
+        ...base,
+        guestAbility: null,
+        activityMinAbility: AbilityLevel.ADVANCED,
+        activityMaxSafeRisk: ConditionsRisk.EXTREME,
+        activityGuideRequired: true,
+        experienceGuideIncluded: true,
+        snapshot: null,
+        placeBaselineRisk: ConditionsRisk.EXTREME,
+      })
+
+      expect(gate.allowed).toBe(false)
+      expect(gate.exclusions).toContain('ability_unknown_and_conditions_demanding')
+    })
+
+    it('refuses a guest whose stated ability is below what the spot typically demands', () => {
+      const gate = gateByConditions({
+        ...base,
+        guestAbility: AbilityLevel.IMPROVER,
+        activityMinAbility: AbilityLevel.BEGINNER,
+        activityMaxSafeRisk: ConditionsRisk.EXTREME,
+        snapshot: null,
+        placeBaselineRisk: ConditionsRisk.HIGH,
+      })
+
+      expect(gate.allowed).toBe(false)
+      expect(gate.exclusions).toContain('conditions_demand_higher_ability')
+      expect(gate.notes.join(' ')).toMatch(/typically demands advanced/)
+    })
+
+    it('admits a sufficiently able guest on a baseline-judged day', () => {
+      const gate = gateByConditions({
+        ...base,
+        guestAbility: AbilityLevel.EXPERT,
+        activityMinAbility: AbilityLevel.ADVANCED,
+        activityMaxSafeRisk: ConditionsRisk.EXTREME,
+        activityGuideRequired: true,
+        experienceGuideIncluded: true,
+        snapshot: null,
+        placeBaselineRisk: ConditionsRisk.EXTREME,
+      })
+
+      expect(gate.allowed).toBe(true)
+      expect(gate.usedBaseline).toBe(true)
+    })
+
+    it('admits an unknown ability on a baseline-judged calm spot', () => {
+      const gate = gateByConditions({
+        ...base,
+        guestAbility: null,
+        snapshot: null,
+        placeBaselineRisk: ConditionsRisk.LOW,
+      })
+      expect(gate.allowed).toBe(true)
+    })
+  })
+
+  it('refuses a conditions-sensitive candidate it cannot locate at all', () => {
+    // An experience with no place, whose activity has none either. A water
+    // activity we cannot locate cannot be judged, and an unjudgeable water
+    // activity is refused rather than waved through.
+    const gate = gateByConditions({
+      ...base,
+      snapshot: null,
+      placeBaselineRisk: null,
+      hasLocation: false,
+    })
+
+    expect(gate.allowed).toBe(false)
+    expect(gate.exclusions).toContain('conditions_sensitive_without_location')
+  })
+
   it('treats a missing reading as the place’s baseline, not as permission', () => {
     const gate = gateByConditions({
       ...base,

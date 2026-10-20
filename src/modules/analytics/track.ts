@@ -10,8 +10,8 @@ import { pseudonymize, redact } from '@/lib/redact'
  * contribution per stay) has to be computed from the same rows that produced the
  * orders, or the two numbers will disagree and nobody will trust either.
  *
- * `subjectKey` is always a pseudonym. An email or phone number must never reach
- * this table — see src/lib/redact.ts.
+ * `subjectKey` is always a pseudonym — HMAC-SHA256 under a dedicated salt. An
+ * email or phone number must never reach this table; see src/lib/redact.ts.
  */
 export type AnalyticsSurface = 'owner' | 'guest' | 'partner' | 'admin' | 'system'
 
@@ -29,7 +29,8 @@ export interface TrackInput {
 type Client = Prisma.TransactionClient | typeof prisma
 
 export async function track(input: TrackInput, client: Client = prisma): Promise<void> {
-  const salt = getEnv().AUTH_SECRET
+  // A dedicated salt, not the session-signing secret.
+  const salt = getEnv().ANALYTICS_SALT
 
   await client.analyticsEvent.create({
     data: {

@@ -83,6 +83,18 @@ export function clampAbilityRange(
     max = activity.maxAbility
   }
 
+  // The two ends are clamped independently, so a narrow request outside the
+  // envelope could cross them over — asking for BEGINNER–BEGINNER against an
+  // ADVANCED–EXPERT activity used to store ADVANCED–BEGINNER. It failed closed
+  // (every guest was then excluded by both filters) but it was stored silently
+  // and shown to guests as "Suitable for Advanced–Beginner".
+  if (rank(min) > rank(max)) {
+    adjustments.push(
+      `Maximum ability raised to ${min}: the requested range sat entirely outside what the activity allows.`,
+    )
+    max = min
+  }
+
   return { minAbility: min, maxAbility: max, adjustments }
 }
 
@@ -364,6 +376,14 @@ export async function checkPublishReadiness(experienceId: string): Promise<Publi
   return { ready: blockers.length === 0, blockers, warnings }
 }
 
+/**
+ * Moves an experience between lifecycle states.
+ *
+ * OWNER and ADMIN only. Creating and editing a draft is reasonable front-desk
+ * work, but publishing makes something guest-visible, bookable and
+ * money-earning — the same class of commitment that `decideProposal` restricts
+ * to an owner — and archiving removes it from sale.
+ */
 export async function setExperienceStatus(
   actor: ActorContext,
   experienceId: string,
@@ -376,7 +396,7 @@ export async function setExperienceStatus(
   if (!experience) throw notFound('Experience')
 
   const { organizationId } = await assertPropertyAccess(
-    actor, experience.propertyId, Role.OWNER, Role.STAFF, Role.ADMIN,
+    actor, experience.propertyId, Role.OWNER, Role.ADMIN,
   )
 
   const readiness =

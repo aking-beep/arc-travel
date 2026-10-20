@@ -92,17 +92,24 @@ export function splitByBps(
 
 const LOCALE_BY_CURRENCY: Record<string, string> = { MXN: 'es-MX', USD: 'en-US', EUR: 'de-DE' }
 
-export function formatMoney(
-  amountMinor: number,
-  currency = 'MXN',
-  locale?: string,
-): string {
+/**
+ * Formats an amount for display.
+ *
+ * Shows centavos only when there are any. Rounding every figure to whole pesos
+ * meant a commission column of 142.50 displayed as 143, so an owner adding up
+ * the numbers on screen — the thing ADR-002 exists to let them do — got a
+ * total that did not match, while the stored arithmetic was exact. Whole
+ * amounts still render cleanly as "$950".
+ */
+export function formatMoney(amountMinor: number, currency = 'MXN', locale?: string): string {
   const resolved = locale ?? LOCALE_BY_CURRENCY[currency] ?? 'en-US'
+  const hasCentavos = Math.trunc(amountMinor) % 100 !== 0
+
   return new Intl.NumberFormat(resolved, {
     style: 'currency',
     currency,
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: hasCentavos ? 2 : 0,
+    maximumFractionDigits: hasCentavos ? 2 : 0,
   }).format(amountMinor / 100)
 }
 

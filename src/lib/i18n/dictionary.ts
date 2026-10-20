@@ -112,6 +112,7 @@ export const dictionary = {
     'conditions.risk': 'Risk band',
     'conditions.minAbility': 'Minimum ability today',
     'conditions.guideRecommended': 'Guide recommended',
+    'conditions.forDate': 'Conditions for',
     'conditions.observedAt': 'Reading taken',
     'conditions.stale': 'This reading is out of date — treat it as history, not guidance.',
     'conditions.disclaimer':
@@ -273,6 +274,7 @@ export const dictionary = {
     'conditions.risk': 'Nivel de riesgo',
     'conditions.minAbility': 'Nivel mínimo hoy',
     'conditions.guideRecommended': 'Se recomienda guía',
+    'conditions.forDate': 'Condiciones para',
     'conditions.observedAt': 'Lectura tomada',
     'conditions.stale':
       'Esta lectura está desactualizada: tómala como histórico, no como guía.',

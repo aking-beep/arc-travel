@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/db'
 import { notFound } from '@/lib/errors'
 import { fromPrismaLocale, type AppLocale } from '@/lib/i18n'
-import { toDateKey, type DateKey } from '@/lib/dates'
+import { daysBetween, toDateKey, type DateKey } from '@/lib/dates'
 import { StayStatus } from '@/lib/prisma-types'
 
 /**
@@ -13,6 +13,15 @@ import { StayStatus } from '@/lib/prisma-types'
  * is opaque, single-purpose and scoped to one stay: holding it grants access to
  * that stay's plan and basket, and to nothing else in the tenant.
  */
+/**
+ * Days after check-out that the portal stays readable.
+ *
+ * Long enough for a guest to look up a receipt on the flight home, short
+ * enough that a QR code photographed at a front desk months ago is not a
+ * standing credential. The token is time-boxed as well as scoped.
+ */
+export const PORTAL_GRACE_DAYS = 7
+
 export interface PortalContext {
   stayId: string
   reference: string
@@ -98,8 +107,10 @@ export async function resolvePortalContext(token: string, now = new Date()): Pro
 
   if (!stay) throw notFound('Stay')
 
-  // A cancelled stay's link stops working. The token is not a general-purpose
-  // login, and a no-show's plan should not stay reachable indefinitely.
+  // The token is not a general-purpose login. It stops working when the stay
+  // is cancelled or the guest never arrived, and it expires shortly after
+  // check-out: a QR code photographed at a front desk months ago must not
+  // still open a live basket.
   if (stay.status === StayStatus.CANCELLED || stay.status === StayStatus.NO_SHOW) {
     throw notFound('Stay')
   }
@@ -107,6 +118,10 @@ export async function resolvePortalContext(token: string, now = new Date()): Pro
   const today = toDateKey(now)
   const checkIn = toDateKey(stay.checkIn)
   const checkOut = toDateKey(stay.checkOut)
+
+  if (daysBetween(checkOut, today) > PORTAL_GRACE_DAYS) {
+    throw notFound('Stay')
+  }
 
   return {
     stayId: stay.id,

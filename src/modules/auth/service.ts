@@ -1,7 +1,8 @@
 import 'server-only'
 import { cookies } from 'next/headers'
 import { prisma } from '@/lib/db'
-import { unauthenticated, notFound } from '@/lib/errors'
+import { isDemoMode } from '@/lib/env'
+import { forbidden, unauthenticated, notFound } from '@/lib/errors'
 import type { ActorContext } from '@/modules/tenancy/context'
 import { decodeSession, encodeSession, SESSION_COOKIE, sessionCookieOptions } from './session'
 
@@ -62,7 +63,18 @@ export async function signInAs(userId: string): Promise<ActorContext> {
   return actor
 }
 
+/**
+ * Passwordless sign-in by email.
+ *
+ * Gated on demo mode. The seeded accounts have no credentials, so outside a
+ * demo this function would be an authentication bypass for every role in the
+ * system rather than a convenience.
+ */
 export async function signInByEmail(email: string): Promise<ActorContext> {
+  if (!isDemoMode()) {
+    throw forbidden('Passwordless sign-in is only available in demo mode.')
+  }
+
   const user = await prisma.user.findUnique({
     where: { email: email.trim().toLowerCase() },
     select: { id: true },
@@ -106,8 +118,23 @@ export async function signInWithPortalToken(token: string): Promise<{
   }
 }
 
-/** Demo account switcher options, grouped by surface. Development affordance. */
+/**
+ * Demo account switcher options, grouped by surface.
+ *
+ * Available only while `ARC_DATA_MODE=demo`, and it returns **no portal
+ * tokens**. An earlier version selected each guest's `portalToken` and the
+ * sign-in page rendered it into the markup, which meant an anonymous
+ * `curl /sign-in` harvested the full guest credential for every guest in the
+ * database — and the portal token is the entire guest authorisation boundary.
+ *
+ * Guests are reached from the QR code the seed prints instead, which keeps the
+ * credential in the operator's hands.
+ */
 export async function listDemoAccounts() {
+  if (!isDemoMode()) {
+    throw forbidden('The demo account switcher is only available in demo mode.')
+  }
+
   const users = await prisma.user.findMany({
     orderBy: [{ isPlatformAdmin: 'desc' }, { email: 'asc' }],
     select: {
@@ -116,7 +143,7 @@ export async function listDemoAccounts() {
       name: true,
       isPlatformAdmin: true,
       memberships: { select: { role: true, propertyId: true, supplierId: true } },
-      guest: { select: { id: true, stays: { select: { portalToken: true }, take: 1 } } },
+      guest: { select: { id: true } },
     },
   })
 
@@ -127,6 +154,6 @@ export async function listDemoAccounts() {
     roles: u.isPlatformAdmin
       ? (['ADMIN'] as string[])
       : [...new Set(u.memberships.map((m) => m.role as string))],
-    portalToken: u.guest?.stays[0]?.portalToken ?? null,
+    isGuest: Boolean(u.guest),
   }))
 }

@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db'
-import { forbidden, notFound } from '@/lib/errors'
+import { conflict, forbidden, notFound } from '@/lib/errors'
 import { EntityStatus, Role, VerificationStatus } from '@/lib/prisma-types'
 import { assertOrganizationAccess, assertPropertyAccess, type ActorContext } from '@/modules/tenancy/context'
 import { recordAudit } from '@/modules/workflows/audit'
@@ -318,16 +318,42 @@ export async function invitePartner(
       slug = `${slugBase}-${i + 1}`
     }
 
-    const contact = await tx.user.upsert({
-      where: { email: input.contactEmail.toLowerCase() },
-      update: { name: input.contactName, phone: input.contactPhone ?? undefined },
-      create: {
-        email: input.contactEmail.toLowerCase(),
-        name: input.contactName,
-        phone: input.contactPhone ?? null,
-      },
-      select: { id: true },
-    })
+    /**
+     * Create the contact, or refuse.
+     *
+     * This used to `upsert`, which meant an owner supplying any existing
+     * user's email rewrote that person's name and phone — a cross-tenant write
+     * to a row they have no claim on — and grafted a SUPPLIER membership onto
+     * their account, exposing this organization's partner portal to them on
+     * their next sign-in. An invitation cannot be a write to a stranger's
+     * profile, so an email that is already claimed is refused and the owner is
+     * told why.
+     */
+    const email = input.contactEmail.toLowerCase()
+    const existing = await tx.user.findUnique({ where: { email }, select: { id: true } })
+
+    if (existing) {
+      const alreadyLinked = await tx.membership.findFirst({
+        where: { userId: existing.id, organizationId, role: Role.SUPPLIER },
+        select: { id: true },
+      })
+      if (!alreadyLinked) {
+        throw conflict(
+          `${input.contactEmail} already has an ARC account. Ask them to accept an invitation rather than adding them here, so their details are not overwritten.`,
+        )
+      }
+    }
+
+    const contact =
+      existing ??
+      (await tx.user.create({
+        data: {
+          email,
+          name: input.contactName,
+          phone: input.contactPhone ?? null,
+        },
+        select: { id: true },
+      }))
 
     const supplier = await tx.supplier.create({
       data: {

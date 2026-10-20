@@ -35,6 +35,21 @@ export const ABILITY_ORDER = [
 export const riskRank = (risk: ConditionsRisk): number => RISK_ORDER.indexOf(risk)
 export const abilityRank = (level: AbilityLevel): number => ABILITY_ORDER.indexOf(level)
 
+/**
+ * The lowest ability each risk band demands of anyone entering the water.
+ *
+ * The single source of truth for that mapping. The seed generates
+ * `ConditionReport.minAbilityRequired` from the same table, and the gate falls
+ * back to it when no reading exists — so a missing reading is judged by the
+ * same scale as a present one.
+ */
+export const MIN_ABILITY_BY_RISK: Record<ConditionsRisk, AbilityLevel> = {
+  [ConditionsRisk.LOW]: AbilityLevel.BEGINNER,
+  [ConditionsRisk.MODERATE]: AbilityLevel.IMPROVER,
+  [ConditionsRisk.HIGH]: AbilityLevel.ADVANCED,
+  [ConditionsRisk.EXTREME]: AbilityLevel.EXPERT,
+}
+
 /** A reading older than this is shown as history, not as current information. */
 export const STALE_AFTER_HOURS = 12
 
@@ -190,6 +205,12 @@ export function gateByConditions(input: {
   placeBaselineRisk?: ConditionsRisk | null
   /** False for land-based activities, which skip the conditions checks. */
   conditionsSensitive: boolean
+  /**
+   * False when the experience has no place at all. A water activity we cannot
+   * locate cannot be judged, and an unjudgeable water activity is refused
+   * rather than waved through.
+   */
+  hasLocation?: boolean
 }): ConditionsGate {
   const exclusions: string[] = []
   const notes: string[] = []
@@ -219,6 +240,14 @@ export function gateByConditions(input: {
     }
   }
 
+  if (input.hasLocation === false) {
+    exclusions.push('conditions_sensitive_without_location')
+    notes.push(
+      'This depends on the water but is not tied to a place, so we cannot check conditions for it.',
+    )
+    return { allowed: false, exclusions, notes, snapshot: null, usedBaseline: false }
+  }
+
   const snapshot = input.snapshot
   const usedBaseline = snapshot === null
 
@@ -238,24 +267,30 @@ export function gateByConditions(input: {
     )
   }
 
-  if (
-    snapshot &&
-    input.guestAbility &&
-    abilityRank(input.guestAbility) < abilityRank(snapshot.minAbilityRequired)
-  ) {
+  /**
+   * The ability the day demands.
+   *
+   * Taken from the reading when there is one, and otherwise derived from the
+   * effective risk band. Deriving it matters: guarding these rules on the
+   * presence of a snapshot used to mean a *missing* reading skipped both of
+   * them, so a guest who had stated no ability could be offered an
+   * advanced-only break on any date we had no data for — the exact inversion
+   * ADR-004 forbids, and worse than the outcome for a guest who did answer.
+   */
+  const demandedAbility = snapshot?.minAbilityRequired ?? MIN_ABILITY_BY_RISK[effectiveRisk]
+
+  if (input.guestAbility && abilityRank(input.guestAbility) < abilityRank(demandedAbility)) {
     exclusions.push('conditions_demand_higher_ability')
     notes.push(
-      `On this date the water demands ${snapshot.minAbilityRequired.toLowerCase()} ability or above.`,
+      usedBaseline
+        ? `This spot typically demands ${demandedAbility.toLowerCase()} ability or above.`
+        : `On this date the water demands ${demandedAbility.toLowerCase()} ability or above.`,
     )
   }
 
-  // An unknown ability is not treated as expert. Anything the day pushes past
-  // improver level is withheld until the guest tells us where they stand.
-  if (
-    snapshot &&
-    !input.guestAbility &&
-    abilityRank(snapshot.minAbilityRequired) > abilityRank(AbilityLevel.IMPROVER)
-  ) {
+  // An unknown ability is never treated as expert. Anything that demands more
+  // than improver level is withheld until the guest tells us where they stand.
+  if (!input.guestAbility && abilityRank(demandedAbility) > abilityRank(AbilityLevel.IMPROVER)) {
     exclusions.push('ability_unknown_and_conditions_demanding')
     notes.push(
       'Tell us your experience level and we can say whether this date suits you. We will not guess on a demanding day.',

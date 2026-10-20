@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db'
 import { conflict, invalid, notFound } from '@/lib/errors'
 import { CartStatus, ExperienceStatus, SlotStatus } from '@/lib/prisma-types'
 import { getAvailability, placeHold, releaseHold, releaseHoldsForCart } from '@/modules/inventory/service'
+import { assertSlotSuitableForGuest } from '@/modules/destination/suitability'
 import { track } from '@/modules/analytics/track'
 import { computeCartTotals, computeLinePrice } from './pricing'
 
@@ -17,6 +18,11 @@ import { computeCartTotals, computeLinePrice } from './pricing'
  * checkout. That is the honest behaviour for a product selling six-seat boats:
  * a guest who has put the last two places in their basket should keep them for
  * long enough to decide, and the next guest should be told they are gone.
+ *
+ * It also re-runs the suitability gate. Recommending is not the only route to a
+ * booking — a guest can open an experience page directly — so refusing an
+ * unsuitable departure has to happen at the point of commitment, not only at
+ * the point of recommendation.
  */
 export const CART_TTL_MINUTES = 30
 
@@ -124,7 +130,14 @@ export async function addToCart(options: {
 
   const cart = await prisma.cart.findUnique({
     where: { id: options.cartId },
-    select: { id: true, organizationId: true, propertyId: true, status: true, currency: true },
+    select: {
+      id: true,
+      organizationId: true,
+      propertyId: true,
+      guestId: true,
+      status: true,
+      currency: true,
+    },
   })
   if (!cart) throw notFound('Basket')
   if (cart.status !== CartStatus.OPEN) {
@@ -175,22 +188,34 @@ export async function addToCart(options: {
     throw invalid(`That experience needs at least ${slot.experience.minParty} people.`)
   }
 
-  // Hold first. If capacity is gone we fail before writing a line the guest
-  // would then have to be told about.
-  const hold = await placeHold({
-    organizationId: cart.organizationId,
-    slotId: slot.id,
-    cartId: cart.id,
-    quantity: options.quantity,
-    now,
-  })
-
+  /**
+   * Price before holding, and suitability before either.
+   *
+   * Pricing used to run after the hold was taken, so a throw from
+   * `computeLinePrice` — an experience whose only active price is a group tier
+   * the party is too small for — left a committed hold with no basket line
+   * behind it, holding capacity for the full TTL with nothing to release it.
+   */
   const line = computeLinePrice({
     prices: slot.experience.prices,
     quantity: options.quantity,
     slotPriceOverrideMinor: slot.priceOverrideMinor,
     currency: cart.currency,
     at: now,
+  })
+
+  if (cart.guestId) {
+    await assertSlotSuitableForGuest({ guestId: cart.guestId, slotId: slot.id, now })
+  }
+
+  // Hold last. If capacity is gone we fail before writing a line the guest
+  // would then have to be told about, and nothing is held speculatively.
+  const hold = await placeHold({
+    organizationId: cart.organizationId,
+    slotId: slot.id,
+    cartId: cart.id,
+    quantity: options.quantity,
+    now,
   })
 
   await prisma.cartItem.upsert({
@@ -402,11 +427,14 @@ export async function validateCart(cartId: string, now = new Date()): Promise<Ca
       })
     }
 
-    if (item.slot.status === SlotStatus.CANCELLED) {
+    // CLOSED as well as CANCELLED. `placeHold` refuses both, but a hold taken
+    // before a partner closed the departure would otherwise walk straight
+    // through checkout onto a departure nobody is running.
+    if (item.slot.status === SlotStatus.CANCELLED || item.slot.status === SlotStatus.CLOSED) {
       problems.push({
         slotId: item.slotId,
-        code: 'departure_cancelled',
-        message: `The ${item.experience.titleEn} departure has been cancelled.`,
+        code: item.slot.status === SlotStatus.CANCELLED ? 'departure_cancelled' : 'departure_closed',
+        message: `The ${item.experience.titleEn} departure is no longer running.`,
       })
     }
 

@@ -183,6 +183,7 @@ async function seedDestination(rng: Rng) {
         minAbility: activity.minAbility as AbilityLevel,
         maxAbility: activity.maxAbility as AbilityLevel,
         guideRequired: activity.guideRequired,
+        conditionsSensitive: activity.conditionsSensitive ?? true,
         maxSafeRisk: activity.maxSafeRisk as ConditionsRisk,
         minAgeYears: activity.minAgeYears ?? null,
         typicalDurationMinutes: activity.durationMinutes,

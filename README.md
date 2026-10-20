@@ -75,7 +75,7 @@ createdb arc_stay_test
 cp .env.example .env
 #    Edit DATABASE_URL and TEST_DATABASE_URL to point at your Postgres.
 
-# 4. Generate the client, push the schema, seed the demo
+# 4. Generate the client, push the schema, apply the CHECK constraints, seed
 npm run setup
 
 # 5. Run
@@ -100,8 +100,11 @@ from the database.
 | Partner | `mariana@olasverdes.demo` |
 | Platform admin | `admin@arctravel.demo` |
 
-Guests are normally reached by QR code rather than by signing in. The seed pins
-three stable portal links so demos and tests do not break between seeds:
+Guests are not listed on that page, and it 404s outside demo mode. A guest
+reaches the portal from the QR code at the front desk, and that link is their
+only credential — so it stays with the operator rather than being published in
+the markup. The seed pins three stable portal links so demos and tests do not
+break between seeds:
 
 - `/g/demo-portal-01` — Harriet Okonjo, in house, beginner surfer, intake done
 - `/g/demo-portal-03` — Nina Brandt, improver, balanced pace
@@ -114,7 +117,8 @@ The seed prints the full list each time it runs.
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Development server |
-| `npm run setup` | Generate client, push schema, seed |
+| `npm run setup` | Generate client, push schema, apply constraints, seed |
+| `npm run db:constraints` | Apply `prisma/constraints.sql` (CHECK constraints Prisma cannot express) |
 | `npm run db:seed` | Reseed (truncates first; idempotent and deterministic) |
 | `npm run db:studio` | Prisma Studio |
 | `npm run typecheck` | `tsc --noEmit` |
@@ -142,10 +146,14 @@ organizations.
 desktop and a Pixel 7 viewport.
 
 ```bash
-npm test                 # 221 unit + integration
-npm run test:e2e         # 43 acceptance tests
+npm test                 # 285 unit + integration
+npm run test:e2e         # 46 acceptance tests
 npm run verify           # everything except E2E
 ```
+
+Integration tests run against the same CHECK constraints as production. The
+harness applies `prisma/constraints.sql` itself, so the suite cannot pass on a
+weaker schema than the one that ships.
 
 ## Repository layout
 
@@ -193,7 +201,11 @@ docs/
 
 ## Status
 
-The POC is complete and its acceptance tests pass. Nothing here has been
+The POC is complete and its acceptance tests pass. It has been through
+independent review by the security, AI-safety and architecture reviewers in
+`.claude/agents/`; the defects they found are fixed, regression-tested, and
+recorded as ADR-017 through ADR-023 in [`docs/decisions.md`](docs/decisions.md).
+ Nothing here has been
 deployed, no external account has been created, and no live integration has been
 enabled.
 

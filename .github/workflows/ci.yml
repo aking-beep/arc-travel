@@ -16,6 +16,7 @@ env:
   DATABASE_URL: postgresql://arc:arc@localhost:5432/arc_stay?schema=public
   TEST_DATABASE_URL: postgresql://arc:arc@localhost:5432/arc_stay_test?schema=public
   AUTH_SECRET: ci-only-secret-not-used-anywhere-else-000000
+  ANALYTICS_SALT: ci-only-analytics-salt-not-used-anywhere-else-00
   ARC_DATA_MODE: demo
   AI_PROVIDER: mock
   PAYMENTS_PROVIDER: simulated
@@ -95,8 +96,10 @@ jobs:
 
       # Vitest's global setup pushes the schema to TEST_DATABASE_URL itself,
       # so only the demo database needs preparing here.
-      - name: Push schema to the demo database
-        run: npx prisma db push --skip-generate --accept-data-loss
+      - name: Push schema and apply the CHECK constraints
+        run: |
+          npx prisma db push --skip-generate --accept-data-loss
+          npm run db:constraints
 
       - name: Unit and integration tests
         run: npm test
@@ -136,9 +139,10 @@ jobs:
 
       - run: npx prisma generate
 
-      - name: Push schema and seed the demo data
+      - name: Push schema, apply constraints, seed the demo data
         run: |
           npx prisma db push --skip-generate --accept-data-loss
+          npm run db:constraints
           npm run db:seed
 
       - name: Production build

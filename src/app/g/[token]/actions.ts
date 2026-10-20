@@ -198,11 +198,14 @@ export async function cancelBookingAction(
   formData: FormData,
 ): Promise<FormState> {
   try {
-    const { token } = await contextFor(formData)
+    const { token, context } = await contextFor(formData)
+    // The guest id comes from the portal token, never from the form. The
+    // order-item id is client-supplied and is scoped by that guest id inside
+    // the service, so a guest cannot cancel someone else's booking.
     const result = await cancelOrderItem({
       orderItemId: String(formData.get('orderItemId') ?? ''),
       reason: 'Cancelled by the guest in the portal.',
-      actorKind: 'guest',
+      authority: { kind: 'guest', guestId: context.guestId },
     })
 
     revalidatePath(`/g/${token}`)

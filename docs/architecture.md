@@ -81,20 +81,29 @@ load facts
   → optionally, ask a model to introduce it
 ```
 
-**The gate runs before scoring and before any model.** It has three independent
+**The gate runs before scoring and before any model.** It has four independent
 disqualifiers, any one of which is fatal:
 
 1. The day's risk exceeds the highest risk the activity may run in at all.
 2. The day demands more ability than the guest has.
 3. The activity demands more ability than the guest has.
+4. The activity is conditions-sensitive and has no place, so it cannot be judged.
+
+Whether an activity is conditions-sensitive is stored on the `Activity`, not
+inferred from the kind of place it happens at (ADR-018). And the gate is not
+only consulted by the itinerary: `modules/destination/suitability` evaluates a
+single departure, `addToCart` refuses on it, and the experience page renders
+from it — because gating the recommendation while leaving the booking open is
+the wrong way round (ADR-019).
 
 It returns `allowed`, never `safe`. There is no function in that module that
 returns a safety judgement, and a test asserts the gate never emits one. Three
 further properties matter:
 
 - **Absence of a reading is not permission.** With no `ConditionReport` it falls
-  back to the place's baseline character and says so in the guest-facing notes.
-  With neither reading nor baseline it assumes `HIGH`.
+  back to the place's baseline character and says so in the guest-facing notes,
+  deriving the ability the day demands from that baseline so the ability rules
+  still run (ADR-017). With neither reading nor baseline it assumes `HIGH`.
 - **An unknown ability is never treated as expert.** On a day demanding more
   than improver level, a guest who declined to state their level gets the
   candidate withheld rather than guessed at.
@@ -148,7 +157,10 @@ proportionate to that.
 **Inventory.** `AvailabilitySlot.capacity` is the truth; `booked` and `held` are
 counters moved only inside `Serializable` transactions, with retry on
 PostgreSQL's 40001. The invariant `booked + held <= capacity` is re-checked
-inside every transaction rather than trusted from a prior read. Holds expire,
+inside every transaction rather than trusted from a prior read — and is also a
+database CHECK constraint (ADR-020), because an application-only invariant fails
+silently and two bugs did exactly that. Retry-on-40001 re-runs the whole
+function, so any guard a transaction body depends on must be read inside it. Holds expire,
 and expiry is swept on read paths as well as explicitly — an expiry that only
 happens when a cron job runs is an expiry that does not happen. Serializable is
 expensive and correct here: two guests taking the last seat concurrently is

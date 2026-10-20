@@ -13,6 +13,14 @@ export default function globalSetup(): void {
     throw new Error('DATABASE_URL is not set. Copy .env.example to .env.')
   }
 
+  // Constraints first: the seed must be written against the same invariants
+  // the application runs under.
+  execFileSync(
+    'npx',
+    ['prisma', 'db', 'execute', '--file', 'prisma/constraints.sql', '--schema', 'prisma/schema.prisma'],
+    { stdio: 'inherit', env: process.env },
+  )
+
   execFileSync('npx', ['tsx', 'prisma/seed.ts'], {
     stdio: 'inherit',
     env: process.env,

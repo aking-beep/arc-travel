@@ -19,6 +19,8 @@ export interface ActivityFixture {
   minAbility: 'BEGINNER' | 'IMPROVER' | 'INTERMEDIATE' | 'ADVANCED' | 'EXPERT'
   maxAbility: 'BEGINNER' | 'IMPROVER' | 'INTERMEDIATE' | 'ADVANCED' | 'EXPERT'
   guideRequired: boolean
+  /** Whether ocean or weather conditions govern it. Omit to default to true. */
+  conditionsSensitive?: boolean
   maxSafeRisk: 'LOW' | 'MODERATE' | 'HIGH' | 'EXTREME'
   minAgeYears?: number
   durationMinutes: number
@@ -102,6 +104,7 @@ export const ACTIVITIES: ActivityFixture[] = [
   },
   {
     slug: 'sunrise-beach-yoga',
+    conditionsSensitive: false,
     name: 'Sunrise yoga',
     category: 'WELLNESS',
     placeSlug: 'la-rinconada',
@@ -118,6 +121,7 @@ export const ACTIVITIES: ActivityFixture[] = [
   },
   {
     slug: 'temazcal-ritual',
+    conditionsSensitive: false,
     name: 'Temazcal and massage ritual',
     category: 'WELLNESS',
     placeSlug: 'la-rinconada',
@@ -211,6 +215,7 @@ export const ACTIVITIES: ActivityFixture[] = [
   },
   {
     slug: 'coastal-cooking-class',
+    conditionsSensitive: false,
     name: 'Oaxacan coastal cooking class',
     category: 'DINING',
     placeSlug: 'mercado-benito-juarez',
@@ -229,6 +234,7 @@ export const ACTIVITIES: ActivityFixture[] = [
   },
   {
     slug: 'mezcal-adoquin-walk',
+    conditionsSensitive: false,
     name: 'Mezcal and Adoquín walk',
     category: 'CULTURE',
     placeSlug: 'centro-adoquin',
@@ -248,6 +254,7 @@ export const ACTIVITIES: ActivityFixture[] = [
   },
   {
     slug: 'airport-transfer',
+    conditionsSensitive: false,
     name: 'Airport transfer',
     category: 'TRANSPORT',
     placeSlug: 'aeropuerto-pxm',
@@ -264,6 +271,7 @@ export const ACTIVITIES: ActivityFixture[] = [
   },
   {
     slug: 'sunset-viewpoint-walk',
+    conditionsSensitive: false,
     name: 'Sunset viewpoint walk',
     category: 'CULTURE',
     placeSlug: 'mirador-cerro-del-tigre',

@@ -18,8 +18,18 @@ import { sweepExpiredHolds } from '@/modules/inventory/service'
  *
  * A partner sees exactly their own experiences, their own departures and the
  * bookings against them. They never see the hotel's other partners, its guests'
- * contact details, or what the hotel earns — only what they themselves are owed.
- * That boundary is enforced here rather than by what the UI happens to render.
+ * contact details, or the hotel's earnings across the catalog — only what they
+ * themselves are owed, plus the commission terms of their own agreement.
+ *
+ * That last part is deliberate and worth stating, because it is derivable
+ * either way: a partner who knows their own split and their own payable can
+ * compute the hotel's take on their own bookings. Showing the agreed
+ * percentages openly is better than pretending they are secret, and a partner
+ * who cannot see the terms they signed has a reason to distrust the numbers.
+ * What they still cannot see is any figure from a *different* partner's
+ * bookings, or the property's aggregate revenue.
+ *
+ * The boundary is enforced here rather than by what the UI happens to render.
  */
 
 /** Resolves which supplier account the signed-in partner is acting as. */

@@ -142,11 +142,15 @@ describe('collectCandidates', () => {
   })
 
   it('leaves a land activity unaffected by ocean conditions', async () => {
+    // Sensitivity is a property of the activity, not of the kind of place it
+    // happens at. A cooking class in a market is not governed by the swell;
+    // a surf lesson is, wherever it is held.
     const date = dateKeyDaysFromNow(5)
     tenant = await createTenant({
       capacity: 6,
       departureDate: date,
       placeKind: PlaceKind.MARKET,
+      conditionsSensitive: false,
       maxSafeRisk: ConditionsRisk.LOW,
       conditions: { risk: ConditionsRisk.EXTREME, minAbilityRequired: AbilityLevel.EXPERT },
     })
@@ -169,6 +173,43 @@ describe('collectCandidates', () => {
     })
 
     expect(byDate.get(date)?.[0]?.included).toBe(true)
+  })
+
+  it('gates a water activity even when its place is not water-like', async () => {
+    // Regression: sensitivity used to be inferred from PlaceKind, so an owner
+    // choosing "Zicatela" (the neighbourhood) instead of "Playa Zicatela" (the
+    // break) silently switched the conditions gate off for the heaviest wave
+    // in Mexico.
+    const date = dateKeyDaysFromNow(5)
+    tenant = await createTenant({
+      capacity: 6,
+      departureDate: date,
+      placeKind: PlaceKind.NEIGHBORHOOD,
+      conditionsSensitive: true,
+      maxSafeRisk: ConditionsRisk.MODERATE,
+      conditions: { risk: ConditionsRisk.EXTREME, minAbilityRequired: AbilityLevel.EXPERT },
+    })
+
+    const byDate = await collectCandidates({
+      propertyId: tenant.propertyId,
+      dates: [date],
+      guest: {
+        ability: AbilityLevel.BEGINNER,
+        interests: [],
+        pace: 'BALANCED',
+        partySize: 2,
+        budgetPerDayMinor: null,
+        mobilityNotes: null,
+        personalizationAllowed: true,
+      },
+      basePlaceId: tenant.placeId,
+      preferredTransport: [],
+      currency: 'MXN',
+    })
+
+    const candidate = byDate.get(date)?.[0]
+    expect(candidate?.included).toBe(false)
+    expect(candidate?.exclusions).toContain('conditions_risk_above_activity_limit')
   })
 
   it('never includes another property’s experiences', async () => {

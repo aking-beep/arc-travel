@@ -19,7 +19,7 @@
     "db:generate": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "setup": "prisma generate && prisma db push --accept-data-loss && npm run db:seed",
+    "setup": "prisma generate && prisma db push --accept-data-loss && npm run db:constraints && npm run db:seed",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:unit": "vitest run tests/unit",
@@ -27,7 +27,8 @@
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install chromium",
     "verify": "npm run typecheck && npm run lint && npm run test && npm run build",
-    "lint:fix": "eslint . --fix"
+    "lint:fix": "eslint . --fix",
+    "db:constraints": "node --input-type=module -e \"import{execFileSync}from\"node:child_process\";import\"dotenv/config\";execFileSync(process.platform===\"win32\"?\"npx.cmd\":\"npx\",[\"prisma\",\"db\",\"execute\",\"--file\",\"prisma/constraints.sql\",\"--schema\",\"prisma/schema.prisma\"],{stdio:\"inherit\"})\""
   },
   "dependencies": {
     "@prisma/client": "6.19.3",

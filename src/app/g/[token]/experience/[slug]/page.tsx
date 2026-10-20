@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Clock, MapPin, ShieldCheck, ShieldQuestion, Users } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -9,6 +10,7 @@ import { getLocale } from '@/lib/i18n/server'
 import { toLocalDateKey, toLocalTimeString } from '@/lib/dates'
 import { getGuestExperience, resolvePortalContext } from '@/modules/guest/portal'
 import { getConditions } from '@/modules/destination/conditions'
+import { evaluateSlotsForGuest } from '@/modules/destination/suitability'
 import { getGuestPreferences } from '@/modules/preferences/service'
 import { ItemActions } from '../../itinerary-controls'
 
@@ -27,9 +29,24 @@ export default async function ExperienceDetailPage({
   const preferences = await getGuestPreferences(context.guestId)
 
   const slotDates = [...new Set(experience.slots.map((s) => toLocalDateKey(s.startsAt)))]
-  const conditions = experience.placeId
-    ? await getConditions([experience.placeId], slotDates)
+  const conditionsPlaceId = experience.placeId ?? experience.activity.placeId
+  const conditions = conditionsPlaceId
+    ? await getConditions([conditionsPlaceId], slotDates)
     : new Map()
+
+  /**
+   * Suitability per departure, evaluated now.
+   *
+   * This page is a route to a booking that does not go through the itinerary,
+   * and it used to render an Add-to-basket button for every departure without
+   * consulting the gate at all — so a beginner could open the advanced-only
+   * Zicatela session and buy it. `addToCart` refuses server-side, but offering
+   * a button that will be refused is its own kind of dishonesty.
+   */
+  const suitability = await evaluateSlotsForGuest({
+    guestId: context.guestId,
+    slotIds: experience.slots.map((slot) => slot.id),
+  })
 
   const basePrice = experience.prices.find((p) => p.kind === 'BASE') ?? experience.prices[0]
   const groupPrice = experience.prices.find((p) => p.kind === 'GROUP')
@@ -188,24 +205,54 @@ export default async function ExperienceDetailPage({
           </p>
         ) : (
           [...byDate.entries()].slice(0, 7).map(([date, slots]) => {
-            const snapshot = experience.placeId ? conditions.get(`${experience.placeId}:${date}`) : null
+            const snapshot = conditionsPlaceId
+              ? conditions.get(`${conditionsPlaceId}:${date}`)
+              : null
             return (
               <div key={date} className="border-sand-200 rounded-xl border p-4">
                 <p className="text-sand-800 text-sm font-medium tabular-nums">{date}</p>
-                <ul className="mt-2 space-y-2">
-                  {slots.map((slot) => (
-                    <li key={slot.id} className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-sm tabular-nums">{toLocalTimeString(slot.startsAt)}</span>
-                      <ItemActions
-                        token={token}
-                        slotId={slot.id}
-                        quantity={partySize}
-                        remaining={Math.max(0, slot.capacity - slot.booked - slot.held)}
-                        startsAt={toLocalTimeString(slot.startsAt)}
-                        locale={locale}
-                      />
-                    </li>
-                  ))}
+                <ul className="mt-2 space-y-3">
+                  {slots.map((slot) => {
+                    const verdict = suitability.get(slot.id)
+                    const refused = verdict ? !verdict.allowed : true
+
+                    return (
+                      <li key={slot.id} className="space-y-1.5">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-sm tabular-nums">
+                            {toLocalTimeString(slot.startsAt)}
+                          </span>
+                          {refused ? (
+                            <Badge tone="neutral">Not bookable for you</Badge>
+                          ) : (
+                            <ItemActions
+                              token={token}
+                              slotId={slot.id}
+                              quantity={partySize}
+                              remaining={Math.max(0, slot.capacity - slot.booked - slot.held)}
+                              startsAt={toLocalTimeString(slot.startsAt)}
+                              locale={locale}
+                            />
+                          )}
+                        </div>
+                        {refused && verdict?.notes.length ? (
+                          <ul className="text-sand-600 space-y-0.5 text-xs">
+                            {verdict.notes.map((note) => (
+                              <li key={note}>· {note}</li>
+                            ))}
+                          </ul>
+                        ) : null}
+                        {refused && verdict?.guestAbility === null ? (
+                          <Link
+                            href={`/g/${token}/intake`}
+                            className="text-jade-800 inline-block text-xs underline underline-offset-4"
+                          >
+                            Tell us your experience level
+                          </Link>
+                        ) : null}
+                      </li>
+                    )
+                  })}
                 </ul>
                 {snapshot ? (
                   <ConditionsCard

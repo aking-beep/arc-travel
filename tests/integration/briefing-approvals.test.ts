@@ -414,7 +414,11 @@ describe('revenue analytics', () => {
     const item = await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.orderId } })
 
     const { cancelOrderItem } = await import('@/modules/commerce/checkout')
-    await cancelOrderItem({ orderItemId: item.id, reason: 'test' })
+    await cancelOrderItem({
+      orderItemId: item.id,
+      reason: 'test',
+      authority: { kind: 'guest', guestId: housed.guestId },
+    })
 
     const actor = await actorFor(housed.ownerUserId)
     const report = await getRevenueAnalytics(actor, housed.propertyId)
@@ -437,7 +441,11 @@ describe('revenue analytics', () => {
       where: { orderId: refundedOrder.orderId },
     })
     const { cancelOrderItem } = await import('@/modules/commerce/checkout')
-    await cancelOrderItem({ orderItemId: toRefund.id, reason: 'regression test' })
+    await cancelOrderItem({
+      orderItemId: toRefund.id,
+      reason: 'regression test',
+      authority: { kind: 'guest', guestId: housed.guestId },
+    })
 
     const actor = await actorFor(housed.ownerUserId)
     const report = await getRevenueAnalytics(actor, housed.propertyId)

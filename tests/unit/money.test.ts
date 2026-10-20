@@ -93,8 +93,24 @@ describe('money', () => {
     })
   })
 
-  it('formats pesos without decimals', () => {
-    expect(formatMoney(95_000, 'MXN')).toMatch(/950/)
-    expect(formatMoney(95_000, 'MXN')).not.toMatch(/\.00/)
+  describe('formatMoney', () => {
+    it('omits decimals on a whole amount', () => {
+      expect(formatMoney(95_000, 'MXN')).toMatch(/950/)
+      expect(formatMoney(95_000, 'MXN')).not.toMatch(/[.,]00/)
+    })
+
+    it('shows centavos when there are any, so a column adds up', () => {
+      // 15% of 95 000 centavos is 14 250 — 142.50 pesos. Rounding it to 143
+      // meant an owner summing the commission column on screen got a total
+      // that disagreed with the exact stored arithmetic.
+      const commission = applyBps(money(95_000), 1500)
+      expect(commission.amountMinor).toBe(14_250)
+      expect(formatMoney(commission.amountMinor, 'MXN')).toMatch(/142[.,]50/)
+    })
+
+    it('rounds nothing away', () => {
+      expect(formatMoney(1, 'MXN')).toMatch(/0[.,]01/)
+      expect(formatMoney(99, 'MXN')).toMatch(/0[.,]99/)
+    })
   })
 })

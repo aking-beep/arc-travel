@@ -79,6 +79,12 @@ export interface TenantOptions {
   maxSafeRisk?: ConditionsRisk
   activityMinAbility?: AbilityLevel
   guideRequired?: boolean
+  /**
+   * Whether ocean or weather conditions govern the activity. Defaults to true,
+   * matching the schema: a new activity is gated until someone decides
+   * otherwise.
+   */
+  conditionsSensitive?: boolean
   /** Writes a ConditionReport for the departure date. */
   conditions?: { risk: ConditionsRisk; minAbilityRequired: AbilityLevel; observedAt?: Date } | null
   placeKind?: PlaceKind
@@ -196,6 +202,7 @@ export async function createTenant(options: TenantOptions = {}): Promise<TenantF
       minAbility: options.activityMinAbility ?? AbilityLevel.BEGINNER,
       maxAbility: AbilityLevel.EXPERT,
       guideRequired: options.guideRequired ?? false,
+      conditionsSensitive: options.conditionsSensitive ?? true,
       maxSafeRisk: options.maxSafeRisk ?? ConditionsRisk.MODERATE,
       typicalDurationMinutes: 120,
       earliestStart: '06:00',

@@ -92,7 +92,13 @@ export async function sweepExpiredHolds(options: { slotIds?: string[]; now?: Dat
 
   if (expired.length === 0) return 0
 
+  // Counts what was actually swept, not what was found: a concurrent checkout
+  // may consume a hold between the query and the transaction, and reporting it
+  // as expired would misstate the one number a caller trusts.
+  let swept = 0
+
   await inSerializableTransaction(async (tx) => {
+    swept = 0
     for (const hold of expired) {
       // Re-check inside the transaction: a concurrent checkout may have
       // consumed this hold since the query above.
@@ -111,10 +117,11 @@ export async function sweepExpiredHolds(options: { slotIds?: string[]; now?: Dat
         data: { held: { decrement: hold.quantity } },
       })
       await reconcileSlotStatus(tx, hold.slotId)
+      swept += 1
     }
   })
 
-  return expired.length
+  return swept
 }
 
 /** Keeps `status` consistent with the counters. OPEN/FULL only; never reopens a CLOSED slot. */
@@ -356,7 +363,15 @@ export async function consumeHold(
   await reconcileSlotStatus(tx, hold.slotId)
 }
 
-/** Returns capacity to a slot when a confirmed booking is cancelled. */
+/**
+ * Returns capacity to a slot when a confirmed booking is cancelled.
+ *
+ * Throws rather than clamping when asked to return more than is booked. The
+ * previous version silently took `Math.min(quantity, booked)`, which kept the
+ * counter non-negative while hiding the fact that something had cancelled the
+ * same booking twice — and an under-counted `booked` is worse than a loud
+ * failure, because `placeHold` then sells places that do not exist.
+ */
 export async function returnCapacity(
   tx: Client,
   options: { slotId: string; quantity: number },
@@ -367,11 +382,17 @@ export async function returnCapacity(
   })
   if (!slot) return
 
+  if (options.quantity > slot.booked) {
+    throw conflict(
+      `Cannot return ${options.quantity} places to a departure with only ${slot.booked} booked. ` +
+        'Something has cancelled this booking twice.',
+      { slotId: options.slotId, booked: slot.booked, requested: options.quantity },
+    )
+  }
+
   await tx.availabilitySlot.update({
     where: { id: options.slotId },
-    // Never below zero: a double-cancellation is a bug, not a reason to
-    // corrupt the counter.
-    data: { booked: { decrement: Math.min(options.quantity, slot.booked) } },
+    data: { booked: { decrement: options.quantity } },
   })
   await reconcileSlotStatus(tx, options.slotId)
 }

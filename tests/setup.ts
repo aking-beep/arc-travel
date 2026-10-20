@@ -14,6 +14,8 @@ if (testUrl) {
 
 // A deterministic secret keeps pseudonymised analytics keys stable across runs.
 process.env.AUTH_SECRET = 'arc-stay-test-secret-deterministic-0000000000'
+// Separate from AUTH_SECRET, as in production.
+process.env.ANALYTICS_SALT = 'arc-stay-test-analytics-salt-deterministic-000'
 process.env.ARC_DATA_MODE = 'demo'
 process.env.AI_PROVIDER = 'mock'
 // NODE_ENV is set to 'test' by Vitest itself and is read-only in Next's types.

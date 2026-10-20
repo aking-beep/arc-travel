@@ -279,3 +279,161 @@ is cheap; an unintended charge against a hotel's guest is not.
 
 **Cost.** Switching to a live provider requires an explicit mode change, which
 is the intent.
+
+
+---
+
+## ADR-017 — A missing reading is judged on the same scale as a present one
+
+**Decision.** When no `ConditionReport` exists, the gate derives the ability
+the day demands from the place's baseline risk via `MIN_ABILITY_BY_RISK`, and
+runs both ability rules — the guest's stated level and the unknown-level
+withhold — exactly as it would with a reading.
+
+**Why.** An independent review found that both rules were guarded on the
+*presence* of a snapshot, so a date with no reading skipped them entirely. For
+an activity whose `maxSafeRisk` is `EXTREME` the risk comparison can never fire
+either, which left the gate with nothing to check: a guest who answered "I'd
+rather not say" was offered the advanced-only Zicatela session on any date we
+had no data for, while a guest who answered `BEGINNER` was correctly refused.
+Answering honestly made a guest *less* safe than declining — the exact
+inversion ADR-004 exists to prevent.
+
+**Consequences.** `MIN_ABILITY_BY_RISK` is now exported from
+`modules/destination/conditions` as the single source of that mapping; the seed
+generates `minAbilityRequired` from the same table. A conditions-sensitive
+candidate with no place at all is refused outright (`hasLocation: false`),
+because an activity we cannot locate cannot be judged.
+
+**Cost.** More candidates withheld on dates outside the forecast window. The
+right direction to err, and it argues for a live conditions feed before a real
+pilot rather than for relaxing the rule.
+
+---
+
+## ADR-018 — Conditions sensitivity belongs to the activity, not the place
+
+**Decision.** `Activity.conditionsSensitive` is a stored boolean, defaulting to
+true. The itinerary pipeline and the single-slot check both read it; neither
+infers sensitivity from `PlaceKind`.
+
+**Why.** Inferring it from the place meant an owner could switch the safety gate
+off with one wrong dropdown choice. The seed contains two confusable places —
+`playa-zicatela` (a `SURF_BREAK`, baseline `EXTREME`) and `zicatela-barrio` (a
+`NEIGHBORHOOD`, baseline `LOW`, displayed simply as "Zicatela") — in a single
+flat list. Choosing the latter turned a surf product at the heaviest beach break
+in Mexico into a land activity: no risk check, no day-ability check, no
+unknown-ability withhold, and no conditions card anywhere. An experience with no
+place at all had never been gated in its life.
+
+A surf lesson depends on the water wherever it is held. That is a property of the
+activity, and defaulting to true means a new activity is gated until someone
+decides otherwise.
+
+**Consequences.** The conditions place resolves as the experience's own, then the
+activity's, then refusal. `PlaceKind` no longer carries safety meaning, so adding
+a kind cannot silently create an ungated one.
+
+---
+
+## ADR-019 — Suitability is enforced at the point of commitment
+
+**Decision.** `modules/destination/suitability` evaluates one departure for one
+guest, and `addToCart` refuses on it. The experience page renders from the same
+function, so a departure the gate refuses shows the reason instead of a button.
+
+**Why.** The itinerary was not the only route to a booking. A guest could open
+an experience page directly, or post a slot id to the basket action, and neither
+consulted the gate — so a beginner could put the advanced-only Zicatela session
+in their basket and complete a simulated checkout. Gating only the
+*recommendation* path left the *commitment* path open, which is the wrong way
+round.
+
+**Consequences.** The check runs at request time rather than being read from the
+persisted itinerary, so a conditions report entered overnight changes the answer
+before a guest can book on it. The refusal names the reason: "unavailable" to a
+guest looking at a listed departure is worse than no answer.
+
+**Cost.** One extra query per rendered departure. Worth it.
+
+---
+
+## ADR-020 — Database CHECK constraints behind the application invariants
+
+**Decision.** `prisma/constraints.sql` holds CHECK constraints for the
+invariants the application already enforces: `booked + held <= capacity`,
+non-negative counters, a confirmed order's split accounting for its total, a
+refund never exceeding its line, commission shares inside 100%, and a
+conditions reading whose maximum is not below its minimum. Applied by
+`npm run setup`, by the test harness and by CI.
+
+**Why.** Every guarantee lived in application code, which means a bug in that
+code corrupted data silently. A review found two such bugs — a concurrent
+cancellation double-decrementing `booked`, and a checkout committing a stale
+line quantity — and in both cases the counters ended up wrong with nothing
+firing. One of them left `booked` *below* the real number of bookings, so
+`placeHold` would have sold seats that were already gone, on a six-seat boat.
+
+A CHECK turns that class of defect into a loud failure at the moment it
+happens rather than a wrong number an owner discovers weeks later.
+
+**Consequences.** `returnCapacity` now throws when asked to return more places
+than are booked, rather than clamping with `Math.min` — the clamp kept the
+counter non-negative while hiding the double-cancellation that caused it.
+
+**Cost.** Constraints are not expressible in the Prisma schema, so they are a
+separate file three harnesses must remember to apply. Encoded in `npm run
+setup` and in CI so forgetting is hard.
+
+---
+
+## ADR-021 — An invitation is not a write to a stranger's profile
+
+**Decision.** `invitePartner` creates the contact user or refuses. An email that
+already belongs to an ARC account is rejected with an explanation.
+
+**Why.** It used to `upsert`, so an owner supplying any existing user's email
+rewrote that person's name and phone — a cross-tenant write to a row they have
+no claim on — and grafted a `SUPPLIER` membership onto their account, exposing
+this organization's partner portal to them at their next sign-in. The caller
+gained no access to the victim's data, so it was not privilege escalation, but
+it was an unauthorised write and a PII overwrite.
+
+**Cost.** Inviting an operator who already has an account needs an acceptance
+flow, which the POC does not have. Refusing with a clear message is the honest
+interim.
+
+---
+
+## ADR-022 — Platform administration is a user flag, not a membership role
+
+**Decision.** `assertPlatformAdmin` gates on `User.isPlatformAdmin` alone.
+
+**Why.** It also accepted a membership with `role: ADMIN`, and `ADMIN` is a
+legal membership role scoped to one organization. Everything behind that gate is
+deliberately cross-tenant — every supplier and property in the database, and the
+only route to a `VERIFIED` status — so a single row would have turned one
+hotel's user into a platform operator. Organization-level administration is what
+`OWNER` is for.
+
+**Cost.** None. Nothing created such a membership; the hole was latent.
+
+---
+
+## ADR-023 — The portal token is time-boxed as well as scoped
+
+**Decision.** `resolvePortalContext` refuses a token more than
+`PORTAL_GRACE_DAYS` (7) past check-out, in addition to refusing cancelled and
+no-show stays.
+
+**Why.** The token is the guest's entire credential. Without an expiry, a
+`CHECKED_OUT` stay kept a live one forever — so a QR code photographed at a
+front desk months ago still opened a basket and could still check out and
+cancel. "Scoped to one stay" has to mean scoped in time as well as in subject.
+
+**Consequences.** The demo switcher no longer lists guests or renders portal
+tokens, and both it and passwordless sign-in now refuse outside demo mode. The
+page was public, so `curl /sign-in | grep '/g/'` harvested the credential of
+every guest in the database.
+
+**Cost.** A guest wanting a receipt after a week has to ask the hotel. Correct.
