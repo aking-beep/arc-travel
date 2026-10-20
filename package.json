@@ -2,7 +2,7 @@
   "name": "arc-stay",
   "version": "0.1.0",
   "private": true,
-  "description": "ARC Stay — AI-powered destination commerce for independent boutique hotels. POC: Puerto Escondido, Oaxaca.",
+  "description": "ARC Stay \u2014 AI-powered destination commerce for independent boutique hotels. POC: Puerto Escondido, Oaxaca.",
   "type": "module",
   "engines": {
     "node": ">=20.11"
@@ -28,7 +28,9 @@
     "test:e2e:install": "playwright install chromium",
     "verify": "npm run typecheck && npm run lint && npm run test && npm run build",
     "lint:fix": "eslint . --fix",
-    "db:constraints": "node --input-type=module -e \"import{execFileSync}from\"node:child_process\";import\"dotenv/config\";execFileSync(process.platform===\"win32\"?\"npx.cmd\":\"npx\",[\"prisma\",\"db\",\"execute\",\"--file\",\"prisma/constraints.sql\",\"--schema\",\"prisma/schema.prisma\"],{stdio:\"inherit\"})\""
+    "db:constraints": "prisma db execute --file prisma/constraints.sql --schema prisma/schema.prisma",
+    "db:ensure-seed": "tsx prisma/ensure-seed.ts",
+    "vercel-build": "prisma generate && prisma db push --accept-data-loss && npm run db:constraints && npm run db:ensure-seed && next build"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",

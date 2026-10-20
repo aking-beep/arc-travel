@@ -120,6 +120,7 @@ The seed prints the full list each time it runs.
 | `npm run setup` | Generate client, push schema, apply constraints, seed |
 | `npm run db:constraints` | Apply `prisma/constraints.sql` (CHECK constraints Prisma cannot express) |
 | `npm run db:seed` | Reseed (truncates first; idempotent and deterministic) |
+| `npm run db:ensure-seed` | Seed only if the database is empty — for a hosted demo, where a redeploy must not wipe data |
 | `npm run db:studio` | Prisma Studio |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint |
@@ -128,6 +129,7 @@ The seed prints the full list each time it runs.
 | `npm run test:e2e` | Playwright (builds and serves, reseeds the demo database first) |
 | `npm run build` | Production build |
 | `npm run verify` | typecheck → lint → test → build |
+| `npm run vercel-build` | Hosted build: schema push → constraints → seed-if-empty → build. See [`docs/deployment.md`](docs/deployment.md) |
 
 ## Testing
 
@@ -194,6 +196,9 @@ docs/
   they carry
 - [`docs/decisions.md`](docs/decisions.md) — decision records, including the
   ones worth arguing with
+- [`docs/deployment.md`](docs/deployment.md) — putting the POC on a URL: the
+  build steps, the six environment variables, the connection-pooling constraint
+  and the shared-passphrase front door
 - [`docs/roadmap.md`](docs/roadmap.md) — POC → pilot → MVP
 - [`docs/pilot-plan.md`](docs/pilot-plan.md) — the narrow Puerto Escondido pilot
   and the metrics that gate it
