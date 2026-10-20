@@ -1,0 +1,142 @@
+@import 'tailwindcss';
+
+/*
+ * ARC Stay design tokens.
+ *
+ * The palette is warm and editorial rather than SaaS-neutral: deep jade as the
+ * ink, warm sand as paper, terracotta as the single accent. The intent is that
+ * a guest opening the portal on a phone feels like they are holding something
+ * the hotel made, not a dashboard someone pointed at a hotel.
+ *
+ * Owner and partner surfaces use the same tokens at lower saturation so one
+ * design language runs through all four surfaces.
+ */
+@theme {
+  --color-sand-50: oklch(0.985 0.006 83);
+  --color-sand-100: oklch(0.967 0.012 83);
+  --color-sand-200: oklch(0.932 0.019 80);
+  --color-sand-300: oklch(0.878 0.026 78);
+  --color-sand-400: oklch(0.783 0.032 76);
+  --color-sand-500: oklch(0.672 0.034 74);
+  --color-sand-600: oklch(0.548 0.031 72);
+  --color-sand-700: oklch(0.432 0.027 70);
+  --color-sand-800: oklch(0.322 0.022 68);
+  --color-sand-900: oklch(0.232 0.018 66);
+  --color-sand-950: oklch(0.158 0.014 64);
+
+  --color-jade-50: oklch(0.971 0.016 168);
+  --color-jade-100: oklch(0.938 0.031 168);
+  --color-jade-200: oklch(0.878 0.054 167);
+  --color-jade-300: oklch(0.795 0.078 167);
+  --color-jade-400: oklch(0.698 0.089 166);
+  --color-jade-500: oklch(0.598 0.085 165);
+  --color-jade-600: oklch(0.496 0.072 165);
+  --color-jade-700: oklch(0.405 0.058 165);
+  --color-jade-800: oklch(0.322 0.044 165);
+  --color-jade-900: oklch(0.252 0.033 166);
+  --color-jade-950: oklch(0.172 0.024 166);
+
+  --color-terracotta-50: oklch(0.972 0.015 48);
+  --color-terracotta-100: oklch(0.938 0.032 46);
+  --color-terracotta-200: oklch(0.882 0.058 44);
+  --color-terracotta-300: oklch(0.805 0.088 42);
+  --color-terracotta-400: oklch(0.724 0.117 41);
+  --color-terracotta-500: oklch(0.654 0.132 40);
+  --color-terracotta-600: oklch(0.572 0.126 38);
+  --color-terracotta-700: oklch(0.472 0.104 36);
+  --color-terracotta-800: oklch(0.378 0.082 34);
+  --color-terracotta-900: oklch(0.298 0.062 33);
+
+  --font-display: 'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --font-serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, ui-serif, serif;
+
+  --radius-card: 1rem;
+
+  --shadow-lift: 0 1px 2px oklch(0.232 0.018 66 / 0.06), 0 8px 24px -12px oklch(0.232 0.018 66 / 0.18);
+  --shadow-lift-lg: 0 2px 4px oklch(0.232 0.018 66 / 0.05), 0 20px 48px -20px oklch(0.232 0.018 66 / 0.24);
+}
+
+:root {
+  --surface: var(--color-sand-50);
+  --surface-raised: #ffffff;
+  --surface-sunken: var(--color-sand-100);
+  --ink: var(--color-sand-950);
+  --ink-muted: var(--color-sand-700);
+  --ink-subtle: var(--color-sand-600);
+  --line: var(--color-sand-200);
+  --brand: var(--color-jade-800);
+  --brand-ink: var(--color-jade-50);
+  --accent: var(--color-terracotta-600);
+}
+
+@layer base {
+  * {
+    border-color: var(--line);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--surface);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-feature-settings: 'kern' 1, 'liga' 1;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  /* Visible focus on every interactive element — this is a product people use
+     one-handed on a phone in bright sun, so focus must never be subtle. */
+  :focus-visible {
+    outline: 2px solid var(--color-jade-600);
+    outline-offset: 2px;
+    border-radius: 0.25rem;
+  }
+
+  /* Respect the system setting rather than animating regardless. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  .text-balance { text-wrap: balance; }
+
+  /* Editorial display type used for the one big statement on a page. */
+  .font-display { font-family: var(--font-display); }
+  .font-serif-display { font-family: var(--font-serif); }
+
+  /* Hairline rule that reads as paper rather than as a UI divider. */
+  .rule {
+    border-top: 1px solid var(--line);
+  }
+
+  .card-surface {
+    background-color: var(--surface-raised);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+  }
+
+  /* Safe-area padding so the guest portal's sticky bars clear the home bar. */
+  .pb-safe { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+  .pt-safe { padding-top: max(0.5rem, env(safe-area-inset-top)); }
+}
