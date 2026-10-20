@@ -208,8 +208,31 @@ an owner who disagrees with a number can be shown where it came from.
 
 ## Integrations
 
-Every integration has an interface and a deterministic offline default, chosen
-by an environment variable:
+`src/modules/integrations/types.ts` declares an interface per outsourceable
+concern; `defaults.ts` holds the offline implementation of each and resolves
+them from the environment. The boundary is a type the domain depends on rather
+than an environment variable read at a call site, so adding Stripe is one new
+class plus one case in `getIntegrations()`, not a search for every place a
+payment might happen.
+
+Two rules bind every implementation:
+
+1. **Never fabricate.** A provider that cannot answer returns
+   `{ ok: false, reason }`. The fixture maps provider fails rather than
+   estimating a straight line — in a town where the road bends inland around a
+   headland, a fabricated travel time produces an itinerary that does not work.
+   The fixture conditions provider omits a date it has no reading for rather
+   than interpolating, because the safety gate treats a missing reading
+   conservatively and that is only sound if "missing" genuinely means missing.
+2. **Carry provenance.** Anything describing the real world returns with its
+   source and observation time.
+
+The messaging provider *throws*. A no-op that reports success is how a product
+ends up believing it messaged someone, and the kill switch lives at the provider
+as well as in the approval workflow — so a future caller that forgets to check
+`ARC_ENABLE_OUTBOUND_MESSAGING` still cannot reach a guest.
+
+Current wiring:
 
 | Concern | Default | Optional |
 | --- | --- | --- |

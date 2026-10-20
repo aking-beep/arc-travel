@@ -170,6 +170,7 @@ src/
     analytics/           Event capture and revenue reporting
     admin/               Verification and data-quality checks
     ai/                  Provider interface, mock, injection defenses
+    integrations/        Payments, maps, conditions, messaging, analytics boundaries
 tests/
   unit/ integration/ e2e/
 docs/
