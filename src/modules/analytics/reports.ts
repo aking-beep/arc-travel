@@ -69,7 +69,8 @@ export async function getRevenueAnalytics(
     select: { currency: true },
   })
 
-  const [orders, liveItems, refunded, totalStays, staysWithOrders, ledgerGroups] = await Promise.all([
+  const [orders, liveItems, refunded, totalStays, staysWithOrders, ledgerGroups, allOrders] =
+    await Promise.all([
     prisma.order.aggregate({
       where: { propertyId, status: { in: EARNED_STATUSES } },
       _sum: {
@@ -117,6 +118,12 @@ export async function getRevenueAnalytics(
       where: { organizationId, order: { propertyId } },
       _sum: { amountMinor: true },
       _count: true,
+    }),
+    // Every order, in any status: the ledger holds entries for cancelled and
+    // refunded orders too, so the reconciliation has to span all of them.
+    prisma.order.aggregate({
+      where: { propertyId },
+      _sum: { totalMinor: true, refundedMinor: true },
     }),
   ])
 
@@ -168,10 +175,13 @@ export async function getRevenueAnalytics(
   }))
   const ledgerBalanceMinor = ledger.reduce((n, row) => n + row.amountMinor, 0)
 
-  // The ledger's non-refund accounts must sum to the gross on earned orders.
-  const ledgerEarnedMinor = ledger
-    .filter((row) => row.account !== 'refund')
-    .reduce((n, row) => n + row.amountMinor, 0)
+  /**
+   * The ledger must balance to the net position of every order: what was sold,
+   * less what was refunded. A mismatch means an order's entries were written
+   * incorrectly, which is a bug rather than a rounding artefact.
+   */
+  const netOrderPositionMinor =
+    (allOrders._sum.totalMinor ?? 0) - (allOrders._sum.refundedMinor ?? 0)
 
   const perStayMinor = totalStays === 0 ? 0 : Math.round(hotelMinor / totalStays)
   const averageOrderMinor = orders._count === 0 ? 0 : Math.round(grossMinor / orders._count)
@@ -210,9 +220,7 @@ export async function getRevenueAnalytics(
       .slice(0, 10),
     ledger,
     ledgerBalanceMinor,
-    // Compared against gross on earned orders, which is what the non-refund
-    // accounts were written from.
-    ledgerReconciles: ledgerEarnedMinor === grossMinor + refundedMinor,
+    ledgerReconciles: ledgerBalanceMinor === netOrderPositionMinor,
   }
 }
 

@@ -900,15 +900,19 @@ async function seedHistoricalOrders(
       })
       itemCount += 1
 
-      if (!refunded) {
-        await prisma.ledgerEntry.createMany({
-          data: [
-            { organizationId, orderId: order.id, orderItemId: item.id, account: 'hotel_earnings', amountMinor: split.hotel.amountMinor, currency: CURRENCY, memo: 'Simulated hotel share', createdAt: confirmedAt },
-            { organizationId, orderId: order.id, orderItemId: item.id, account: 'platform_commission', amountMinor: split.platform.amountMinor, currency: CURRENCY, memo: 'Simulated ARC commission', createdAt: confirmedAt },
-            { organizationId, orderId: order.id, orderItemId: item.id, account: 'supplier_payable', amountMinor: split.supplier.amountMinor, currency: CURRENCY, memo: 'Simulated supplier payable', createdAt: confirmedAt },
-          ],
-        })
-      } else {
+      // Written exactly as a real checkout does, including for refunded
+      // orders: the three earnings entries are what the sale produced, and the
+      // refund is a later, negative entry against them. Writing only the refund
+      // would leave the ledger short by the order total.
+      await prisma.ledgerEntry.createMany({
+        data: [
+          { organizationId, orderId: order.id, orderItemId: item.id, account: 'hotel_earnings', amountMinor: split.hotel.amountMinor, currency: CURRENCY, memo: 'Simulated hotel share', createdAt: confirmedAt },
+          { organizationId, orderId: order.id, orderItemId: item.id, account: 'platform_commission', amountMinor: split.platform.amountMinor, currency: CURRENCY, memo: 'Simulated ARC commission', createdAt: confirmedAt },
+          { organizationId, orderId: order.id, orderItemId: item.id, account: 'supplier_payable', amountMinor: split.supplier.amountMinor, currency: CURRENCY, memo: 'Simulated supplier payable', createdAt: confirmedAt },
+        ],
+      })
+
+      if (refunded) {
         await prisma.ledgerEntry.create({
           data: { organizationId, orderId: order.id, orderItemId: item.id, account: 'refund', amountMinor: -line.lineTotalMinor, currency: CURRENCY, memo: 'Simulated refund', createdAt: confirmedAt },
         })

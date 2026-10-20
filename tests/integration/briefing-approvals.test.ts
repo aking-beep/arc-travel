@@ -423,6 +423,38 @@ describe('revenue analytics', () => {
     expect(report.totals.refundedMinor).toBe(190_000)
   })
 
+  it('keeps the ledger balanced against every order, refunded ones included', async () => {
+    // Regression: the ledger was reconciled against gross on *earned* orders,
+    // so a fully refunded order — which has entries but is not an earned
+    // status — could never balance. It must reconcile to the net position of
+    // every order: what was sold, less what was refunded.
+    const housed = await createTenant({ capacity: 6, stayStatus: StayStatus.IN_HOUSE })
+
+    const kept = await buyOne(housed, 1)
+    const refundedOrder = await buyOne(housed, 1)
+
+    const toRefund = await prisma.orderItem.findFirstOrThrow({
+      where: { orderId: refundedOrder.orderId },
+    })
+    const { cancelOrderItem } = await import('@/modules/commerce/checkout')
+    await cancelOrderItem({ orderItemId: toRefund.id, reason: 'regression test' })
+
+    const actor = await actorFor(housed.ownerUserId)
+    const report = await getRevenueAnalytics(actor, housed.propertyId)
+
+    const orders = await prisma.order.aggregate({
+      where: { propertyId: housed.propertyId },
+      _sum: { totalMinor: true, refundedMinor: true },
+    })
+    const netPosition = (orders._sum.totalMinor ?? 0) - (orders._sum.refundedMinor ?? 0)
+
+    expect(report.ledgerBalanceMinor).toBe(netPosition)
+    expect(report.ledgerReconciles).toBe(true)
+    // The surviving order still contributes.
+    expect(report.totals.hotelMinor).toBeGreaterThan(0)
+    expect(kept.orderId).not.toBe(refundedOrder.orderId)
+  })
+
   it('reports zero rather than dividing by zero with no stays', async () => {
     await prisma.stay.deleteMany({ where: { propertyId: tenant.propertyId } })
 
