@@ -64,7 +64,8 @@ const BANDS: Record<string, Band> = {
   },
 }
 
-const SUITABLE_UP_TO = {
+/** Lowest ability each risk band demands of anyone entering the water. */
+const MIN_ABILITY_REQUIRED = {
   LOW: 'BEGINNER',
   MODERATE: 'IMPROVER',
   HIGH: 'ADVANCED',
@@ -86,7 +87,7 @@ export interface GeneratedCondition {
   highTideLocal: string
   lowTideLocal: string
   risk: 'LOW' | 'MODERATE' | 'HIGH' | 'EXTREME'
-  suitableUpTo: 'BEGINNER' | 'IMPROVER' | 'INTERMEDIATE' | 'ADVANCED' | 'EXPERT'
+  minAbilityRequired: 'BEGINNER' | 'IMPROVER' | 'INTERMEDIATE' | 'ADVANCED' | 'EXPERT'
   guideRecommended: boolean
 }
 
@@ -133,7 +134,7 @@ export function generateConditions(
         highTideLocal: formatMinutes(highTideMinutes),
         lowTideLocal: formatMinutes(lowTideMinutes),
         risk,
-        suitableUpTo: SUITABLE_UP_TO[risk],
+        minAbilityRequired: MIN_ABILITY_REQUIRED[risk],
         // A guide is recommended for anything above a calm day, and always for
         // the two breaks that can hurt people.
         guideRecommended: risk !== 'LOW' || placeSlug.includes('zicatela'),

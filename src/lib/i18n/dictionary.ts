@@ -110,7 +110,7 @@ export const dictionary = {
     'conditions.tides': 'Tides',
     'conditions.currents': 'Currents',
     'conditions.risk': 'Risk band',
-    'conditions.suitableUpTo': 'Plausible up to',
+    'conditions.minAbility': 'Minimum ability today',
     'conditions.guideRecommended': 'Guide recommended',
     'conditions.observedAt': 'Reading taken',
     'conditions.stale': 'This reading is out of date — treat it as history, not guidance.',
@@ -271,7 +271,7 @@ export const dictionary = {
     'conditions.tides': 'Mareas',
     'conditions.currents': 'Corrientes',
     'conditions.risk': 'Nivel de riesgo',
-    'conditions.suitableUpTo': 'Plausible hasta',
+    'conditions.minAbility': 'Nivel mínimo hoy',
     'conditions.guideRecommended': 'Se recomienda guía',
     'conditions.observedAt': 'Lectura tomada',
     'conditions.stale':

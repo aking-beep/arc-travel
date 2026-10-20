@@ -11,6 +11,7 @@ export {
   CartStatus,
   CommissionBasis,
   ConditionsRisk,
+  ConsentType,
   EntityStatus,
   ExperienceCategory,
   ExperienceStatus,

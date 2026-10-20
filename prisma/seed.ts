@@ -159,7 +159,7 @@ async function seedDestination(rng: Rng) {
         highTideLocal: c.highTideLocal,
         lowTideLocal: c.lowTideLocal,
         risk: c.risk as ConditionsRisk,
-        suitableUpTo: c.suitableUpTo as AbilityLevel,
+        minAbilityRequired: c.minAbilityRequired as AbilityLevel,
         guideRecommended: c.guideRecommended,
         provenance: Provenance.SEED_FIXTURE,
         source: 'ARC demo fixture',

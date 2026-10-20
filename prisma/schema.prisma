@@ -1027,8 +1027,10 @@ model ConditionReport {
   highTideLocal  String?
   lowTideLocal   String?
   risk           ConditionsRisk
-  /// Highest ability for which the day is plausibly suitable, per the fixture.
-  suitableUpTo   AbilityLevel
+  /// Lowest ability the day demands: a guest must be at least this able for a
+  /// water activity at this place on this date. LOW conditions admit
+  /// BEGINNER; EXTREME conditions admit only EXPERT.
+  minAbilityRequired AbilityLevel
   guideRecommended Boolean @default(true)
   provenance     Provenance @default(SEED_FIXTURE)
   source         String   @default("ARC demo fixture")
