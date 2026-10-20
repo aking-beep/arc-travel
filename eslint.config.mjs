@@ -1,19 +1,26 @@
-import { dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { FlatCompat } from '@eslint/eslintrc'
+import coreWebVitals from 'eslint-config-next/core-web-vitals'
+import nextTypescript from 'eslint-config-next/typescript'
 
-const compat = new FlatCompat({ baseDirectory: dirname(fileURLToPath(import.meta.url)) })
-
-export default [
-  ...compat.extends('next/core-web-vitals', 'next/typescript'),
+/**
+ * Flat config. `eslint-config-next` 16 ships native flat configs, so no
+ * compatibility shim is needed.
+ *
+ * The project-specific rules below encode two conventions worth enforcing:
+ * `any` is banned outright (the domain is typed end to end, and an escape
+ * hatch in a money or inventory path is exactly where a bug would hide), and
+ * deep relative imports are banned in favour of the `@/` alias.
+ */
+const config = [
+  ...coreWebVitals,
+  ...nextTypescript,
   {
     ignores: [
       '.next/**',
       'node_modules/**',
-      'src/generated/**',
+      'coverage/**',
       'playwright-report/**',
       'test-results/**',
-      'coverage/**',
+      'next-env.d.ts',
     ],
   },
   {
@@ -36,4 +43,11 @@ export default [
       ],
     },
   },
+  {
+    // The seed and test harness legitimately reach outside src/ and log to stdout.
+    files: ['prisma/**/*.ts', 'tests/**/*.ts'],
+    rules: { 'no-restricted-imports': 'off' },
+  },
 ]
+
+export default config

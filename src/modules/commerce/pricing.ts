@@ -1,4 +1,4 @@
-import { add, money, multiply, type Money } from '@/lib/money'
+import { add, money, multiply } from '@/lib/money'
 import { invalid } from '@/lib/errors'
 import { PriceKind } from '@/lib/prisma-types'
 
