@@ -1,0 +1,161 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Both databases live in the same Postgres service. The test database is
+  # separate from the demo one so the two suites cannot interfere.
+  DATABASE_URL: postgresql://arc:arc@localhost:5432/arc_stay?schema=public
+  TEST_DATABASE_URL: postgresql://arc:arc@localhost:5432/arc_stay_test?schema=public
+  AUTH_SECRET: ci-only-secret-not-used-anywhere-else-000000
+  ARC_DATA_MODE: demo
+  AI_PROVIDER: mock
+  PAYMENTS_PROVIDER: simulated
+  NEXT_TELEMETRY_DISABLED: '1'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Static checks need no database, so they fail fast and in parallel with the
+  # suites that do.
+  # ---------------------------------------------------------------------------
+  static:
+    name: Typecheck and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The generated client is a typecheck dependency.
+      - run: npx prisma generate
+
+      - name: Validate the Prisma schema
+        run: npx prisma validate
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+  # ---------------------------------------------------------------------------
+  # Unit and integration. Integration runs against a real PostgreSQL schema,
+  # because serialization failures, unique constraints and transactional
+  # rollback do not exist in a mock.
+  # ---------------------------------------------------------------------------
+  test:
+    name: Unit and integration tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: arc
+          POSTGRES_PASSWORD: arc
+          POSTGRES_DB: arc_stay
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U arc"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx prisma generate
+
+      - name: Create the integration database
+        run: |
+          PGPASSWORD=arc createdb -h localhost -U arc arc_stay_test
+        env:
+          PGPASSWORD: arc
+
+      # Vitest's global setup pushes the schema to TEST_DATABASE_URL itself,
+      # so only the demo database needs preparing here.
+      - name: Push schema to the demo database
+        run: npx prisma db push --skip-generate --accept-data-loss
+
+      - name: Unit and integration tests
+        run: npm test
+
+  # ---------------------------------------------------------------------------
+  # Build and the acceptance suite. Separate from `test` so a failing E2E run
+  # is immediately distinguishable from a failing unit test.
+  # ---------------------------------------------------------------------------
+  e2e:
+    name: Build and acceptance tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: arc
+          POSTGRES_PASSWORD: arc
+          POSTGRES_DB: arc_stay
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U arc"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx prisma generate
+
+      - name: Push schema and seed the demo data
+        run: |
+          npx prisma db push --skip-generate --accept-data-loss
+          npm run db:seed
+
+      - name: Production build
+        run: npm run build
+
+      - name: Install the Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Acceptance tests
+        run: npm run test:e2e
+        env:
+          CI: 'true'
+
+      - name: Upload the Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
