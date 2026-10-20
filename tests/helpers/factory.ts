@@ -84,6 +84,8 @@ export interface TenantOptions {
   placeKind?: PlaceKind
   grantPersonalization?: boolean
   cancellationPolicyHours?: number
+  /** Revenue and attach-rate rules only count CHECKED_OUT and IN_HOUSE stays. */
+  stayStatus?: StayStatus
 }
 
 function dateKeyDaysFromNow(days: number): DateKey {
@@ -338,7 +340,7 @@ export async function createTenant(options: TenantOptions = {}): Promise<TenantF
       checkIn: new Date(`${dateKeyDaysFromNow(8)}T00:00:00.000Z`),
       checkOut: new Date(`${dateKeyDaysFromNow(14)}T00:00:00.000Z`),
       adults: 2,
-      status: StayStatus.BOOKED,
+      status: options.stayStatus ?? StayStatus.BOOKED,
       portalToken: unique('token').replace(/[^a-z0-9-]/g, ''),
       currency: 'MXN',
     },
