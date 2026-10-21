@@ -17,7 +17,11 @@ import {
   type ProviderResult,
   type RefundResult,
   type RouteEstimate,
+  type TravelAdviceDocument,
+  type TravelAdviceProvider,
 } from './types'
+import { GovUkTravelAdviceProvider, govukPublicUrl } from './govuk'
+import govukMexico from './fixtures/govuk-travel-advice-mexico.json'
 
 /**
  * The offline defaults.
@@ -257,6 +261,38 @@ export class InternalAnalyticsSink implements AnalyticsSink {
   }
 }
 
+// === Travel advice ==========================================================
+
+/**
+ * Reads a GOV.UK-shaped payload from the repository.
+ *
+ * Offline and deterministic: `retrievedAt` is the fixture's own authored date,
+ * not the clock, and every document is marked `isFixture` so the guest card
+ * labels it as demo text. A slug with no fixture fails rather than borrowing
+ * another country's advice.
+ */
+export class FixtureTravelAdviceProvider implements TravelAdviceProvider {
+  readonly name = 'fixture'
+  readonly isLive = false
+
+  private static readonly FIXTURES: Record<string, { _fixture: { authoredAt: string } }> = {
+    mexico: govukMexico,
+  }
+
+  async getAdvice(input: { slug: string }): Promise<ProviderResult<TravelAdviceDocument>> {
+    const payload = FixtureTravelAdviceProvider.FIXTURES[input.slug]
+    if (!payload) return providerFailed(this.name, 'no_fixture_for_slug')
+    return providerOk(this.name, {
+      slug: input.slug,
+      sourceUrl: govukPublicUrl(input.slug),
+      // A copy, so a caller cannot mutate the shared fixture.
+      payload: structuredClone(payload),
+      retrievedAt: new Date(payload._fixture.authoredAt),
+      isFixture: true,
+    })
+  }
+}
+
 // === Resolution =============================================================
 
 /**
@@ -272,6 +308,7 @@ let cached: {
   conditions: ConditionsProvider
   messaging: MessagingProvider
   analytics: AnalyticsSink
+  travelAdvice: TravelAdviceProvider
 } | null = null
 
 export function getIntegrations() {
@@ -289,6 +326,11 @@ export function getIntegrations() {
     conditions: new FixtureConditionsProvider(),
     messaging: new NoopMessagingProvider(),
     analytics: new InternalAnalyticsSink(),
+    // `getEnv()` refuses `govuk` in demo mode, so the demo never leaves the box.
+    travelAdvice:
+      env.TRAVEL_ADVICE_PROVIDER === 'govuk'
+        ? new GovUkTravelAdviceProvider()
+        : new FixtureTravelAdviceProvider(),
   }
   return cached
 }

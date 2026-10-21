@@ -46,6 +46,9 @@ const envSchema = z.object({
 
   MESSAGING_PROVIDER: z.enum(['noop', 'twilio', 'resend']).default('noop'),
 
+  /** Culture-context travel advice. `fixture` is offline; `govuk` reads the live Content API. */
+  TRAVEL_ADVICE_PROVIDER: z.enum(['fixture', 'govuk']).default('fixture'),
+
   ANALYTICS_PROVIDER: z.enum(['internal', 'posthog']).default('internal'),
   POSTHOG_KEY: z.string().optional(),
   SENTRY_DSN: z.string().optional(),
@@ -93,6 +96,14 @@ export function getEnv(): Env {
     throw new Error(
       'PAYMENTS_PROVIDER must be "simulated" while ARC_DATA_MODE=demo. ' +
         'Set ARC_DATA_MODE=pilot (with explicit approval) before enabling a live provider.',
+    )
+  }
+
+  // The demo is offline by design. A live advice source would also put real,
+  // changing government text in front of a guest next to synthetic data.
+  if (env.ARC_DATA_MODE === 'demo' && env.TRAVEL_ADVICE_PROVIDER !== 'fixture') {
+    throw new Error(
+      'TRAVEL_ADVICE_PROVIDER must be "fixture" while ARC_DATA_MODE=demo.',
     )
   }
 

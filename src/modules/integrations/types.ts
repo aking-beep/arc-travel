@@ -202,3 +202,39 @@ export interface AnalyticsSink {
     occurredAt: Date
   }): Promise<ProviderResult<null>>
 }
+
+// === Travel advice ==========================================================
+
+/**
+ * One government travel-advice document, as the source published it.
+ *
+ * `payload` is the source's own structure and is untrusted: it is parsed and
+ * HTML-stripped by `modules/culture-context`, never rendered.
+ */
+export interface TravelAdviceDocument {
+  /** The source's slug for the country, e.g. GOV.UK's `mexico`. */
+  slug: string
+  /** The canonical human-readable page a guest can be sent to. */
+  sourceUrl: string
+  payload: unknown
+  /** When it was fetched, or for the fixture, when the fixture was written. */
+  retrievedAt: Date
+  /** True when this is the repository fixture rather than the live source. */
+  isFixture: boolean
+}
+
+export interface TravelAdviceProvider {
+  readonly name: string
+  /** True when this provider reaches the real source over the network. */
+  readonly isLive: boolean
+
+  /**
+   * Fetches the advice for one country.
+   *
+   * A provider that cannot answer returns `{ ok: false, reason }`. It never
+   * falls back to remembered or invented text: the brief turns a failure into
+   * "we could not reach this source", and that is only honest if a failure
+   * really is one.
+   */
+  getAdvice(input: { slug: string }): Promise<ProviderResult<TravelAdviceDocument>>
+}

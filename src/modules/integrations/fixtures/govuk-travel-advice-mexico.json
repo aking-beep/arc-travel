@@ -1,0 +1,38 @@
+{
+  "_fixture": {
+    "isRecording": false,
+    "authoredAt": "2026-10-21T00:00:00.000Z",
+    "note": "Demo fixture in the shape of the GOV.UK Content API response for /api/content/foreign-travel-advice/mexico. It is NOT a recording: the environment that wrote it could not reach www.gov.uk. The text is a short, conservative summary written for the demo. Replace with a recorded payload before a pilot, and always send guests to the live page."
+  },
+  "base_path": "/foreign-travel-advice/mexico",
+  "document_type": "travel_advice",
+  "schema_name": "travel_advice",
+  "locale": "en",
+  "title": "Mexico travel advice",
+  "description": "FCDO travel advice for Mexico.",
+  "details": {
+    "country": { "name": "Mexico", "slug": "mexico" },
+    "parts": [
+      {
+        "slug": "entry-requirements",
+        "title": "Entry requirements",
+        "body": "<p>Every country decides who can enter or leave through its borders. The Mexican authorities set and enforce entry rules. Check with the Mexican embassy or consulate before you travel.</p><h3 id=\"passport-validity\">Passport validity</h3><p>Your passport must be valid for the whole of your stay. Immigration officers decide how long you may stay, and may ask to see a return or onward ticket, where you will be staying and that you have enough money for your visit.</p><h3 id=\"visa-requirements\">Visa requirements</h3><p>Whether you need a visa depends on your nationality and the purpose of your trip. Keep any immigration record you are given when you arrive: you may be asked for it during your stay and when you leave.</p>"
+      },
+      {
+        "slug": "safety-and-security",
+        "title": "Safety and security",
+        "body": "<p>Crime levels vary widely across Mexico. Stay aware of your surroundings, use registered taxis or ride-hailing apps, and follow the advice of local authorities.</p><h3 id=\"swimming\">Swimming and water safety</h3><p>Strong currents and rip tides occur on many Pacific beaches, including in Oaxaca. Follow warning flags and the advice of lifeguards, and do not swim where there are no lifeguards or after drinking alcohol.</p><h3 id=\"hurricanes\">Hurricanes</h3><p>The hurricane season normally runs from June to November. Monitor local news and follow the instructions of the authorities.</p>"
+      },
+      {
+        "slug": "local-laws-and-customs",
+        "title": "Local laws and customs",
+        "body": "<p>Carry a copy of your passport and immigration record with you; police may ask for identification.</p><h3 id=\"drugs\">Illegal drugs</h3><p>Possession of even small amounts of illegal drugs can lead to arrest and imprisonment.</p><h3 id=\"vapes\">E-cigarettes and vapes</h3><p>Mexico restricts the import and sale of e-cigarettes and vaping devices, and they can be confiscated on arrival.</p><h3 id=\"alcohol\">Alcohol</h3><p>Some towns restrict drinking alcohol in public places. Check local rules before drinking on the street or the beach.</p><h3 id=\"driving\">Driving</h3><p>You need a valid driving licence to drive. Drink-driving laws are enforced, and an accident can lead to detention while responsibility is decided.</p><h3 id=\"medicines\">Medicines</h3><p>Some prescription medicines available elsewhere are controlled in Mexico. Carry a copy of your prescription.</p>"
+      },
+      {
+        "slug": "health",
+        "title": "Health",
+        "body": "<p>See a health professional at least eight weeks before your trip for vaccine and health advice.</p>"
+      }
+    ]
+  }
+}
