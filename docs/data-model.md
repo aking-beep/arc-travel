@@ -1,6 +1,6 @@
 # Data model
 
-31 models in `prisma/schema.prisma`. This document covers the conventions, the
+33 models in `prisma/schema.prisma`. This document covers the conventions, the
 invariants, and the decisions worth knowing about. The schema itself is
 commented and is the authority.
 
@@ -204,6 +204,31 @@ its audit record either both happen or neither does.
 `AnalyticsEvent.subjectKey` is always a pseudonym. An email or phone number must
 never reach this table.
 
+`AuditEvent.organizationId` is null only for platform-scoped events that belong
+to no tenant: a culture-source check or change review (ADR-024). A tenant's
+action always names its organization.
+
+### Culture context
+
+```
+CultureSourceSnapshot ──┬── CultureSourceChange (previous)
+                        └── CultureSourceChange (current) ── User (reviewer)
+```
+
+Platform-scoped, so neither carries an organization. `CultureSourceSnapshot` is
+one check of an advisory source: append-only, failed checks included
+(`ok = false`, `failureReason`). A successful one stores the normalised section
+text it hashed (`contentJson`, never raw source HTML) and `contentHash` from
+`snapshotHash`. `sourceClass` is the evidence-class axis, separate from
+`Provenance`.
+
+`CultureSourceChange` opens as `PENDING` when a successful check's hash differs
+from the previous successful one. `changedSections` names the brief categories
+whose text moved. Detection is not materiality. Only a `VERIFIED` change, with a
+reviewer and a note, can produce guest-facing "this advice was updated" copy.
+Rules are not stored. They are derived from the source when a brief is built
+(see `docs/culture-context.md`).
+
 ## Invariants
 
 Checked in code, in tests, and surfaced on `/admin/health`:
@@ -218,6 +243,9 @@ Checked in code, in tests, and surfaced on `/admin/health`:
 | A guide-required activity always includes a guide | Catalog service, the conditions gate, and a health check |
 | No cross-tenant read or write | `modules/tenancy`, with a dedicated integration suite |
 | Nothing becomes VERIFIED without a recorded admin action | Only `modules/admin` sets it; a note is required to approve |
+| A successful culture snapshot has a hash; a failed one has a reason | `culture_snapshot_ok_has_hash` CHECK |
+| A VERIFIED source change names its reviewer | `culture_change_verified_has_reviewer` CHECK; `reviewSourceChange` requires a note |
+| A government advisory is never a LAW record | `ruleRecordSchema`; unit-tested |
 | A consequential action has an Approval row | `decideProposal` is the only executor |
 
 ## Deliberate omissions

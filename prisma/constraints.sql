@@ -85,3 +85,18 @@ ALTER TABLE "Stay" ADD CONSTRAINT "stay_dates_ordered"
 ALTER TABLE "ConditionReport" DROP CONSTRAINT IF EXISTS "conditions_wave_range";
 ALTER TABLE "ConditionReport" ADD CONSTRAINT "conditions_wave_range"
   CHECK ("waveHeightMaxM" >= "waveHeightMinM" AND "waveHeightMinM" >= 0);
+
+-- A culture-source check either has content and its hash, or a failure reason.
+-- A successful check with no hash would let change detection compare nothing.
+ALTER TABLE "CultureSourceSnapshot" DROP CONSTRAINT IF EXISTS "culture_snapshot_ok_has_hash";
+ALTER TABLE "CultureSourceSnapshot" ADD CONSTRAINT "culture_snapshot_ok_has_hash"
+  CHECK (
+    ("ok" AND "contentHash" IS NOT NULL AND "failureReason" IS NULL)
+    OR (NOT "ok" AND "contentHash" IS NULL AND "failureReason" IS NOT NULL)
+  );
+
+-- A verified change names who verified it and when. "Verified" without a
+-- reviewer is the claim this product refuses to make.
+ALTER TABLE "CultureSourceChange" DROP CONSTRAINT IF EXISTS "culture_change_verified_has_reviewer";
+ALTER TABLE "CultureSourceChange" ADD CONSTRAINT "culture_change_verified_has_reviewer"
+  CHECK ("verification" <> 'VERIFIED' OR ("reviewedById" IS NOT NULL AND "reviewedAt" IS NOT NULL));

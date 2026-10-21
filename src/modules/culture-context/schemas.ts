@@ -73,9 +73,11 @@ const tag = z.string().trim().toLowerCase().min(1).max(40)
  * Who is travelling, as far as applicability needs to know.
  *
  * On the guest surface this is derived from the portal context, never from a
- * new form. `nationality` is nullable because `Guest.countryCode` is optional:
- * an unknown nationality is recorded as unknown, never defaulted, and rules
- * that depend on it are shown as uncertain rather than dropped.
+ * new form. `nationality` is nullable because ARC does not ask for it:
+ * `Guest.countryCode` says where a guest is from, which is not necessarily the
+ * passport they travel on. An unknown nationality is recorded as unknown, never
+ * defaulted, and rules that depend on it are shown as uncertain rather than
+ * dropped.
  */
 export const travelerProfileSchema = z.object({
   nationality: iso2.nullable(),
@@ -235,3 +237,20 @@ export const briefSchema = z.object({
   sources: z.array(sourceStatusSchema),
 })
 export type Brief = z.infer<typeof briefSchema>
+
+/** An admin's decision on a detected source change. */
+export const reviewSourceChangeSchema = z.object({
+  changeId: z.uuid(),
+  decision: z.enum([
+    VerificationStatus.VERIFIED,
+    VerificationStatus.REJECTED,
+    VerificationStatus.PENDING,
+  ]),
+  note: z.string().trim().max(400).default(''),
+})
+/** Untrusted input: the service parses it, so the decision arrives as a string. */
+export interface ReviewSourceChangeInput {
+  changeId: string
+  decision: string
+  note?: string
+}

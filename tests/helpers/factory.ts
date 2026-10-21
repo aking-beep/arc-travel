@@ -31,6 +31,7 @@ import {
  * at one thing.
  */
 export const TABLES_IN_DELETE_ORDER = [
+  'CultureSourceChange', 'CultureSourceSnapshot',
   'AnalyticsEvent', 'AuditEvent', 'Approval', 'Proposal', 'Recommendation', 'AgentRun',
   'ItineraryItem', 'Itinerary', 'LedgerEntry', 'OrderItem', 'Order', 'CartItem', 'Cart',
   'InventoryHold', 'AvailabilitySlot', 'Price', 'Amenity', 'Experience', 'Activity',

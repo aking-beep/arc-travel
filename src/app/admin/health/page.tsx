@@ -7,6 +7,8 @@ import { getEventSummary } from '@/modules/analytics/reports'
 import { getEnv } from '@/lib/env'
 import { prisma } from '@/lib/db'
 import { listAuditTrail } from '@/modules/workflows/audit'
+import { getSourceHealth } from '@/modules/culture-context/snapshots'
+import { RefreshTravelAdviceForm } from '../forms'
 
 export const metadata = { title: 'System health' }
 
@@ -33,10 +35,11 @@ export default async function HealthPage() {
     select: { id: true, name: true },
   })
 
-  const [checks, events, audit] = await Promise.all([
+  const [checks, events, audit, sources] = await Promise.all([
     runQualityChecks(actor),
     organization ? getEventSummary(organization.id) : Promise.resolve(null),
     organization ? listAuditTrail(organization.id, { limit: 25 }) : Promise.resolve([]),
+    getSourceHealth(actor),
   ])
 
   const failures = checks.filter((c) => c.level === 'fail')
@@ -85,6 +88,81 @@ export default async function HealthPage() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Travel-advice sources</CardTitle>
+          <p className="text-sand-600 text-sm">
+            Every check is recorded, failed ones too. A guest brief built while a source is down
+            says so instead of showing anything.
+          </p>
+        </CardHeader>
+        <CardContent>
+          {sources.length === 0 ? (
+            <p className="text-sand-600 text-sm">No sources configured.</p>
+          ) : (
+            <ul className="divide-sand-200 divide-y">
+              {sources.map((source) => (
+                <li key={source.sourceKey} className="space-y-2 py-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-mono text-sm">{source.sourceKey}</p>
+                      <p className="text-sand-500 text-xs">
+                        {source.authority} · {source.destination}
+                      </p>
+                    </div>
+                    <Badge
+                      tone={
+                        source.lastCheckOk === null
+                          ? 'neutral'
+                          : source.lastCheckOk
+                            ? 'success'
+                            : 'danger'
+                      }
+                    >
+                      {source.lastCheckOk === null
+                        ? 'never checked'
+                        : source.lastCheckOk
+                          ? 'last check ok'
+                          : `failing: ${source.lastFailureReason}`}
+                    </Badge>
+                  </div>
+                  <dl className="text-sand-700 grid gap-2 text-xs sm:grid-cols-4">
+                    <div>
+                      <dt className="text-sand-500">Content retrieved</dt>
+                      <dd className="tabular-nums">
+                        {source.lastSuccessRetrievedAt
+                          ? source.lastSuccessRetrievedAt.toISOString().slice(0, 16).replace('T', ' ')
+                          : '—'}
+                        {source.lastSuccessIsFixture ? ' (fixture)' : ''}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-sand-500">Last checked</dt>
+                      <dd className="tabular-nums">
+                        {source.lastCheckedAt
+                          ? source.lastCheckedAt.toISOString().slice(0, 16).replace('T', ' ')
+                          : '—'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-sand-500">Failures since last success</dt>
+                      <dd className="tabular-nums">
+                        {source.failuresSinceSuccess} of {source.checks} checks
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-sand-500">Changes awaiting review</dt>
+                      <dd className="tabular-nums">{source.pendingChanges}</dd>
+                    </div>
+                  </dl>
+                  <RefreshTravelAdviceForm destination={source.destination} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="grid gap-5 lg:grid-cols-2">
         <Card>
           <CardHeader>
@@ -99,6 +177,7 @@ export default async function HealthPage() {
                 { label: 'Maps', value: env.MAPS_PROVIDER },
                 { label: 'Conditions', value: env.CONDITIONS_PROVIDER },
                 { label: 'Messaging', value: env.MESSAGING_PROVIDER },
+                { label: 'Travel advice', value: env.TRAVEL_ADVICE_PROVIDER },
                 {
                   label: 'Outbound guest messaging',
                   value: env.ARC_ENABLE_OUTBOUND_MESSAGING ? 'ENABLED' : 'disabled',
