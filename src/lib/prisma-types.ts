@@ -31,6 +31,7 @@ export {
   RecommendationSurface,
   Role,
   SlotStatus,
+  SourceClass,
   StayStatus,
   TransportMode,
   VerificationStatus,

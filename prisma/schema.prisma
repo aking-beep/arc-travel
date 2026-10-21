@@ -63,6 +63,18 @@ enum Provenance {
   SEED_FIXTURE
 }
 
+/// What kind of authority backs a culture-context statement. A different axis
+/// from `Provenance` (who supplied a fact) and never collapsed into it. Ordered
+/// strongest first for a legal claim. See docs/culture-context.md.
+enum SourceClass {
+  PRIMARY_LAW
+  REGULATOR_GUIDANCE
+  GOVERNMENT_ADVISORY
+  INTERGOVERNMENTAL_ALERT
+  REFERENCE_DATA
+  COMMUNITY_CONTEXT
+}
+
 enum PlaceKind {
   BEACH
   SURF_BREAK
