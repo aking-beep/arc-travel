@@ -437,3 +437,55 @@ page was public, so `curl /sign-in | grep '/g/'` harvested the credential of
 every guest in the database.
 
 **Cost.** A guest wanting a receipt after a week has to ask the hotel. Correct.
+
+---
+
+## ADR-024 — Culture Context is a module, not a sidecar
+
+**Decision.** The standalone culture-context product (a Python FastAPI service,
+plus TS types) is ported to TypeScript as `src/modules/culture-context`, inside
+this deployable. It is not run as a sidecar service. Its doctrine lives in
+[`culture-context.md`](culture-context.md).
+
+**Why.** The real logic was about 200 lines of Python. Running it as a service
+would break ADR-001 (one deployable) and add a Python host next to Vercel, a
+second CI and a second test runner. Worse, the parts that are hard to build
+(the admin verification queue, the AI boundary, i18n, the integration
+interface) already exist here, and a sidecar would have had to reach them over
+HTTP. Python earns its place only if ingestion turns into heavy scraping or
+PDF and gazette parsing. If it does, that becomes a worker that writes
+snapshots into Postgres, never a service in the request path.
+
+The module lives at `src/modules/culture-context/` rather than the
+`modules/culture-context` the merge plan named, because every module here is
+under `src/modules/` and the layering rule in `CLAUDE.md` is written against
+that path.
+
+**Consequences.**
+
+- `SourceClass` is a new enum *alongside* `Provenance`, never folded into
+  `PUBLIC_SOURCE`. Provenance is who supplied a fact; source class is what kind
+  of authority backs it.
+- GOV.UK sits behind a `TravelAdviceProvider` in `modules/integrations`, with a
+  `fixture` default and the live provider refused in demo mode.
+- Rules are derived from the latest source text when a brief is built. They are
+  not stored as rows. Snapshots and their changes are stored
+  (`CultureSourceSnapshot`, `CultureSourceChange`), because change detection
+  needs history and review needs a row to decide on.
+- A hash change goes to `/admin` as a `PENDING` change, reusing
+  `VerificationStatus`, `assertPlatformAdmin`, a mandatory note and
+  `recordAudit`. Source changes belong to no organization, so
+  `AuditEvent.organizationId` is now nullable: a platform-scoped event has no
+  tenant, and inventing one would put a stranger's review into a hotel's audit
+  trail.
+- Three defects in the original are fixed, not carried over, and each has a
+  regression test. `<script>` and `<style>` text leaked into the plain text.
+  GOV.UK keyword-tagged the whole laws section with activities, so a traveller
+  who declared none of them lost the section entirely. The adapter now emits
+  ranking *topics*, and only a record's explicit `activityTags` can exclude it.
+  And the API and the ingestion CLI hashed the same payload differently and
+  hashed volatile metadata. Now there is one canonical hash over content fields.
+
+**Cost.** One more module and a provider interface to keep honest. The fixture
+is not a recording yet, because this environment cannot reach `www.gov.uk`, and
+it is labelled as demo text until a recording replaces it.

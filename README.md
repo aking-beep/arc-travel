@@ -199,6 +199,9 @@ docs/
 - [`docs/deployment.md`](docs/deployment.md) — putting the POC on a URL: the
   build steps, the six environment variables, the connection-pooling constraint
   and the shared-passphrase front door
+- [`docs/culture-context.md`](docs/culture-context.md) — the source doctrine
+  behind the guest's country brief: evidence classes, advisory never law,
+  change review
 - [`docs/roadmap.md`](docs/roadmap.md) — POC → pilot → MVP
 - [`docs/pilot-plan.md`](docs/pilot-plan.md) — the narrow Puerto Escondido pilot
   and the metrics that gate it

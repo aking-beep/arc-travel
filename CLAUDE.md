@@ -46,6 +46,10 @@ them relaxed, that is a conversation, not a refactor.
    `ARC_ENABLE_OUTBOUND_MESSAGING` is false.
 7. **Demo mode is a guarantee.** While `ARC_DATA_MODE=demo`, a live payment
    provider is a startup error.
+8. **An advisory is never rendered as law.** A `LAW` culture rule needs a
+   primary-law or regulator source *and* an admin verification; a government
+   advisory stays `ADVISORY` and is labelled as one. A source change is a review
+   item, not a publication. See `docs/culture-context.md` and ADR-024.
 
 ## Conventions
 
