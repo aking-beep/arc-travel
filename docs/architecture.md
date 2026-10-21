@@ -19,6 +19,7 @@ One modular monolith, one deployable web application.
 │  auth  hotels  catalog  suppliers  guest  preferences       │
 │  destination  itinerary  inventory  commerce                │
 │  operator  workflows  analytics  admin  ai                  │
+│  culture-context                                            │
 └───────────────────────────┬─────────────────────────────────┘
                             │
 ┌───────────────────────────▼─────────────────────────────────┐

@@ -2,12 +2,14 @@ import { Building2, Info, Waves } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ConditionsCard } from '@/components/guest/conditions-card'
+import { CultureCard } from '@/components/guest/culture-card'
 import { createTranslator } from '@/lib/i18n'
 import { getLocale } from '@/lib/i18n/server'
 import { addDays, dateRange, toDateKey } from '@/lib/dates'
 import { prisma } from '@/lib/db'
 import { resolvePortalContext } from '@/modules/guest/portal'
 import { getConditionsForDestination } from '@/modules/destination/conditions'
+import { getGuestCultureBrief } from '@/modules/culture-context/service'
 
 export const metadata = { title: 'Local guide' }
 
@@ -28,7 +30,7 @@ export default async function GuidePage({ params }: { params: Promise<{ token: s
   const today = toDateKey(new Date())
   const window = dateRange(today, addDays(today, 2))
 
-  const [places, oceanPlaces] = await Promise.all([
+  const [places, oceanPlaces, culture] = await Promise.all([
     prisma.place.findMany({
       where: { destination: 'puerto-escondido' },
       orderBy: [{ kind: 'asc' }, { name: 'asc' }],
@@ -48,6 +50,7 @@ export default async function GuidePage({ params }: { params: Promise<{ token: s
       },
     }),
     getConditionsForDestination('puerto-escondido', window),
+    getGuestCultureBrief(context),
   ])
 
   const byKind = new Map<string, typeof places>()
@@ -122,6 +125,8 @@ export default async function GuidePage({ params }: { params: Promise<{ token: s
           })}
         </div>
       </section>
+
+      <CultureCard result={culture} locale={locale} />
 
       {[...byKind.entries()].map(([kind, group]) => (
         <section key={kind} className="space-y-3">
