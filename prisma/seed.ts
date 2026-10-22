@@ -49,6 +49,9 @@ import { createRng, seededReference, seededToken, type Rng } from './seed/rng'
 import { addDays, dateRange, fromDateKey, localInstant, toDateKey, type DateKey } from '../src/lib/dates'
 import { money } from '../src/lib/money'
 import { resolveCommission, splitEarnings, type CommissionRuleInput } from '../src/modules/commerce/commission'
+import { checkTravelAdviceSource } from '../src/modules/culture-context/snapshots'
+import { FixtureTravelAdviceProvider } from '../src/modules/integrations/defaults'
+import { prisma as appPrisma } from '../src/lib/db'
 
 const prisma = new PrismaClient()
 
@@ -70,6 +73,7 @@ async function truncateAll(): Promise<void> {
   // Ordered child-to-parent. `TRUNCATE ... CASCADE` in one statement is faster
   // and avoids any ordering mistake surviving a schema change.
   const tables = [
+    'CultureSourceChange', 'CultureSourceSnapshot',
     'AnalyticsEvent', 'AuditEvent', 'Approval', 'Proposal', 'Recommendation', 'AgentRun',
     'ItineraryItem', 'Itinerary', 'LedgerEntry', 'OrderItem', 'Order', 'CartItem', 'Cart',
     'InventoryHold', 'AvailabilitySlot', 'Price', 'Amenity', 'Experience', 'Activity',
@@ -1016,6 +1020,14 @@ async function main(): Promise<void> {
   console.log('▸ Destination graph (places, travel, conditions, activities)…')
   const { placeIdBySlug, activityIdBySlug } = await seedDestination(rng)
 
+  // A baseline only. It is a snapshot, not a verification: no change exists
+  // until a later check's hash differs, and none is ever seeded as VERIFIED.
+  console.log('▸ Travel-advice baseline snapshot (fixture)…')
+  await checkTravelAdviceSource({
+    destination: 'puerto-escondido',
+    provider: new FixtureTravelAdviceProvider(),
+  })
+
   console.log('▸ Organization, property, staff, rooms…')
   const { organization, property, roomTypeIds } = await seedTenant(placeIdBySlug)
 
@@ -1091,4 +1103,5 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect()
+    await appPrisma.$disconnect()
   })

@@ -32,7 +32,11 @@ export function actorKindOf(actor: ActorContext | null, organizationId?: string)
 }
 
 export interface AuditInput {
-  organizationId: string
+  /**
+   * The tenant the action belongs to. `null` only for platform-scoped actions
+   * with no tenant (a culture-source review); never a placeholder organization.
+   */
+  organizationId: string | null
   action: string
   entityType: string
   entityId?: string | null
@@ -50,7 +54,8 @@ export async function recordAudit(input: AuditInput, client: Client = prisma): P
     data: {
       organizationId: input.organizationId,
       actorUserId: input.actor?.userId ?? null,
-      actorKind: input.actorKind ?? actorKindOf(input.actor ?? null, input.organizationId),
+      actorKind:
+        input.actorKind ?? actorKindOf(input.actor ?? null, input.organizationId ?? undefined),
       action: input.action,
       entityType: input.entityType,
       entityId: input.entityId ?? null,

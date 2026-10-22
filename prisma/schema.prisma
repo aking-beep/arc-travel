@@ -63,6 +63,18 @@ enum Provenance {
   SEED_FIXTURE
 }
 
+/// What kind of authority backs a culture-context statement. A different axis
+/// from `Provenance` (who supplied a fact) and never collapsed into it. Ordered
+/// strongest first for a legal claim. See docs/culture-context.md.
+enum SourceClass {
+  PRIMARY_LAW
+  REGULATOR_GUIDANCE
+  GOVERNMENT_ADVISORY
+  INTERGOVERNMENTAL_ALERT
+  REFERENCE_DATA
+  COMMUNITY_CONTEXT
+}
+
 enum PlaceKind {
   BEACH
   SURF_BREAK
@@ -349,6 +361,7 @@ model User {
   auditEvents AuditEvent[]
   agentRuns   AgentRun[]
   supplierContacts Supplier[]
+  cultureChangeReviews CultureSourceChange[]
 }
 
 /// Binds a user to an organization with a role. The sole source of authority.
@@ -1281,7 +1294,9 @@ model Approval {
 /// Append-only record of every consequential action. Never updated or deleted.
 model AuditEvent {
   id             String   @id @default(uuid())
-  organizationId String
+  /// Null only for platform-scoped events that belong to no tenant, such as a
+  /// culture-source change review (ADR-024). Never null for a tenant's action.
+  organizationId String?
   actorUserId    String?
   /// "system" | "owner" | "staff" | "supplier" | "guest" | "admin" | "agent"
   actorKind      String   @default("system")
@@ -1293,8 +1308,8 @@ model AuditEvent {
   ipHash         String?
   createdAt      DateTime @default(now())
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  actor        User?        @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actor        User?         @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, createdAt])
   @@index([entityType, entityId])
@@ -1318,4 +1333,69 @@ model AnalyticsEvent {
 
   @@index([organizationId, name, occurredAt])
   @@index([propertyId, occurredAt])
+}
+
+// ---------------------------------------------------------------------------
+// Culture context (ADR-024, docs/culture-context.md)
+// ---------------------------------------------------------------------------
+
+/// One check of an external advisory source. Append-only: history is never
+/// overwritten, and a failed check is recorded too so freshness and failure
+/// counts are real. Platform-scoped, so it carries no organization.
+model CultureSourceSnapshot {
+  id            String      @id @default(uuid())
+  /// e.g. "govuk:mexico".
+  sourceKey     String
+  authority     String
+  sourceClass   SourceClass
+  /// ISO 3166-1 alpha-2.
+  jurisdiction  String
+  sourceUrl     String
+  /// Which implementation answered: "fixture" or "govuk".
+  provider      String
+  isFixture     Boolean
+  ok            Boolean
+  /// Machine-readable, set when `ok` is false.
+  failureReason String?
+  /// `snapshotHash` over the normalised content. Set exactly when `ok`.
+  contentHash   String?
+  /// The normalised section text that was hashed. Never raw source HTML.
+  contentJson   Json?
+  retrievedAt   DateTime
+  createdAt     DateTime    @default(now())
+
+  changesFrom CultureSourceChange[] @relation("ChangePrevious")
+  changeTo    CultureSourceChange?  @relation("ChangeCurrent")
+
+  @@index([sourceKey, createdAt])
+  @@index([sourceKey, ok, createdAt])
+}
+
+/// A detected hash change, queued for human review on /admin. Detection is not
+/// proof the meaning changed, so nothing derived from a change reaches a guest
+/// until `verification` is VERIFIED with a named reviewer and a note.
+model CultureSourceChange {
+  id                 String             @id @default(uuid())
+  sourceKey          String
+  previousSnapshotId String
+  currentSnapshotId  String             @unique
+  previousHash       String
+  currentHash        String
+  /// Brief categories whose text differs. Detection, not materiality.
+  changedSections    String[]           @default([])
+  verification       VerificationStatus @default(PENDING)
+  reviewedById       String?
+  reviewedAt         DateTime?
+  reviewNote         String?
+  detectedAt         DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  previous   CultureSourceSnapshot @relation("ChangePrevious", fields: [previousSnapshotId], references: [id], onDelete: Restrict)
+  current    CultureSourceSnapshot @relation("ChangeCurrent", fields: [currentSnapshotId], references: [id], onDelete: Restrict)
+  // Restrict, not SetNull: a VERIFIED change must keep naming who verified it
+  // (constraints.sql), so deleting that user is refused rather than half-done.
+  reviewedBy User?                 @relation(fields: [reviewedById], references: [id], onDelete: Restrict)
+
+  @@index([verification, detectedAt])
+  @@index([sourceKey, verification, reviewedAt])
 }

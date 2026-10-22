@@ -4,7 +4,12 @@ import { useActionState } from 'react'
 import { Textarea } from '@/components/ui/field'
 import { FormFeedback, SubmitButton } from '@/components/ui/form-feedback'
 import { emptyFormState } from '@/lib/form-state'
-import { verifyPropertyAction, verifySupplierAction } from './actions'
+import {
+  refreshTravelAdviceAction,
+  reviewSourceChangeAction,
+  verifyPropertyAction,
+  verifySupplierAction,
+} from './actions'
 
 /**
  * Verification form.
@@ -81,6 +86,51 @@ export function VerifyPropertyForm({ propertyId }: { propertyId: string }) {
           Pending
         </SubmitButton>
       </div>
+    </form>
+  )
+}
+
+/** A culture-source change review. The note is required to verify. */
+export function ReviewSourceChangeForm({ changeId }: { changeId: string }) {
+  const [state, formAction] = useActionState(reviewSourceChangeAction, emptyFormState)
+
+  return (
+    <form action={formAction} className="space-y-2">
+      <input type="hidden" name="changeId" value={changeId} />
+      <FormFeedback state={state} />
+      <Textarea
+        name="note"
+        rows={2}
+        maxLength={400}
+        placeholder="What did you compare, and what changed? Required to verify."
+        className="text-sm"
+        aria-label="Review note"
+      />
+      <div className="flex flex-wrap gap-2">
+        <SubmitButton name="decision" value="VERIFIED" size="sm" pendingLabel="Recording…">
+          Verify change
+        </SubmitButton>
+        <SubmitButton name="decision" value="REJECTED" variant="danger" size="sm">
+          Not a real change
+        </SubmitButton>
+        <SubmitButton name="decision" value="PENDING" variant="outline" size="sm">
+          Leave pending
+        </SubmitButton>
+      </div>
+    </form>
+  )
+}
+
+export function RefreshTravelAdviceForm({ destination }: { destination: string }) {
+  const [state, formAction] = useActionState(refreshTravelAdviceAction, emptyFormState)
+
+  return (
+    <form action={formAction} className="space-y-2">
+      <input type="hidden" name="destination" value={destination} />
+      <FormFeedback state={state} />
+      <SubmitButton variant="outline" size="sm" pendingLabel="Checking…">
+        Check source now
+      </SubmitButton>
     </form>
   )
 }

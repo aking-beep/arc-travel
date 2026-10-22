@@ -161,7 +161,7 @@ weaker schema than the one that ships.
 
 ```
 prisma/
-  schema.prisma          31 models — see docs/data-model.md
+  schema.prisma          33 models — see docs/data-model.md
   seed.ts                Deterministic demo seed
   seed/                  Fixtures: destination graph, catalog, people, conditions
 src/
@@ -192,13 +192,16 @@ docs/
   reasoning behind each
 - [`docs/product-requirements.md`](docs/product-requirements.md) — what the
   product is for and what is in and out of scope
-- [`docs/data-model.md`](docs/data-model.md) — the 31 models and the invariants
+- [`docs/data-model.md`](docs/data-model.md) — the 33 models and the invariants
   they carry
 - [`docs/decisions.md`](docs/decisions.md) — decision records, including the
   ones worth arguing with
 - [`docs/deployment.md`](docs/deployment.md) — putting the POC on a URL: the
   build steps, the six environment variables, the connection-pooling constraint
   and the shared-passphrase front door
+- [`docs/culture-context.md`](docs/culture-context.md) — the source doctrine
+  behind the guest's country brief: evidence classes, advisory never law,
+  change review
 - [`docs/roadmap.md`](docs/roadmap.md) — POC → pilot → MVP
 - [`docs/pilot-plan.md`](docs/pilot-plan.md) — the narrow Puerto Escondido pilot
   and the metrics that gate it

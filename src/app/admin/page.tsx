@@ -2,9 +2,10 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { requireActor } from '@/modules/auth/service'
 import { getVerificationQueue } from '@/modules/admin/service'
+import { getSourceChangeQueue } from '@/modules/culture-context/snapshots'
 import { VerificationStatus } from '@/lib/prisma-types'
 import { toDateKey } from '@/lib/dates'
-import { VerifyPropertyForm, VerifySupplierForm } from './forms'
+import { ReviewSourceChangeForm, VerifyPropertyForm, VerifySupplierForm } from './forms'
 
 export const metadata = { title: 'Verification' }
 
@@ -17,7 +18,11 @@ const TONE = {
 
 export default async function AdminVerificationPage() {
   const actor = await requireActor()
-  const queue = await getVerificationQueue(actor)
+  const [queue, sourceChanges] = await Promise.all([
+    getVerificationQueue(actor),
+    getSourceChangeQueue(actor),
+  ])
+  const pendingChanges = sourceChanges.filter((c) => c.verification === VerificationStatus.PENDING)
 
   const unverified = queue.suppliers.filter(
     (s) => s.verification !== VerificationStatus.VERIFIED,
@@ -106,6 +111,71 @@ export default async function AdminVerificationPage() {
             </CardContent>
           </Card>
         ))}
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="font-display text-base font-semibold">Travel-advice changes</h2>
+          <p className="text-sand-600 mt-1 max-w-prose text-sm leading-relaxed">
+            A new content hash means the source&rsquo;s text changed. It does not mean the rules
+            changed. Guests are told the advice was updated only after you verify the change here.{' '}
+            {pendingChanges.length} waiting for review.
+          </p>
+        </div>
+        {sourceChanges.length === 0 ? (
+          <p className="border-sand-300 text-sand-600 rounded-xl border border-dashed px-4 py-6 text-center text-sm">
+            No changes detected. Each check of a source is recorded on the health page.
+          </p>
+        ) : (
+          sourceChanges.map((change) => (
+            <Card key={change.id}>
+              <CardHeader>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <CardTitle className="font-mono text-sm">{change.sourceKey}</CardTitle>
+                    <p className="text-sand-500 text-xs">
+                      detected {change.detectedAt.toISOString().slice(0, 16).replace('T', ' ')} UTC ·
+                      sections: {change.changedSections.join(', ') || 'none named'}
+                      {change.currentIsFixture ? ' · fixture data' : ''}
+                    </p>
+                  </div>
+                  <Badge tone={TONE[change.verification]}>{change.verification.toLowerCase()}</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <dl className="text-sand-700 grid gap-3 text-xs sm:grid-cols-2">
+                  <div>
+                    <dt className="text-sand-500">Previous</dt>
+                    <dd className="font-mono">
+                      {change.previousHash.slice(0, 12)} · {toDateKey(change.previousRetrievedAt)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-sand-500">Current</dt>
+                    <dd className="font-mono">
+                      {change.currentHash.slice(0, 12)} · {toDateKey(change.currentRetrievedAt)}
+                    </dd>
+                  </div>
+                </dl>
+                <a
+                  href={change.sourceUrl}
+                  className="text-jade-800 text-xs underline"
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  Open the source to compare
+                </a>
+                {change.reviewedAt ? (
+                  <p className="text-sand-600 text-xs">
+                    Reviewed by {change.reviewedByName ?? 'a removed user'} on{' '}
+                    {toDateKey(change.reviewedAt)}: {change.reviewNote}
+                  </p>
+                ) : null}
+                <ReviewSourceChangeForm changeId={change.id} />
+              </CardContent>
+            </Card>
+          ))
+        )}
       </section>
 
       <section className="space-y-4">
