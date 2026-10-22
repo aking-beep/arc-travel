@@ -90,5 +90,11 @@ export async function getGuestCultureBrief(
     getPublishedChangeNotice(govukSourceKey(country.govukSlug)),
   ])
 
-  return { brief, country, changeNotice }
+  // A review covers one version of the text. The notice says ARC reviewed the
+  // change, so it may only sit above the exact text that review covered — not
+  // a newer, unreviewed version, and not the version from before the change.
+  const shownHash = brief.sources[0]?.contentHash ?? null
+  const reviewed = changeNotice !== null && changeNotice.currentHash === shownHash
+
+  return { brief, country, changeNotice: reviewed ? changeNotice : null }
 }

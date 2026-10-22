@@ -1392,7 +1392,9 @@ model CultureSourceChange {
 
   previous   CultureSourceSnapshot @relation("ChangePrevious", fields: [previousSnapshotId], references: [id], onDelete: Restrict)
   current    CultureSourceSnapshot @relation("ChangeCurrent", fields: [currentSnapshotId], references: [id], onDelete: Restrict)
-  reviewedBy User?                 @relation(fields: [reviewedById], references: [id], onDelete: SetNull)
+  // Restrict, not SetNull: a VERIFIED change must keep naming who verified it
+  // (constraints.sql), so deleting that user is refused rather than half-done.
+  reviewedBy User?                 @relation(fields: [reviewedById], references: [id], onDelete: Restrict)
 
   @@index([verification, detectedAt])
   @@index([sourceKey, verification, reviewedAt])

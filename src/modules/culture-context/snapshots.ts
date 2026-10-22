@@ -63,6 +63,8 @@ export async function checkTravelAdviceSource(options: {
   destination: string
   provider?: TravelAdviceProvider
   now?: Date
+  /** Runs in the same transaction as the snapshot, so a check and its audit cannot diverge. */
+  record?: (tx: Prisma.TransactionClient, result: SourceCheckResult) => Promise<void>
 }): Promise<SourceCheckResult> {
   const country = countryForDestination(options.destination)
   if (!country) throw invalid(`No travel-advice source covers "${options.destination}".`)
@@ -96,98 +98,106 @@ export async function checkTravelAdviceSource(options: {
       : null
 
   if (failureReason || !parsed || !result.data) {
-    const snapshot = await prisma.cultureSourceSnapshot.create({
-      data: {
-        ...base,
-        sourceUrl: result.data?.sourceUrl ?? govukPublicUrl(slug),
-        isFixture: result.data?.isFixture ?? false,
-        ok: false,
+    return prisma.$transaction(async (tx) => {
+      const snapshot = await tx.cultureSourceSnapshot.create({
+        data: {
+          ...base,
+          sourceUrl: result.data?.sourceUrl ?? govukPublicUrl(slug),
+          isFixture: result.data?.isFixture ?? false,
+          ok: false,
+          failureReason: failureReason ?? 'unknown',
+          retrievedAt: result.data?.retrievedAt ?? now,
+        },
+        select: { id: true },
+      })
+      const failed: SourceCheckResult = {
+        sourceKey,
+        snapshotId: snapshot.id,
+        outcome: 'unavailable',
+        changeId: null,
+        contentHash: null,
         failureReason: failureReason ?? 'unknown',
-        retrievedAt: result.data?.retrievedAt ?? now,
-      },
-      select: { id: true },
+      }
+      await options.record?.(tx, failed)
+      return failed
     })
-    return {
-      sourceKey,
-      snapshotId: snapshot.id,
-      outcome: 'unavailable',
-      changeId: null,
-      contentHash: null,
-      failureReason: failureReason ?? 'unknown',
-    }
   }
 
   const document = result.data
   try {
     return await prisma.$transaction(
       async (tx) => {
-        // Read inside the transaction what we compare against.
-        const previous = await tx.cultureSourceSnapshot.findFirst({
-          where: { sourceKey, ok: true },
-          orderBy: { createdAt: 'desc' },
-          select: { id: true, contentHash: true, contentJson: true },
-        })
+        const checked: SourceCheckResult = await (async () => {
+          // Read inside the transaction what we compare against.
+          const previous = await tx.cultureSourceSnapshot.findFirst({
+            where: { sourceKey, ok: true },
+            orderBy: { createdAt: 'desc' },
+            select: { id: true, contentHash: true, contentJson: true },
+          })
 
-        const snapshot = await tx.cultureSourceSnapshot.create({
-          data: {
-            ...base,
-            sourceUrl: document.sourceUrl,
-            isFixture: document.isFixture,
-            ok: true,
-            contentHash: parsed.contentHash,
-            contentJson: parsed.content as unknown as Prisma.InputJsonValue,
-            retrievedAt: document.retrievedAt,
-          },
-          select: { id: true },
-        })
+          const snapshot = await tx.cultureSourceSnapshot.create({
+            data: {
+              ...base,
+              sourceUrl: document.sourceUrl,
+              isFixture: document.isFixture,
+              ok: true,
+              contentHash: parsed.contentHash,
+              contentJson: parsed.content as unknown as Prisma.InputJsonValue,
+              retrievedAt: document.retrievedAt,
+            },
+            select: { id: true },
+          })
 
-        if (!previous?.contentHash) {
+          if (!previous?.contentHash) {
+            return {
+              sourceKey,
+              snapshotId: snapshot.id,
+              outcome: 'baseline' as const,
+              changeId: null,
+              contentHash: parsed.contentHash,
+              failureReason: null,
+            }
+          }
+
+          if (!hashesDiffer(previous.contentHash, parsed.contentHash)) {
+            return {
+              sourceKey,
+              snapshotId: snapshot.id,
+              outcome: 'unchanged' as const,
+              changeId: null,
+              contentHash: parsed.contentHash,
+              failureReason: null,
+            }
+          }
+
+          const change = await tx.cultureSourceChange.create({
+            data: {
+              sourceKey,
+              previousSnapshotId: previous.id,
+              currentSnapshotId: snapshot.id,
+              previousHash: previous.contentHash,
+              currentHash: parsed.contentHash,
+              changedSections: changedSections(
+                previous.contentJson as unknown as GovUkSnapshotContent | null,
+                parsed.content,
+              ),
+              // Detection only. A person decides what it means.
+              verification: VerificationStatus.PENDING,
+            },
+            select: { id: true },
+          })
+
           return {
             sourceKey,
             snapshotId: snapshot.id,
-            outcome: 'baseline' as const,
-            changeId: null,
+            outcome: 'changed' as const,
+            changeId: change.id,
             contentHash: parsed.contentHash,
             failureReason: null,
           }
-        }
-
-        if (!hashesDiffer(previous.contentHash, parsed.contentHash)) {
-          return {
-            sourceKey,
-            snapshotId: snapshot.id,
-            outcome: 'unchanged' as const,
-            changeId: null,
-            contentHash: parsed.contentHash,
-            failureReason: null,
-          }
-        }
-
-        const change = await tx.cultureSourceChange.create({
-          data: {
-            sourceKey,
-            previousSnapshotId: previous.id,
-            currentSnapshotId: snapshot.id,
-            previousHash: previous.contentHash,
-            currentHash: parsed.contentHash,
-            changedSections: changedSections(
-              previous.contentJson as unknown as GovUkSnapshotContent | null,
-              parsed.content,
-            ),
-            // Detection only. A person decides what it means.
-            verification: VerificationStatus.PENDING,
-          },
-          select: { id: true },
-        })
-
-        return {
-          sourceKey,
-          snapshotId: snapshot.id,
-          outcome: 'changed' as const,
-          changeId: change.id,
-          contentHash: parsed.contentHash,
-          failureReason: null,
-        }
+        })()
+        await options.record?.(tx, checked)
+        return checked
       },
       { isolationLevel: 'Serializable', timeout: 15_000 },
     )
@@ -205,22 +215,27 @@ export async function refreshTravelAdvice(
   options: { destination: string; provider?: TravelAdviceProvider; now?: Date },
 ): Promise<SourceCheckResult> {
   assertPlatformAdmin(actor)
-  const result = await checkTravelAdviceSource(options)
-  await recordAudit({
-    organizationId: null,
-    actor,
-    actorKind: 'admin',
-    action: 'admin.culture.source.check',
-    entityType: 'CultureSourceSnapshot',
-    entityId: result.snapshotId,
-    metadata: {
-      sourceKey: result.sourceKey,
-      outcome: result.outcome,
-      changeId: result.changeId,
-      failureReason: result.failureReason,
-    },
+  return checkTravelAdviceSource({
+    ...options,
+    record: (tx, result) =>
+      recordAudit(
+        {
+          organizationId: null,
+          actor,
+          actorKind: 'admin',
+          action: 'admin.culture.source.check',
+          entityType: 'CultureSourceSnapshot',
+          entityId: result.snapshotId,
+          metadata: {
+            sourceKey: result.sourceKey,
+            outcome: result.outcome,
+            changeId: result.changeId,
+            failureReason: result.failureReason,
+          },
+        },
+        tx,
+      ),
   })
-  return result
 }
 
 export interface SourceChangeQueueItem {
@@ -306,8 +321,10 @@ export async function reviewSourceChange(
     if (!change) throw notFound('Source change')
 
     const decided = decision !== VerificationStatus.PENDING
-    await tx.cultureSourceChange.update({
-      where: { id: change.id },
+    // Guard on the state we read, so two admins deciding at once cannot leave an
+    // audit trail whose `from` never happened.
+    const updated = await tx.cultureSourceChange.updateMany({
+      where: { id: change.id, verification: change.verification },
       data: {
         verification: decision,
         reviewedById: decided ? actor.userId : null,
@@ -315,6 +332,9 @@ export async function reviewSourceChange(
         reviewNote: note || null,
       },
     })
+    if (updated.count === 0) {
+      throw conflict('Someone else decided this change while you were looking at it. Reload and review again.')
+    }
 
     await recordAudit(
       {
@@ -401,6 +421,8 @@ export interface PublishedChangeNotice {
   detectedAt: Date
   reviewedAt: Date
   changedSections: string[]
+  /** The content hash the reviewed change produced. */
+  currentHash: string
 }
 
 /**
@@ -413,7 +435,7 @@ export async function getPublishedChangeNotice(
   const change = await prisma.cultureSourceChange.findFirst({
     where: { sourceKey, verification: VerificationStatus.VERIFIED, reviewedAt: { not: null } },
     orderBy: { reviewedAt: 'desc' },
-    select: { id: true, detectedAt: true, reviewedAt: true, changedSections: true },
+    select: { id: true, detectedAt: true, reviewedAt: true, changedSections: true, currentHash: true },
   })
   if (!change?.reviewedAt) return null
   return {
@@ -421,5 +443,6 @@ export async function getPublishedChangeNotice(
     detectedAt: change.detectedAt,
     reviewedAt: change.reviewedAt,
     changedSections: change.changedSections,
+    currentHash: change.currentHash,
   }
 }

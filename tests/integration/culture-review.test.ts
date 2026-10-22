@@ -56,7 +56,7 @@ const down: TravelAdviceProvider = {
 
 async function adminActor() {
   const admin = await prisma.user.create({
-    data: { email: `admin-${Date.now()}@example.com`, name: 'Admin', isPlatformAdmin: true },
+    data: { email: `admin-${crypto.randomUUID()}@example.com`, name: 'Admin', isPlatformAdmin: true },
   })
   return actorFor(admin.id)
 }
@@ -199,6 +199,30 @@ describe('review: nothing publishes without approval', () => {
     expect(audit.actorUserId).toBe(admin.userId)
   })
 
+  it('keeps the review trail honest when two admins decide at once', async () => {
+    const changeId = await detectChange()
+    const [first, second] = [await adminActor(), await adminActor()]
+    await Promise.allSettled([
+      reviewSourceChange(first, { changeId, decision: 'VERIFIED', note: 'Compared both; entry changed.' }),
+      reviewSourceChange(second, { changeId, decision: 'REJECTED', note: '' }),
+    ])
+
+    // Whatever order they land in, each recorded `from` is what the change
+    // actually was: no decision silently overturns another.
+    const trail = await prisma.auditEvent.findMany({
+      where: { action: 'admin.culture.change.review', entityId: changeId },
+      orderBy: { createdAt: 'asc' },
+    })
+    let state: string = VerificationStatus.PENDING
+    for (const event of trail) {
+      const meta = event.metadataJson as { from: string; to: string }
+      expect(meta.from).toBe(state)
+      state = meta.to
+    }
+    const change = await prisma.cultureSourceChange.findUniqueOrThrow({ where: { id: changeId } })
+    expect(change.verification).toBe(state)
+  })
+
   it('refuses to verify without a note saying what was compared', async () => {
     const changeId = await detectChange()
     await expect(
@@ -251,6 +275,19 @@ describe('getSourceHealth', () => {
       lastSuccessIsFixture: true,
     })
     expect(health!.lastSuccessRetrievedAt).toEqual(fixtureDoc.retrievedAt)
+  })
+
+  it('writes a check and its audit together: a failed audit leaves no snapshot behind', async () => {
+    await expect(
+      checkTravelAdviceSource({
+        destination: DESTINATION,
+        provider: new FixtureTravelAdviceProvider(),
+        record: async () => {
+          throw new Error('audit insert failed')
+        },
+      }),
+    ).rejects.toThrow('audit insert failed')
+    expect(await prisma.cultureSourceSnapshot.count({ where: { sourceKey: SOURCE } })).toBe(0)
   })
 
   it('records an admin-triggered check in the audit trail without a tenant', async () => {

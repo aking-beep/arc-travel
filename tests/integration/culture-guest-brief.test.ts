@@ -108,6 +108,20 @@ describe('getGuestCultureBrief', () => {
       note: 'Compared both; the entry section gained a sentence.',
     })
 
-    expect((await getGuestCultureBrief(context)).changeNotice?.changeId).toBe(detected.changeId)
+    // The notice belongs to the reviewed text only.
+    expect(
+      (await getGuestCultureBrief(context, { travelAdvice: edited })).changeNotice?.changeId,
+    ).toBe(detected.changeId)
+    expect((await getGuestCultureBrief(context)).changeNotice).toBeNull()
+
+    // A later, unreviewed version of the source must not inherit the review.
+    const payloadAgain = structuredClone(payload)
+    payloadAgain.details.parts[0]!.body += '<p>Changed again.</p>'
+    const newer: TravelAdviceProvider = {
+      name: 'fixture',
+      isLive: false,
+      getAdvice: async () => providerOk('fixture', { ...fixture, payload: payloadAgain }),
+    }
+    expect((await getGuestCultureBrief(context, { travelAdvice: newer })).changeNotice).toBeNull()
   })
 })
