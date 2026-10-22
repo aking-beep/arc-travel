@@ -1,0 +1,38 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Inter:wght@300;400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-ivory: #F8F6F2;
+  --color-paper: #EFEBE3;
+  --color-sand: #E4DDD0;
+  --color-ink: #202824;
+  --color-ink-soft: #3A443F;
+  --color-muted: #6B726D;
+  --color-gold: #B08D57;
+  --color-gold-deep: #8E6F3F;
+  --color-sage: #52685B;
+  --color-sage-soft: #DCE3DD;
+  --color-line: #DDD6CA;
+  --color-danger: #9A4A3A;
+  --color-gold-hover: #C29E68;
+  --color-sage-deep: #465A4E;
+  --font-serif: "Playfair Display", Georgia, serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+html, body {
+  background: var(--color-ivory);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
+
+input[type="date"]::-webkit-calendar-picker-indicator { opacity: 0.5; cursor: pointer; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
