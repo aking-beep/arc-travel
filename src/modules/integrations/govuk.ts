@@ -6,6 +6,9 @@ import {
   type TravelAdviceProvider,
 } from './types'
 
+/** A travel-advice page is tens of kilobytes; anything near this is not one. */
+const MAX_RESPONSE_BYTES = 2_000_000
+
 /**
  * GOV.UK FCDO travel advice, live.
  *
@@ -42,7 +45,9 @@ export class GovUkTravelAdviceProvider implements TravelAdviceProvider {
       response = await fetchImpl(`${GOVUK_CONTENT_API}/${input.slug}`, {
         headers: { accept: 'application/json', 'user-agent': 'ARC-Stay/0.1 (culture-context)' },
         signal: AbortSignal.timeout(this.options.timeoutMs ?? 7_000),
-        redirect: 'follow',
+        // A redirect could point anywhere, and what it returned would be shown
+        // to guests as FCDO advice. The Content API answers directly or not at all.
+        redirect: 'error',
       })
     } catch (error) {
       const name = error instanceof Error ? error.name : ''
@@ -54,9 +59,14 @@ export class GovUkTravelAdviceProvider implements TravelAdviceProvider {
 
     if (!response.ok) return providerFailed(this.name, `http_${response.status}`)
 
+    const declared = Number(response.headers.get('content-length') ?? 0)
+    if (declared > MAX_RESPONSE_BYTES) return providerFailed(this.name, 'response_too_large')
+
     let payload: unknown
     try {
-      payload = await response.json()
+      const text = await response.text()
+      if (text.length > MAX_RESPONSE_BYTES) return providerFailed(this.name, 'response_too_large')
+      payload = JSON.parse(text)
     } catch {
       return providerFailed(this.name, 'invalid_json')
     }

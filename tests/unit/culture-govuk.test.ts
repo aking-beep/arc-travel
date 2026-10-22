@@ -167,6 +167,24 @@ describe('GovUkTravelAdviceProvider (stubbed fetch)', () => {
     expect(result).toEqual({ ok: false, data: null, reason, provider: 'govuk' })
   })
 
+  it('refuses to follow a redirect away from the Content API', async () => {
+    let init: RequestInit | undefined
+    const stub = async (_url: string, options?: RequestInit) => {
+      init = options
+      return new Response('{}', { status: 200 })
+    }
+    await new GovUkTravelAdviceProvider({ fetch: stub }).getAdvice({ slug: 'mexico' })
+    expect(init?.redirect).toBe('error')
+  })
+
+  it.each([
+    ['a declared length', () => new Response('{}', { status: 200, headers: { 'content-length': '5000000' } })],
+    ['an undeclared body', () => new Response(`{"x":"${'a'.repeat(2_000_001)}"}`, { status: 200 })],
+  ])('refuses an oversized response with %s', async (_label, respond) => {
+    const result = await provider(async () => respond()).getAdvice({ slug: 'mexico' })
+    expect(result.reason).toBe('response_too_large')
+  })
+
   it('refuses a slug that could alter the request path, without fetching', async () => {
     let called = false
     const result = await provider(async () => {
