@@ -20,13 +20,28 @@ export function gatePassphrase(): string | undefined {
 }
 
 /**
+ * Folds away the two differences a person cannot see.
+ *
+ * A phone keyboard capitalises the first letter of the passphrase and a copied
+ * one arrives with a space on the end, so an exact comparison rejects someone
+ * who typed the right thing. Case-folding costs a little entropy; for a
+ * passphrase that is read aloud or pasted into a chat, being usable is worth
+ * more. Applied to the configured value as well as the offered one, so both
+ * sides always agree.
+ */
+export function normalizePassphrase(value: string): string {
+  return value.trim().toLowerCase()
+}
+
+/**
  * Derives the cookie value for a passphrase.
  *
  * Keyed with `AUTH_SECRET` so a leaked cookie cannot be attacked offline for
  * the passphrase itself. Uses WebCrypto rather than `node:crypto` because the
  * same function runs in middleware on the edge runtime.
  */
-export async function gateToken(passphrase: string, secret: string): Promise<string> {
+export async function gateToken(rawPassphrase: string, secret: string): Promise<string> {
+  const passphrase = normalizePassphrase(rawPassphrase)
   const encoder = new TextEncoder()
   const key = await crypto.subtle.importKey(
     'raw',

@@ -87,6 +87,13 @@ shared passphrase for an HTTP-only cookie holding an HMAC of it keyed by
 `AUTH_SECRET`. Unset, there is no gate at all, which is what local development
 and the test suites want.
 
+The passphrase is trimmed and case-folded on both sides before the HMAC. An
+exact comparison rejected people who had typed the right thing: a phone keyboard
+capitalises the first letter, and a pasted passphrase arrives with a space on
+the end. Case-folding costs a little entropy, which is the right trade for a
+passphrase that gets read aloud or pasted into a chat — choose a longer one if
+that matters to you.
+
 It is a lock on the front door, not an authorisation mechanism. Every role and
 tenant check behind it still re-derives from the database, and the guest portal
 token is still the only guest credential.

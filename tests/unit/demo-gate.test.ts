@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto'
 import { afterEach, describe, expect, it } from 'vitest'
-import { gatePassphrase, gateToken, safeNext, tokensMatch } from '@/lib/demo-gate'
+import { gatePassphrase, gateToken, normalizePassphrase, safeNext, tokensMatch } from '@/lib/demo-gate'
 
 const SECRET = 'a-secret-that-is-at-least-thirty-two-characters'
 
@@ -39,6 +39,16 @@ describe('gateToken', () => {
     expect(token).toMatch(/^[A-Za-z0-9_-]+$/)
   })
 
+  it('ignores the two differences a person cannot see', async () => {
+    // A phone keyboard capitalises the first letter; a pasted passphrase
+    // arrives with a space on the end. Both rejected a correct passphrase.
+    const base = await gateToken('sand-escondido-1884', SECRET)
+    expect(await gateToken('Sand-escondido-1884', SECRET)).toBe(base)
+    expect(await gateToken('SAND-ESCONDIDO-1884', SECRET)).toBe(base)
+    expect(await gateToken(' sand-escondido-1884 ', SECRET)).toBe(base)
+    expect(await gateToken('\n sand-escondido-1884\t', SECRET)).toBe(base)
+  })
+
   it('changes with the passphrase and with the key', async () => {
     const base = await gateToken('olas-verdes', SECRET)
     expect(await gateToken('olas-verde', SECRET)).not.toBe(base)
@@ -55,6 +65,18 @@ describe('tokensMatch', () => {
     expect(tokensMatch('', token)).toBe(false)
     expect(tokensMatch(token.slice(0, -1), token)).toBe(false)
     expect(tokensMatch(`${token}x`, token)).toBe(false)
+  })
+})
+
+describe('normalizePassphrase', () => {
+  it('trims and case-folds, and leaves an already-clean value alone', () => {
+    expect(normalizePassphrase('  Sand-Escondido-1884 ')).toBe('sand-escondido-1884')
+    expect(normalizePassphrase('sand-escondido-1884')).toBe('sand-escondido-1884')
+  })
+
+  it('does not fold anything else away', () => {
+    expect(normalizePassphrase('two words')).toBe('two words')
+    expect(normalizePassphrase('a-b_c.1')).toBe('a-b_c.1')
   })
 })
 

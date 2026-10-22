@@ -46,6 +46,9 @@ export default async function GatePage({
                 name="passphrase"
                 type="password"
                 autoComplete="current-password"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 autoFocus
                 required
               />
