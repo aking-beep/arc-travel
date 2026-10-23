@@ -489,3 +489,54 @@ that path.
 **Cost.** One more module and a provider interface to keep honest. The fixture
 is not a recording yet, because this environment cannot reach `www.gov.uk`, and
 it is labelled as demo text until a recording replaces it.
+
+## ADR-025 — The public destination surface carries destination imagery
+
+**Status.** Accepted, 2026-10-22, by Andrew King (ARC Transformation Group).
+
+**Context.** The Magic Patterns export shipped a complete public, consumer-facing
+destination surface — fifteen screens, eight destinations, its own editorial
+design language — and it was decided to port it in full rather than extract
+parts of it. The export carries twenty images of real places, generated rather
+than photographed, hotlinked from `cdn.magicpatterns.com`.
+
+That runs into an earlier decision recorded in `CLAUDE.md`: *"No destination
+photography — unlicensed images of a real place in a commercial demo is not a
+corner worth cutting."* The reasoning behind it was sound and is unchanged:
+putting pictures of Puerto Escondido in front of a prospective hotel partner
+implies a relationship with the place that a demo does not have, and an
+unlicensed photograph of somewhere real is a liability nobody needs.
+
+**Decision.** The public surface ships with the export's imagery.
+
+This was raised as a blocking concern and overruled deliberately, not missed.
+The argument for overruling it: these are generated images rather than
+photographs of identifiable property, so the licensing exposure the original
+decision was written against does not arise in the same form; and a destination
+surface with no imagery at all is not the thing being demonstrated. A consumer
+travel page is substantially a visual artefact, and shipping it as typography
+would be showing something other than what was designed.
+
+The earlier decision is **not** reversed in general. It still governs the four
+product surfaces, which carry no destination photography and should not acquire
+any. This ADR is scoped to `/explore`.
+
+**Consequences.**
+
+- `next.config.ts` allow-lists `cdn.magicpatterns.com` by exact host and by the
+  `/patterns/generated-images/**` path prefix, so the image optimiser cannot be
+  aimed at an arbitrary origin through a crafted `src`.
+- The build now has a runtime dependency on a third-party CDN for the public
+  surface. Every `next/image` on that surface therefore needs a working empty
+  state, and the surface must still read correctly with images absent — a CDN
+  that goes away must degrade the page, not break it.
+- Before this surface is shown to anyone outside a walkthrough, the images
+  should be re-hosted under `public/` or an ARC-controlled bucket, and the
+  provenance of each one recorded. Hotlinking someone else's CDN is acceptable
+  for a demo and is not acceptable for a pilot.
+- The image set depicts eight destinations, seven of which are outside the POC's
+  scope. They are labelled as illustrative throughout, in the same way the
+  listings are.
+
+**Cost.** One documented exception to a product commitment, scoped to one
+surface, plus the re-hosting work above before any external use.
