@@ -71,7 +71,7 @@ export default async function DestinationDetailPage({
         <div className="bg-ink/40 absolute inset-0" />
         <Shell className="text-ivory relative flex h-full flex-col justify-end pb-10 md:pb-16">
           <p className="text-ivory/80 text-sm">
-            <Link href="/explore/destinations" className="hover:text-ivory">
+            <Link href="/destinations" className="hover:text-ivory">
               {t('explore.nav.home')}
             </Link>{' '}
             / {destination.country}
@@ -84,7 +84,7 @@ export default async function DestinationDetailPage({
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
-              href={`/explore/plan?destination=${destination.slug}`}
+              href={`/plan?destination=${destination.slug}`}
               className="bg-gold text-ink hover:bg-gold-hover inline-flex h-11 items-center gap-2 rounded-full px-5 text-sm font-medium transition-colors duration-150"
             >
               Plan a trip here <ArrowRight className="size-4" aria-hidden />
@@ -97,7 +97,7 @@ export default async function DestinationDetailPage({
               variant="inline"
             />
             <Link
-              href={`/explore/culture/${destination.slug}`}
+              href={`/culture/${destination.slug}`}
               className="border-ivory/40 hover:border-ivory inline-flex h-11 items-center rounded-full border px-5 text-sm transition-colors duration-150"
             >
               {t('explore.guide.cultureHeading')}
@@ -154,7 +154,7 @@ export default async function DestinationDetailPage({
           <div className="mb-8 flex items-end justify-between gap-4">
             <h2 className="text-3xl md:text-4xl">{t('explore.home.stayHeading')}</h2>
             <Link
-              href={`/explore/stays?destination=${destination.slug}`}
+              href={`/stays?destination=${destination.slug}`}
               className="border-gold border-b pb-1 text-sm whitespace-nowrap"
             >
               All stays in {destination.name}
@@ -174,7 +174,7 @@ export default async function DestinationDetailPage({
           ) : (
             <p className="text-muted text-sm">
               No stays listed for this destination yet —{' '}
-              <Link href="/explore/stays" className="underline">
+              <Link href="/stays" className="underline">
                 browse all stays
               </Link>
               .
@@ -187,7 +187,7 @@ export default async function DestinationDetailPage({
             <div className="mb-8 flex items-end justify-between gap-4">
               <h2 className="text-3xl md:text-4xl">Local experiences</h2>
               <Link
-                href={`/explore/experiences?destination=${destination.slug}`}
+                href={`/experiences?destination=${destination.slug}`}
                 className="border-gold border-b pb-1 text-sm whitespace-nowrap"
               >
                 See all
@@ -218,7 +218,7 @@ export default async function DestinationDetailPage({
                 </p>
               </div>
               <Link
-                href={`/explore/plan?destination=${destination.slug}`}
+                href={`/plan?destination=${destination.slug}`}
                 className="bg-ink text-ivory hover:bg-ink-soft inline-flex h-11 items-center gap-2 self-start rounded-full px-5 text-sm transition-colors duration-150"
               >
                 Customise this itinerary <ArrowRight className="size-4" aria-hidden />

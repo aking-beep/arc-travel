@@ -8,8 +8,14 @@ import { getTranslator } from '@/lib/i18n/server'
 import { prisma } from '@/lib/db'
 
 /**
- * Entry page. Not a marketing site — it is the door into the four surfaces, so
- * that a demo can start from any of them without hunting for a URL.
+ * The door into the four operational surfaces, so a demo can start from any of
+ * them without hunting for a URL.
+ *
+ * This was the application's root page until the public destination surface
+ * took that slot. It is not a marketing page and never was; it is an index,
+ * which is why it moved rather than being deleted — owner, partner, guest
+ * portal and admin are the product, and a build where they are reachable only
+ * by typing a URL is a worse demo, not a cleaner one.
  */
 export default async function HomePage() {
   const { locale, t } = await getTranslator()

@@ -175,7 +175,7 @@ export function ItineraryBuilder({
         ) : null}
 
         <Link
-          href={`/explore/culture/${itinerary.preferences.destination}`}
+          href={`/culture/${itinerary.preferences.destination}`}
           className="border-gold text-ink hover:text-gold-deep mt-12 inline-flex items-center gap-2 border-b pb-1 text-sm transition-colors duration-150"
         >
           {t('explore.planner.cultureCta')}
@@ -266,7 +266,7 @@ export function ItineraryBuilder({
               {t('explore.planner.stayPanelHeading')}
             </p>
             <Link
-              href={`/explore/stays/${stay.slug}`}
+              href={`/stays/${stay.slug}`}
               className="hover:text-gold-deep mt-2 block text-xl leading-snug transition-colors duration-150"
             >
               {stay.name}

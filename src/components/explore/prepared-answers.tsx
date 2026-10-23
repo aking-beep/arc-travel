@@ -44,10 +44,15 @@ export function PreparedAnswers({ guide, name }: { guide: CultureGuide; name: st
   const [input, setInput] = useState('')
   const listRef = useRef<HTMLDivElement>(null)
 
-  // Reset when the destination changes under the component.
-  useEffect(() => {
+  // Reset when the destination changes under the component. Adjusted during
+  // render rather than in an effect: React re-runs this component immediately
+  // with the new state and never commits the stale conversation, where an
+  // effect would paint the previous destination's thread first.
+  const [lastOpening, setLastOpening] = useState(opening)
+  if (lastOpening !== opening) {
+    setLastOpening(opening)
     setMessages([{ from: 'guide', text: opening }])
-  }, [opening])
+  }
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight })

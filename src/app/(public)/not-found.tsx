@@ -11,7 +11,7 @@ export default async function ExploreNotFound() {
         {t('explore.notFound.body')}
       </p>
       <Link
-        href="/explore"
+        href="/"
         className="bg-ink text-ivory hover:bg-ink-soft mt-8 inline-flex h-12 items-center rounded-full px-6 text-sm transition-colors duration-150"
       >
         {t('explore.notFound.cta')}

@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { BedDouble, Compass, Heart, Home, Menu, Sparkles, X } from 'lucide-react'
 import { cn } from '@/lib/cn'
+import { setLocaleAction } from '@/app/actions'
 import { createTranslator, type AppLocale, type MessageKey } from '@/lib/i18n'
 import { useSaved } from './saved-store'
 
@@ -14,12 +15,68 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { href: '/explore/destinations', key: 'explore.nav.home' },
-  { href: '/explore/stays', key: 'explore.nav.stay' },
-  { href: '/explore/experiences', key: 'explore.nav.experiences' },
-  { href: '/explore/plan', key: 'explore.nav.plan' },
-  { href: '/explore/journal', key: 'explore.nav.guide' },
+  { href: '/destinations', key: 'explore.nav.home' },
+  { href: '/stays', key: 'explore.nav.stay' },
+  { href: '/experiences', key: 'explore.nav.experiences' },
+  { href: '/plan', key: 'explore.nav.plan' },
+  { href: '/journal', key: 'explore.nav.guide' },
 ]
+
+/**
+ * Language toggle for the public surface.
+ *
+ * Two server-action forms rather than a client-side select, so it works with
+ * JavaScript disabled — the same shape as `@/components/locale-switcher`, which
+ * cannot be reused here because it is styled for the product surfaces and this
+ * one has to invert over the transparent hero.
+ *
+ * This surface is fully translated and had no way to reach the Spanish copy
+ * until this existed. A locale a reader cannot select is a locale that is not
+ * really shipped.
+ */
+function LocaleToggle({
+  locale,
+  next,
+  transparent,
+  inDrawer = false,
+}: {
+  locale: AppLocale
+  next: string
+  transparent: boolean
+  /** The drawer has the room the top bar does not, so it always shows. */
+  inDrawer?: boolean
+}) {
+  return (
+    <div
+      className={cn(
+        'overflow-hidden rounded-full border',
+        inDrawer ? 'inline-flex' : 'hidden sm:flex',
+        transparent ? 'border-ivory/40' : 'border-line',
+      )}
+    >
+      {(['en', 'es'] as const).map((code) => (
+        <form key={code} action={setLocaleAction}>
+          <input type="hidden" name="locale" value={code} />
+          <input type="hidden" name="next" value={next} />
+          <button
+            type="submit"
+            aria-current={locale === code ? 'true' : undefined}
+            className={cn(
+              'px-2.5 py-1.5 text-[11px] uppercase transition-colors duration-150',
+              locale === code
+                ? transparent
+                  ? 'bg-ivory/20'
+                  : 'bg-ink text-ivory'
+                : 'opacity-60 hover:opacity-100',
+            )}
+          >
+            {code}
+          </button>
+        </form>
+      ))}
+    </div>
+  )
+}
 
 /**
  * The public surface's header.
@@ -35,9 +92,13 @@ export function ExploreNav({ locale }: { locale: AppLocale }) {
   const pathname = usePathname()
   const { count, ready } = useSaved()
   const [scrolled, setScrolled] = useState(false)
-  const [open, setOpen] = useState(false)
+  // The drawer remembers which path it was opened on rather than carrying a
+  // boolean an effect has to clear: a navigation changes `pathname`, so the
+  // drawer closes by itself and no state is written during an effect.
+  const [openPath, setOpenPath] = useState<string | null>(null)
+  const open = openPath === pathname
 
-  const overHero = pathname === '/explore' || /^\/explore\/destinations\/[^/]+$/.test(pathname)
+  const overHero = pathname === '/' || /^\/destinations\/[^/]+$/.test(pathname)
   const transparent = overHero && !scrolled && !open
 
   useEffect(() => {
@@ -46,9 +107,6 @@ export function ExploreNav({ locale }: { locale: AppLocale }) {
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
-
-  // Close the drawer on navigation, or it stays open over the new page.
-  useEffect(() => setOpen(false), [pathname])
 
   return (
     <header
@@ -62,7 +120,7 @@ export function ExploreNav({ locale }: { locale: AppLocale }) {
     >
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-6 px-5 md:h-20 md:px-8">
         <Link
-          href="/explore"
+          href="/"
           className="flex shrink-0 items-baseline gap-2"
           aria-label={t('explore.brand')}
         >
@@ -101,8 +159,9 @@ export function ExploreNav({ locale }: { locale: AppLocale }) {
         </nav>
 
         <div className="flex items-center gap-2 md:gap-3">
+          <LocaleToggle locale={locale} next={pathname} transparent={transparent} />
           <Link
-            href="/explore/trips"
+            href="/trips"
             className={cn(
               'hidden items-center gap-2 rounded-full px-3 py-2 text-sm transition-colors duration-150 sm:flex',
               transparent ? 'hover:bg-ivory/10' : 'hover:bg-paper',
@@ -117,7 +176,7 @@ export function ExploreNav({ locale }: { locale: AppLocale }) {
             ) : null}
           </Link>
           <Link
-            href="/explore/plan"
+            href="/plan"
             className={cn(
               'hidden rounded-full px-4 py-2.5 text-sm whitespace-nowrap transition-colors duration-150 md:inline-flex',
               transparent ? 'bg-ivory text-ink hover:bg-paper' : 'bg-ink text-ivory hover:bg-ink-soft',
@@ -127,7 +186,7 @@ export function ExploreNav({ locale }: { locale: AppLocale }) {
           </Link>
           <button
             type="button"
-            onClick={() => setOpen((o) => !o)}
+            onClick={() => setOpenPath(open ? null : pathname)}
             className="flex size-11 items-center justify-center rounded-full lg:hidden"
             aria-label={open ? t('explore.nav.closeMenu') : t('explore.nav.menu')}
             aria-expanded={open}
@@ -139,7 +198,7 @@ export function ExploreNav({ locale }: { locale: AppLocale }) {
 
       {open ? (
         <nav className="bg-ivory text-ink border-line border-t px-5 pb-6 lg:hidden">
-          {[{ href: '/explore', key: 'explore.nav.home' as MessageKey }, ...NAV_ITEMS, { href: '/explore/trips', key: 'explore.nav.saved' as MessageKey }].map(
+          {[{ href: '/', key: 'explore.nav.home' as MessageKey }, ...NAV_ITEMS, { href: '/trips', key: 'explore.nav.saved' as MessageKey }].map(
             (item) => (
               <Link
                 key={item.href}
@@ -150,6 +209,9 @@ export function ExploreNav({ locale }: { locale: AppLocale }) {
               </Link>
             ),
           )}
+          <div className="pt-6">
+            <LocaleToggle locale={locale} next={pathname} transparent={false} inDrawer />
+          </div>
         </nav>
       ) : null}
     </header>
@@ -157,11 +219,11 @@ export function ExploreNav({ locale }: { locale: AppLocale }) {
 }
 
 const BOTTOM_ITEMS = [
-  { href: '/explore', key: 'explore.nav.home' as MessageKey, icon: Home, exact: true },
-  { href: '/explore/destinations', key: 'explore.nav.guide' as MessageKey, icon: Compass },
-  { href: '/explore/plan', key: 'explore.nav.plan' as MessageKey, icon: Sparkles },
-  { href: '/explore/stays', key: 'explore.nav.stay' as MessageKey, icon: BedDouble },
-  { href: '/explore/trips', key: 'explore.nav.saved' as MessageKey, icon: Heart },
+  { href: '/', key: 'explore.nav.home' as MessageKey, icon: Home, exact: true },
+  { href: '/destinations', key: 'explore.nav.guide' as MessageKey, icon: Compass },
+  { href: '/plan', key: 'explore.nav.plan' as MessageKey, icon: Sparkles },
+  { href: '/stays', key: 'explore.nav.stay' as MessageKey, icon: BedDouble },
+  { href: '/trips', key: 'explore.nav.saved' as MessageKey, icon: Heart },
 ]
 
 /** Thumb-reachable bottom bar on phones. */

@@ -80,7 +80,7 @@ export function SavedTrips({
           text={t('explore.saved.emptyHint')}
           action={
             <Link
-              href="/explore/destinations"
+              href="/destinations"
               className="bg-ink text-ivory inline-flex h-11 items-center rounded-full px-5 text-sm"
             >
               {t('explore.nav.home')}
@@ -243,7 +243,7 @@ export function SavedTrips({
       </section>
 
       <Link
-        href="/explore/plan"
+        href="/plan"
         className="border-line hover:border-ink mt-16 flex items-center justify-between gap-3 rounded-2xl border p-5 transition-colors duration-150"
       >
         <span>

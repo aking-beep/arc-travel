@@ -67,14 +67,14 @@ export default async function ExperienceDetailPage({
     <div>
       <Shell className="pt-6 md:pt-10">
         <p className="text-muted mb-4 text-sm">
-          <Link href="/explore/experiences" className="hover:text-ink">
+          <Link href="/experiences" className="hover:text-ink">
             {t('explore.experience.back')}
           </Link>
           {destination ? (
             <>
               {' / '}
               <Link
-                href={`/explore/destinations/${destination.slug}`}
+                href={`/destinations/${destination.slug}`}
                 className="hover:text-ink"
               >
                 {destination.name}
@@ -210,7 +210,7 @@ export default async function ExperienceDetailPage({
               </ul>
               {destination ? (
                 <Link
-                  href={`/explore/culture/${destination.slug}`}
+                  href={`/culture/${destination.slug}`}
                   className="border-gold mt-6 inline-block border-b pb-0.5 text-sm"
                 >
                   {t('explore.guide.heading')} — {destination.name}
@@ -231,7 +231,7 @@ export default async function ExperienceDetailPage({
             portalHref="/sign-in"
           />
           <Link
-            href={`/explore/plan?destination=${experience.destination}`}
+            href={`/plan?destination=${experience.destination}`}
             className="border-line hover:border-ink mt-3 flex h-12 w-full items-center justify-center rounded-full border text-sm transition-colors duration-150"
           >
             Add to a trip plan

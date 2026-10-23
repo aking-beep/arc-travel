@@ -84,7 +84,7 @@ export default async function CulturePage({
               {destinations.slice(0, 8).map((other) => (
                 <Link
                   key={other.slug}
-                  href={`/explore/culture/${other.slug}`}
+                  href={`/culture/${other.slug}`}
                   aria-current={other.slug === place.slug ? 'page' : undefined}
                   className={
                     other.slug === place.slug
@@ -211,7 +211,7 @@ export default async function CulturePage({
                   {communityExperiences.map((experience) => (
                     <Link
                       key={experience.slug}
-                      href={`/explore/experiences/${experience.slug}`}
+                      href={`/experiences/${experience.slug}`}
                       className="group flex items-center gap-4 py-4"
                     >
                       <div className="bg-sand relative size-16 shrink-0 overflow-hidden rounded-xl">
@@ -252,7 +252,7 @@ export default async function CulturePage({
         <aside className="self-start lg:sticky lg:top-28">
           <PreparedAnswers guide={guide} name={place.name} />
           <Link
-            href={`/explore/plan?destination=${place.slug}`}
+            href={`/plan?destination=${place.slug}`}
             className="border-line hover:border-ink mt-6 flex items-center justify-between gap-3 rounded-2xl border p-5 transition-colors duration-150"
           >
             <span>

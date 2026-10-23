@@ -38,7 +38,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
     <article className="pb-20">
       <header className="mx-auto max-w-3xl px-5 pt-10 text-center md:pt-16">
         <Link
-          href="/explore/journal"
+          href="/journal"
           className="text-muted hover:text-ink inline-flex items-center gap-2 text-sm"
         >
           <ArrowLeft className="size-4" aria-hidden />
@@ -96,19 +96,19 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
               <p className="text-2xl">Travel to {destination.name}</p>
               <div className="mt-3 flex flex-wrap gap-4 text-sm">
                 <Link
-                  href={`/explore/destinations/${destination.slug}`}
+                  href={`/destinations/${destination.slug}`}
                   className="border-gold border-b pb-0.5"
                 >
                   Destination guide
                 </Link>
                 <Link
-                  href={`/explore/plan?destination=${destination.slug}`}
+                  href={`/plan?destination=${destination.slug}`}
                   className="border-gold border-b pb-0.5"
                 >
                   {t('explore.nav.plan')}
                 </Link>
                 <Link
-                  href={`/explore/culture/${destination.slug}`}
+                  href={`/culture/${destination.slug}`}
                   className="border-gold border-b pb-0.5"
                 >
                   {t('explore.guide.cultureHeading')}
@@ -120,7 +120,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
 
         {next ? (
           <Link
-            href={`/explore/journal/${next.slug}`}
+            href={`/journal/${next.slug}`}
             className="group border-line mt-14 flex items-center justify-between gap-6 border-t pt-8"
           >
             <span>

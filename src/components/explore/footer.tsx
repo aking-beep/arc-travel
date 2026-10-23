@@ -31,28 +31,28 @@ export async function ExploreFooter() {
           <FooterColumn
             title={t('explore.footer.exploreHeading')}
             links={[
-              ['/explore/destinations', t('explore.nav.home')],
-              ['/explore/stays', t('explore.nav.stay')],
-              ['/explore/experiences', t('explore.nav.experiences')],
-              ['/explore/journal', t('explore.nav.guide')],
+              ['/destinations', t('explore.nav.home')],
+              ['/stays', t('explore.nav.stay')],
+              ['/experiences', t('explore.nav.experiences')],
+              ['/journal', t('explore.nav.guide')],
             ]}
           />
           <FooterColumn
             title={t('explore.nav.plan')}
             links={[
-              ['/explore/plan', t('explore.nav.plan')],
-              ['/explore/trips', t('explore.nav.saved')],
-              ['/explore/culture/puerto-escondido', t('explore.guide.heading')],
-              ['/explore/search', t('explore.experiences.search')],
+              ['/plan', t('explore.nav.plan')],
+              ['/trips', t('explore.nav.saved')],
+              ['/culture/puerto-escondido', t('explore.guide.heading')],
+              ['/search', t('explore.experiences.search')],
             ]}
           />
           <FooterColumn
             title={t('explore.footer.aboutHeading')}
             links={[
-              ['/', t('explore.footer.demoSurfaces')],
+              ['/demo', t('explore.footer.demoSurfaces')],
               ...destinations
                 .slice(0, 3)
-                .map((d) => [`/explore/destinations/${d.slug}`, d.name] as [string, string]),
+                .map((d) => [`/destinations/${d.slug}`, d.name] as [string, string]),
             ]}
           />
         </div>

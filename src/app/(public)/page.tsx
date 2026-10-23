@@ -92,7 +92,7 @@ export default async function ExploreHomePage() {
         <SectionHeading
           title="Places worth the long way round"
           kicker={`${featured.length} destinations, each with stays, hosts and culture notes.`}
-          action={{ href: '/explore/destinations', label: t('explore.nav.home') }}
+          action={{ href: '/destinations', label: t('explore.nav.home') }}
         />
         <div className="grid gap-6 lg:grid-cols-[1.25fr_1fr] lg:gap-8">
           {lead ? <DestinationCard destination={lead} locale={locale} size="wide" /> : null}
@@ -116,14 +116,14 @@ export default async function ExploreHomePage() {
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
-                href="/explore/plan"
+                href="/plan"
                 className="bg-gold text-ink hover:bg-gold-hover inline-flex h-12 items-center gap-2 rounded-full px-6 text-sm font-medium transition-colors duration-150"
               >
                 {t('explore.home.planCta')} <ArrowRight className="size-4" aria-hidden />
               </Link>
               {sample ? (
                 <Link
-                  href={`/explore/plan?sample=${sample.id}`}
+                  href={`/plan?sample=${sample.id}`}
                   className="border-ivory/30 hover:border-ivory inline-flex h-12 items-center rounded-full border px-6 text-sm transition-colors duration-150"
                 >
                   Open a sample itinerary
@@ -191,7 +191,7 @@ export default async function ExploreHomePage() {
         <SectionHeading
           title={t('explore.home.stayHeading')}
           kicker={t('explore.home.stayKicker')}
-          action={{ href: '/explore/stays', label: t('explore.nav.stay') }}
+          action={{ href: '/stays', label: t('explore.nav.stay') }}
         />
         <div className="no-scrollbar -mx-5 flex snap-x snap-mandatory gap-6 overflow-x-auto px-5 md:mx-0 md:grid md:grid-cols-2 md:px-0 lg:grid-cols-4">
           {curatedStays.map((property) => (
@@ -209,7 +209,7 @@ export default async function ExploreHomePage() {
           title={t('explore.home.experiencesHeading')}
           kicker={t('explore.home.experiencesKicker')}
           action={{
-            href: '/explore/experiences',
+            href: '/experiences',
             label: t('explore.home.experiencesCta', { count: experiences.length }),
           }}
         />
@@ -235,7 +235,7 @@ export default async function ExploreHomePage() {
                 {t('explore.home.guideKicker')}
               </p>
               <Link
-                href="/explore/culture/puerto-escondido"
+                href="/culture/puerto-escondido"
                 className="bg-sage text-ivory hover:bg-sage-deep mt-8 inline-flex h-12 items-center gap-2 rounded-full px-6 text-sm transition-colors duration-150"
               >
                 {t('explore.home.guideCta')} <ArrowRight className="size-4" aria-hidden />
@@ -268,11 +268,11 @@ export default async function ExploreHomePage() {
       <Shell className="py-20 md:py-28">
         <SectionHeading
           title="From the Journal"
-          action={{ href: '/explore/journal', label: t('explore.nav.guide') }}
+          action={{ href: '/journal', label: t('explore.nav.guide') }}
         />
         <div className="grid gap-10 lg:grid-cols-[1.4fr_1fr]">
           {featuredArticle ? (
-            <Link href={`/explore/journal/${featuredArticle.slug}`} className="group block">
+            <Link href={`/journal/${featuredArticle.slug}`} className="group block">
               <div className="bg-sand relative aspect-16/10 overflow-hidden rounded-2xl">
                 <Image
                   src={featuredArticle.image}
@@ -295,7 +295,7 @@ export default async function ExploreHomePage() {
             {moreArticles.slice(0, 4).map((article) => (
               <li key={article.slug}>
                 <Link
-                  href={`/explore/journal/${article.slug}`}
+                  href={`/journal/${article.slug}`}
                   className="group flex gap-5 py-5"
                 >
                   <div className="bg-sand relative size-24 shrink-0 overflow-hidden rounded-xl md:size-28">

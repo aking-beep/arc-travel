@@ -7,6 +7,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from 'react'
 import type { Itinerary } from '@/modules/discovery/content/types'
@@ -35,8 +36,6 @@ interface SavedContextValue extends SavedState {
 const STORAGE_KEY = 'arc-travel:v1'
 const EMPTY: SavedState = { destinations: [], stays: [], experiences: [], itineraries: [] }
 
-const SavedContext = createContext<SavedContextValue | null>(null)
-
 function readStored(): SavedState {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
@@ -63,41 +62,82 @@ function readStored(): SavedState {
   }
 }
 
-/**
- * Saved destinations, stays, experiences and itineraries, in this browser only.
+/*
+ * `localStorage` as an external store, read through `useSyncExternalStore`.
  *
  * The export initialised `useState` by calling `localStorage.getItem` in the
- * initialiser, which runs during render. That is the thing `CLAUDE.md` forbids
- * for client components — an impure read during render — and under a server
- * render it would also have thrown, because there is no `window`. So the first
- * render here is deliberately empty and the stored state arrives in an effect.
- * `ready` exists so a consumer can tell "nothing saved" from "not read yet"
- * and render an empty state rather than a flash of the wrong one.
+ * initialiser, which runs during render — the impure read `CLAUDE.md` forbids
+ * in a client component, and a throw under a server render, where there is no
+ * `window`. Reading it in an effect instead fixes both but sets state
+ * synchronously in an effect body, which is its own cascading-render problem
+ * and which the linter rejects.
+ *
+ * `useSyncExternalStore` is the API for exactly this shape: a server snapshot
+ * that is empty, a client snapshot read once and cached, and a subscription so
+ * every mounted consumer re-renders on a write. The `storage` event comes for
+ * free, so a save in one tab shows up in the others.
+ */
+type Listener = () => void
+
+let cached: SavedState | null = null
+const listeners = new Set<Listener>()
+
+function emit(): void {
+  for (const listener of listeners) listener()
+}
+
+function subscribe(listener: Listener): () => void {
+  listeners.add(listener)
+  const onStorage = (event: StorageEvent) => {
+    if (event.key !== null && event.key !== STORAGE_KEY) return
+    cached = null
+    emit()
+  }
+  window.addEventListener('storage', onStorage)
+  return () => {
+    listeners.delete(listener)
+    window.removeEventListener('storage', onStorage)
+  }
+}
+
+/** Cached, because `useSyncExternalStore` requires a referentially stable read. */
+function getSnapshot(): SavedState {
+  cached ??= readStored()
+  return cached
+}
+
+const getServerSnapshot = (): SavedState => EMPTY
+
+function write(next: SavedState): void {
+  cached = next
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+  } catch {
+    /* Storage unavailable. The session still works, it just will not persist. */
+  }
+  emit()
+}
+
+const SavedContext = createContext<SavedContextValue | null>(null)
+
+/**
+ * Saved destinations, stays, experiences and itineraries, in this browser only.
  *
  * Nothing in here is sent to ARC. There is no account on the public surface,
  * so a save is a bookmark, not a hold and not an expression of intent we act
  * on. `modules/commerce` is where something becomes a commitment.
  */
 export function SavedProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<SavedState>(EMPTY)
-  const [ready, setReady] = useState(false)
+  const state = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
+  // False on the server and through hydration, true once this is the client's
+  // own render. Lets a consumer tell "nothing saved" from "not read yet"
+  // without a state write in an effect.
+  const ready = useSyncExternalStore(
+    subscribe,
+    () => true,
+    () => false,
+  )
   const [toast, setToast] = useState<string | null>(null)
-
-  useEffect(() => {
-    setState(readStored())
-    setReady(true)
-  }, [])
-
-  // Only write back once the initial read has happened, or the empty first
-  // render would overwrite what the visitor had saved.
-  useEffect(() => {
-    if (!ready) return
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-    } catch {
-      /* Storage unavailable. The session still works, it just will not persist. */
-    }
-  }, [state, ready])
 
   useEffect(() => {
     if (!toast) return
@@ -113,35 +153,30 @@ export function SavedProvider({ children }: { children: ReactNode }) {
   )
 
   const toggle = useCallback((kind: SavedKind, slug: string, label?: string) => {
-    setState((current) => {
-      const has = current[kind].includes(slug)
-      const suffix = label ? ` ${label}` : ''
-      setToast(has ? `Removed${suffix}` : `Saved${suffix}`)
-      return {
-        ...current,
-        [kind]: has ? current[kind].filter((x) => x !== slug) : [...current[kind], slug],
-      }
+    const current = getSnapshot()
+    const has = current[kind].includes(slug)
+    write({
+      ...current,
+      [kind]: has ? current[kind].filter((x) => x !== slug) : [...current[kind], slug],
     })
+    setToast(`${has ? 'Removed' : 'Saved'}${label ? ` ${label}` : ''}`)
   }, [])
 
   const saveItinerary = useCallback((itinerary: Itinerary) => {
-    setState((current) => {
-      const exists = current.itineraries.some((x) => x.id === itinerary.id)
-      return {
-        ...current,
-        itineraries: exists
-          ? current.itineraries.map((x) => (x.id === itinerary.id ? itinerary : x))
-          : [itinerary, ...current.itineraries],
-      }
+    const current = getSnapshot()
+    const exists = current.itineraries.some((x) => x.id === itinerary.id)
+    write({
+      ...current,
+      itineraries: exists
+        ? current.itineraries.map((x) => (x.id === itinerary.id ? itinerary : x))
+        : [itinerary, ...current.itineraries],
     })
     setToast('Itinerary saved')
   }, [])
 
   const removeItinerary = useCallback((id: string) => {
-    setState((current) => ({
-      ...current,
-      itineraries: current.itineraries.filter((x) => x.id !== id),
-    }))
+    const current = getSnapshot()
+    write({ ...current, itineraries: current.itineraries.filter((x) => x.id !== id) })
     setToast('Itinerary removed')
   }, [])
 

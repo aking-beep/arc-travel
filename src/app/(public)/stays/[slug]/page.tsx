@@ -52,13 +52,13 @@ export default async function StayDetailPage({ params }: { params: Promise<{ slu
   return (
     <Shell className="pt-6 pb-20 md:pt-10">
       <p className="text-muted mb-4 text-sm">
-        <Link href="/explore/stays" className="hover:text-ink">
+        <Link href="/stays" className="hover:text-ink">
           {t('explore.nav.stay')}
         </Link>
         {destination ? (
           <>
             {' / '}
-            <Link href={`/explore/destinations/${destination.slug}`} className="hover:text-ink">
+            <Link href={`/destinations/${destination.slug}`} className="hover:text-ink">
               {destination.name}
             </Link>
           </>

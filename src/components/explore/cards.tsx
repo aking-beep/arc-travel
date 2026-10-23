@@ -40,7 +40,7 @@ export function DestinationCard({
     size === 'tall' ? 'aspect-[3/4]' : size === 'wide' ? 'aspect-[16/10]' : 'aspect-[4/5]'
 
   return (
-    <Link href={`/explore/destinations/${destination.slug}`} className="group block">
+    <Link href={`/destinations/${destination.slug}`} className="group block">
       <div className={cn('bg-sand relative overflow-hidden rounded-2xl', aspect)}>
         <Image
           src={destination.image}
@@ -95,7 +95,7 @@ export function PropertyCard({
   if (layout === 'row') {
     return (
       <Link
-        href={`/explore/stays/${property.slug}`}
+        href={`/stays/${property.slug}`}
         className="hover:bg-paper group flex gap-4 rounded-xl p-3 transition-colors duration-150"
       >
         <div className="bg-sand relative size-24 shrink-0 overflow-hidden rounded-lg">
@@ -123,7 +123,7 @@ export function PropertyCard({
   }
 
   return (
-    <Link href={`/explore/stays/${property.slug}`} className="group flex h-full flex-col">
+    <Link href={`/stays/${property.slug}`} className="group flex h-full flex-col">
       <div className="bg-sand relative aspect-4/3 overflow-hidden rounded-2xl">
         {cover ? (
           <Image
@@ -178,7 +178,7 @@ export function ExperienceCard({
   const destination = getDestination(experience.destination)
 
   return (
-    <Link href={`/explore/experiences/${experience.slug}`} className="group flex h-full flex-col">
+    <Link href={`/experiences/${experience.slug}`} className="group flex h-full flex-col">
       <div className="bg-sand relative aspect-5/4 overflow-hidden rounded-2xl">
         <Image
           src={experience.image}

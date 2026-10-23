@@ -25,7 +25,7 @@ export interface SearchValues {
  * without an animation library.
  *
  * Note what it does *not* do: nothing here checks availability. The dates and
- * party size are carried into `/explore/search` as filter inputs, and the
+ * party size are carried into `/search` as filter inputs, and the
  * results page says as much. A date picker that implied a booking lookup
  * behind it would be claiming something this surface cannot know.
  */
@@ -76,7 +76,7 @@ export function SearchBar({
     if (values.to) params.set('to', values.to)
     params.set('guests', String(values.guests))
     if (values.style) params.set('style', values.style)
-    router.push(`/explore/search?${params.toString()}`)
+    router.push(`/search?${params.toString()}`)
   }
 
   return (

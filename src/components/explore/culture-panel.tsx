@@ -50,7 +50,7 @@ export function CulturePanel({
           ) : null}
         </div>
         <Link
-          href={`/explore/culture/${guide.destination}`}
+          href={`/culture/${guide.destination}`}
           className="bg-ivory text-ink hover:bg-paper inline-flex h-11 items-center gap-2 self-start rounded-full px-5 text-sm whitespace-nowrap transition-colors duration-150"
         >
           {t('explore.home.guideCta')} <ArrowRight className="size-4" aria-hidden />

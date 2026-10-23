@@ -63,7 +63,7 @@ export function JournalList({
 
       {showFeatured && featured ? (
         <Link
-          href={`/explore/journal/${featured.slug}`}
+          href={`/journal/${featured.slug}`}
           className="group mt-10 grid items-center gap-8 lg:grid-cols-[1.5fr_1fr] lg:gap-12"
         >
           <div className="bg-sand relative aspect-16/10 overflow-hidden rounded-3xl">
@@ -96,7 +96,7 @@ export function JournalList({
           {rest.map((article) => (
             <Link
               key={article.slug}
-              href={`/explore/journal/${article.slug}`}
+              href={`/journal/${article.slug}`}
               className="group flex flex-col"
             >
               <div className="bg-sand relative aspect-4/5 overflow-hidden rounded-2xl">

@@ -57,13 +57,13 @@
   --shadow-lift-lg: 0 2px 4px oklch(0.232 0.018 66 / 0.05), 0 20px 48px -20px oklch(0.232 0.018 66 / 0.24);
 
   /*
-   * Editorial palette for the public destination surface (`/explore`), carried
+   * Editorial palette for the public destination surface at the root, carried
    * over from the Magic Patterns export.
    *
    * It is a second palette, and that is deliberate rather than an oversight.
    * The four product surfaces — owner, partner, guest portal, admin — are a
    * tool someone uses at work, and they keep the sand/jade/terracotta ramps
-   * above. `/explore` is the public face of a destination and reads as print.
+   * above. The public surface is the face of a destination and reads as print.
    * Keeping both means the public surface can look like the prototype it was
    * designed as without restyling four working surfaces to match it.
    *

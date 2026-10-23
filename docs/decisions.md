@@ -519,7 +519,9 @@ would be showing something other than what was designed.
 
 The earlier decision is **not** reversed in general. It still governs the four
 product surfaces, which carry no destination photography and should not acquire
-any. This ADR is scoped to `/explore`.
+any. This ADR is scoped to the public destination surface (the routes in
+`src/app/(public)`); the owner, partner, guest-portal and admin surfaces carry
+no destination photography.
 
 **Consequences.**
 

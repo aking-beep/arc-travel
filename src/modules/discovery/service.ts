@@ -105,6 +105,16 @@ export type ExperienceCard = Awaited<ReturnType<typeof listPublicExperiences>>['
 export async function listPublicExperiences(query: Record<string, string | undefined> = {}) {
   const filter = parseExperienceFilter(query)
 
+  // The chips must offer every category the catalogue has, not only the one
+  // already selected, so this deliberately ignores the filter. A chip list
+  // derived from the filtered rows collapses to one chip on the first click
+  // and the visitor cannot get back.
+  const categoryRows = await prisma.experience.findMany({
+    where: PUBLISHED_EXPERIENCE,
+    distinct: ['category'],
+    select: { category: true },
+  })
+
   const rows = await prisma.experience.findMany({
     where: {
       ...PUBLISHED_EXPERIENCE,
@@ -138,8 +148,11 @@ export async function listPublicExperiences(query: Record<string, string | undef
     items,
     filter,
     /** Categories present in the unfiltered catalogue, for the filter chips. */
-    categories: [...new Set(rows.map((r) => r.category))].sort() as ExperienceCategory[],
-    totalBeforeFilter: rows.length,
+    // Sorted here rather than in the query: Postgres orders an enum by its
+    // declaration order, which is not the order a reader scans a chip row in.
+    categories: categoryRows.map((r) => r.category).sort() as ExperienceCategory[],
+    /** How many matched everything but the price ceiling. */
+    totalBeforePriceFilter: rows.length,
   }
 }
 

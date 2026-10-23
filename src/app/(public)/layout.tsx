@@ -15,10 +15,14 @@ export const metadata: Metadata = {
 }
 
 /**
- * The public destination surface.
+ * The public destination surface — ARC Travel's front door.
  *
- * A fifth surface alongside owner, partner, guest portal and admin, carried
- * over from the Magic Patterns export. Three things about it are deliberate.
+ * This is the application, carried over from the Magic Patterns export and
+ * mounted at the root. The owner, partner, guest-portal and admin surfaces are
+ * the operational product behind it and keep their own routes; `/demo` indexes
+ * them, because the export has no equivalent of any of them and a demo that
+ * cannot reach them is not a demo of this product. Three things about this
+ * layout are deliberate.
  *
  * `data-surface="explore"` switches on the editorial palette defined in
  * `globals.css`. The four product surfaces are tools people use at work and
