@@ -1,5 +1,9 @@
 import { PrismaClient } from '@prisma/client'
 
+import { applyDatabaseUrl } from './database-url'
+
+applyDatabaseUrl()
+
 /**
  * One PrismaClient per process. Next.js hot-reloads modules in development, so
  * the instance is parked on `globalThis` to avoid exhausting the pool.

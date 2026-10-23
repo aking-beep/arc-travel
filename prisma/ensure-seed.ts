@@ -12,6 +12,9 @@
  * `process.exitCode`, which an importing process cannot observe.
  */
 import 'dotenv/config'
+import { applyDatabaseUrl } from '../src/lib/database-url'
+
+applyDatabaseUrl()
 import { execFileSync } from 'node:child_process'
 import { PrismaClient } from '@prisma/client'
 

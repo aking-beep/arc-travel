@@ -17,6 +17,9 @@
  * Run with: npm run db:seed
  */
 import 'dotenv/config'
+import { applyDatabaseUrl } from '../src/lib/database-url'
+
+applyDatabaseUrl()
 import {
   AbilityLevel,
   CommissionBasis,
