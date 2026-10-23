@@ -21,14 +21,16 @@ hotel knowledge → verified catalog → guest preferences → contextual itiner
                 → simulated purchase → hotel earnings → operator insight
 ```
 
-Four surfaces, one modular monolith:
+Five surfaces, one modular monolith:
 
 | Surface | Route | What it does |
 | --- | --- | --- |
+| Public | `/` | The destination surface: destinations, stays, experiences, cultural guides, the journal, search, and an illustrative trip planner. Editorial content, no availability and no commercial claim |
 | Hotel owner | `/owner` | Onboarding, property profile, catalog, partners, arrivals, morning briefing, approvals, revenue |
 | Guest | `/g/<portalToken>` | QR-reached portal: intake, itinerary with its reasoning, local guide, basket, simulated checkout |
 | Local partner | `/partner` | Supplier profile, experiences, availability, booking requests, earnings |
 | Platform admin | `/admin` | Verification, destination graph with provenance, data-quality checks, system health |
+| Demo index | `/demo` | The door into the four operational surfaces, so a walkthrough can start anywhere |
 
 ## What it deliberately does not do
 
@@ -166,7 +168,9 @@ prisma/
   seed/                  Fixtures: destination graph, catalog, people, conditions
 src/
   app/                   Next.js App Router — thin surface layer only
+    (public)/            The public destination surface, mounted at the root
   components/            UI primitives and shared components
+    explore/             The public surface's own components, editorially styled
   lib/                   Cross-cutting: money, dates, errors, env, i18n, redaction
   modules/               Domain logic, no React
     tenancy/             The single authorisation chokepoint
@@ -179,6 +183,7 @@ src/
     workflows/           Proposals, approvals, audit
     analytics/           Event capture and revenue reporting
     admin/               Verification and data-quality checks
+    discovery/           The public read model, estimates and editorial content
     ai/                  Provider interface, mock, injection defenses
     integrations/        Payments, maps, conditions, messaging, analytics boundaries
 tests/

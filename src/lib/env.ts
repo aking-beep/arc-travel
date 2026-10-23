@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { applyDatabaseUrl } from './database-url'
+
 /**
  * Environment contract. Parsed once, lazily, so that importing a module never
  * crashes a build just because an optional integration is unconfigured.
@@ -64,6 +66,8 @@ const DEV_ANALYTICS_SALT = 'arc-stay-development-only-analytics-salt-not-for-pro
 
 export function getEnv(): Env {
   if (cached) return cached
+
+  applyDatabaseUrl()
 
   const parsed = envSchema.safeParse(process.env)
   if (!parsed.success) {

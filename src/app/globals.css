@@ -55,7 +55,42 @@
 
   --shadow-lift: 0 1px 2px oklch(0.232 0.018 66 / 0.06), 0 8px 24px -12px oklch(0.232 0.018 66 / 0.18);
   --shadow-lift-lg: 0 2px 4px oklch(0.232 0.018 66 / 0.05), 0 20px 48px -20px oklch(0.232 0.018 66 / 0.24);
+
+  /*
+   * Editorial palette for the public destination surface at the root, carried
+   * over from the Magic Patterns export.
+   *
+   * It is a second palette, and that is deliberate rather than an oversight.
+   * The four product surfaces — owner, partner, guest portal, admin — are a
+   * tool someone uses at work, and they keep the sand/jade/terracotta ramps
+   * above. The public surface is the face of a destination and reads as print.
+   * Keeping both means the public surface can look like the prototype it was
+   * designed as without restyling four working surfaces to match it.
+   *
+   * These are flat hex rather than oklch because they are the prototype's own
+   * values and matching them exactly matters more here than ramp consistency.
+   * Note `--color-sand` sits alongside `--color-sand-50 … -950`: Tailwind
+   * treats `bg-sand` and `bg-sand-100` as separate utilities, so the two
+   * systems do not collide.
+   */
+  --color-ivory: #f8f6f2;
+  --color-paper: #efebe3;
+  --color-sand: #e4ddd0;
+  --color-ink: #202824;
+  --color-ink-soft: #3a443f;
+  --color-muted: #6b726d;
+  --color-gold: #b08d57;
+  --color-gold-deep: #8e6f3f;
+  --color-gold-hover: #c29e68;
+  --color-sage: #52685b;
+  --color-sage-soft: #dce3dd;
+  --color-sage-deep: #465a4e;
+  --color-line: #ddd6ca;
+  --color-danger: #9a4a3a;
+
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
 }
+
 
 :root {
   --surface: var(--color-sand-50);
@@ -139,4 +174,34 @@
   /* Safe-area padding so the guest portal's sticky bars clear the home bar. */
   .pb-safe { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
   .pt-safe { padding-top: max(0.5rem, env(safe-area-inset-top)); }
+}
+
+@layer utilities {
+  /* Horizontal carousels on the public surface hide their scrollbar but stay
+     keyboard- and touch-scrollable. */
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { scrollbar-width: none; }
+}
+
+@layer base {
+  /* The public surface sets its own page background and body type. Scoped to
+     the attribute so the four product surfaces are untouched. */
+  [data-surface='explore'] {
+    background-color: var(--color-ivory);
+    color: var(--color-ink);
+  }
+
+  [data-surface='explore'] h1,
+  [data-surface='explore'] h2,
+  [data-surface='explore'] h3,
+  [data-surface='explore'] h4 {
+    font-family: var(--font-editorial-serif);
+    letter-spacing: -0.01em;
+  }
+
+  /* A date input's picker indicator is near-invisible on the ivory ground. */
+  [data-surface='explore'] input[type='date']::-webkit-calendar-picker-indicator {
+    opacity: 0.5;
+    cursor: pointer;
+  }
 }
