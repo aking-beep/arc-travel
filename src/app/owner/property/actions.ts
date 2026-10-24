@@ -82,7 +82,7 @@ export async function invitePartnerAction(_prev: FormState, formData: FormData):
   const { propertyId } = await resolveOperatingProperty(actor)
 
   try {
-    await invitePartner(actor, propertyId, {
+    const result = await invitePartner(actor, propertyId, {
       name: String(formData.get('name') ?? ''),
       contactName: String(formData.get('contactName') ?? ''),
       contactEmail: String(formData.get('contactEmail') ?? ''),
@@ -94,14 +94,29 @@ export async function invitePartnerAction(_prev: FormState, formData: FormData):
     })
     revalidatePath('/owner/partners')
     revalidatePath('/owner')
-    return {
-      ok: true,
-      message: 'Partner added and an agreement created.',
-      notes: [
-        'They are unverified and payouts are off. ARC verification is a separate step on the admin surface.',
-        'No email was sent — outbound messaging is disabled in this build.',
-      ],
+
+    /*
+     * The invitation link is handed to the owner rather than emailed.
+     *
+     * No message leaves this system without an `Approval` row naming who
+     * decided, and `ARC_ENABLE_OUTBOUND_MESSAGING` is false — so "we have
+     * emailed your partner" would be false. Showing the link is the smaller,
+     * true promise, and it keeps the credential in the owner's hands.
+     */
+    const notes = [
+      'They are unverified and payouts are off. ARC verification is a separate step on the admin surface.',
+    ]
+    if (result.invitation) {
+      notes.push(
+        `Send them this link so they can set their own password: /invite/${result.invitation.token}`,
+        `It works once and expires on ${result.invitation.expiresAt.toISOString().slice(0, 10)}.`,
+      )
+    } else {
+      notes.push('They already have an ARC account, so they sign in with their existing password.')
     }
+    notes.push('No email was sent — outbound messaging is disabled in this build.')
+
+    return { ok: true, message: 'Partner added and an agreement created.', notes }
   } catch (error) {
     return toFormState(error)
   }

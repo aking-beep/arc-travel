@@ -284,6 +284,7 @@ model Organization {
   auditEvents      AuditEvent[]
   analyticsEvents  AnalyticsEvent[]
   idempotencyKeys  IdempotencyKey[]
+  invitations      Invitation[]
 
   @@index([status])
 }
@@ -362,6 +363,8 @@ model User {
   agentRuns   AgentRun[]
   supplierContacts Supplier[]
   cultureChangeReviews CultureSourceChange[]
+  invitations      Invitation[] @relation("InvitationUser")
+  invitationsSent  Invitation[] @relation("InvitationSender")
 }
 
 /// Binds a user to an organization with a role. The sole source of authority.
@@ -1427,4 +1430,52 @@ model RateLimitCounter {
 
   @@unique([bucket, windowStart])
   @@index([windowStart])
+}
+
+/// An invitation to take over an account that someone else created.
+///
+/// `invitePartner` creates the partner's `User` row — it has to, because the
+/// supplier record needs a contact — but that row has no password, and ARC must
+/// not invent one and mail it. The invitation is the handover: a single-use,
+/// time-boxed token that lets exactly one person set the password on exactly
+/// one account.
+///
+/// Only the token's hash is stored, for the same reason a password's is: a
+/// leaked database must not yield working invitation links.
+model Invitation {
+  id     String @id @default(uuid())
+  userId String
+
+  /// SHA-256 of the token. The token itself exists only in the link.
+  tokenHash String @unique
+
+  /// What the invitation is for, so the acceptance page can say so.
+  kind InvitationKind
+
+  /// The organization the invitation is on behalf of, for the audit trail.
+  organizationId String?
+  /// Who sent it. Null for one created by a system path.
+  invitedById String?
+
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  /// Set when an owner withdraws an invitation before it is accepted.
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  user         User          @relation("InvitationUser", fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy    User?         @relation("InvitationSender", fields: [invitedById], references: [id], onDelete: SetNull)
+
+  @@index([userId, acceptedAt])
+  @@index([organizationId, acceptedAt])
+  @@index([expiresAt])
+}
+
+enum InvitationKind {
+  /// A local partner invited by a hotel owner.
+  SUPPLIER
+  /// A staff member invited to an existing property.
+  STAFF
 }

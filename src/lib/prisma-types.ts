@@ -16,6 +16,7 @@ export {
   ExperienceCategory,
   ExperienceStatus,
   HoldStatus,
+  InvitationKind,
   ItineraryItemKind,
   ItineraryStatus,
   Locale,
