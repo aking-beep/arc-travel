@@ -14,7 +14,7 @@ let tenant: TenantFixture
 
 beforeEach(async () => {
   await resetDatabase()
-  resetRateLimits()
+  await resetRateLimits()
   tenant = await createTenant({})
 })
 
@@ -83,7 +83,7 @@ describe('runAI', () => {
     const key = `bucket-${Date.now()}`
     // Burn the per-minute allowance.
     for (let i = 0; i < 100; i += 1) {
-      if (!checkRateLimit(key)) break
+      if (!(await checkRateLimit(key))) break
     }
 
     const result = await runAI({
@@ -115,30 +115,41 @@ describe('runAI', () => {
 })
 
 describe('checkRateLimit', () => {
-  it('allows calls up to the limit and then refuses', () => {
+  it('allows calls up to the limit and then refuses', async () => {
     const key = `limit-${Date.now()}`
     let allowed = 0
     for (let i = 0; i < 50; i += 1) {
-      if (checkRateLimit(key)) allowed += 1
+      if (await checkRateLimit(key)) allowed += 1
     }
     // AI_RATE_LIMIT_PER_MINUTE defaults to 10.
     expect(allowed).toBe(10)
   })
 
-  it('frees the bucket once the window has passed', () => {
+  it('frees the bucket once the window has passed', async () => {
     const key = `window-${Date.now()}`
-    const start = Date.now()
-    for (let i = 0; i < 20; i += 1) checkRateLimit(key, start)
+    // Mid-window, so stepping forward 61s lands in the next fixed window
+    // rather than on a boundary.
+    const start = Math.floor(Date.now() / 60_000) * 60_000 + 30_000
+    for (let i = 0; i < 20; i += 1) await checkRateLimit(key, start)
 
-    expect(checkRateLimit(key, start)).toBe(false)
-    expect(checkRateLimit(key, start + 61_000)).toBe(true)
+    expect(await checkRateLimit(key, start)).toBe(false)
+    expect(await checkRateLimit(key, start + 61_000)).toBe(true)
   })
 
-  it('tracks buckets independently', () => {
+  it('tracks buckets independently', async () => {
     const a = `a-${Date.now()}`
     const b = `b-${Date.now()}`
-    for (let i = 0; i < 20; i += 1) checkRateLimit(a)
-    expect(checkRateLimit(a)).toBe(false)
-    expect(checkRateLimit(b)).toBe(true)
+    for (let i = 0; i < 20; i += 1) await checkRateLimit(a)
+    expect(await checkRateLimit(a)).toBe(false)
+    expect(await checkRateLimit(b)).toBe(true)
+  })
+
+  it('counts across instances, because the counter is in the database', async () => {
+    const key = `shared-${Date.now()}`
+    // Two callers that share no process state still share the ceiling.
+    const verdicts = await Promise.all(
+      Array.from({ length: 12 }, () => checkRateLimit(key)),
+    )
+    expect(verdicts.filter(Boolean)).toHaveLength(10)
   })
 })

@@ -30,7 +30,7 @@ let tenant: TenantFixture
 
 beforeEach(async () => {
   await resetDatabase()
-  resetRateLimits()
+  await resetRateLimits()
   tenant = await createTenant({ capacity: 6, priceMinor: 95_000 })
 })
 

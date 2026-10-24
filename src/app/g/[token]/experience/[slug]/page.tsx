@@ -8,7 +8,8 @@ import { ConditionsCard } from '@/components/guest/conditions-card'
 import { createTranslator } from '@/lib/i18n'
 import { getLocale } from '@/lib/i18n/server'
 import { toLocalDateKey, toLocalTimeString } from '@/lib/dates'
-import { getGuestExperience, resolvePortalContext } from '@/modules/guest/portal'
+import { getGuestExperience } from '@/modules/guest/portal'
+import { resolvePortalForRequest } from '../../resolve'
 import { getConditions } from '@/modules/destination/conditions'
 import { evaluateSlotsForGuest } from '@/modules/destination/suitability'
 import { getGuestPreferences } from '@/modules/preferences/service'
@@ -20,7 +21,7 @@ export default async function ExperienceDetailPage({
   params: Promise<{ token: string; slug: string }>
 }) {
   const { token, slug } = await params
-  const context = await resolvePortalContext(token)
+  const context = await resolvePortalForRequest(token)
   const experience = await getGuestExperience(context.propertyId, slug)
   if (!experience) notFound()
 

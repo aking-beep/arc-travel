@@ -345,6 +345,13 @@ export const dictionary = {
   'explore.verification.unverified': 'Unverified listing',
   'explore.verification.unverifiedNote':
     'ARC has not checked this host. In this demonstration build none of them have been.',
+  'explore.verification.illustrative': 'Illustrative listing',
+  'explore.verification.illustrativeNote':
+    'Nobody is behind this listing. It shows what the surface looks like with a catalogue in it.',
+  'explore.source.live': 'From the published catalogue',
+  'explore.source.liveNote':
+    'A real supplier in Puerto Escondido, read from the catalogue they maintain. Prices are their published price list, not an offer on a date.',
+  'explore.source.illustrative': 'Illustrative',
   'explore.guide.heading': 'Local guide',
   'explore.guide.lede':
     'Reference for this stretch of coast. No availability, no prices, no recommendation — the places, what the water has been doing, and sourced notes for the country.',
@@ -385,6 +392,11 @@ export const dictionary = {
   'explore.planner.paceHeading': 'Pace',
   'explore.planner.briefHeading': 'Your brief',
   'explore.planner.generate': 'Draft the journey',
+  'explore.planner.issuesHeading': 'Before the planner can draft this',
+  'explore.planner.issue.invalidDate': 'Give an arrival and a departure date as YYYY-MM-DD.',
+  'explore.planner.issue.reversedDates': 'The departure date must be after the arrival date.',
+  'explore.planner.issue.tripTooLong': 'The planner drafts at most 10 nights at a time.',
+  'explore.planner.issue.travelers': 'Plan for between 1 and 12 travellers.',
   'explore.planner.sampleHeading': 'Or open a worked sample',
   'explore.planner.back': 'Edit the brief',
   'explore.planner.titleLabel': 'Itinerary title',
@@ -759,6 +771,13 @@ export const dictionary = {
   'explore.verification.unverified': 'Anuncio sin verificar',
   'explore.verification.unverifiedNote':
     'ARC no ha comprobado a este anfitrión. En este build de demostración no se ha comprobado a ninguno.',
+  'explore.verification.illustrative': 'Anuncio ilustrativo',
+  'explore.verification.illustrativeNote':
+    'No hay nadie detrás de este anuncio. Muestra cómo se ve la superficie con un catálogo dentro.',
+  'explore.source.live': 'Del catálogo publicado',
+  'explore.source.liveNote':
+    'Un proveedor real de Puerto Escondido, leído del catálogo que mantiene. Los precios son su lista publicada, no una oferta para una fecha.',
+  'explore.source.illustrative': 'Ilustrativo',
   'explore.guide.heading': 'Guía local',
   'explore.guide.lede':
     'Referencia de este tramo de costa. Sin disponibilidad, sin precios y sin recomendación: los lugares, qué ha estado haciendo el mar y notas del país con su fuente.',
@@ -800,6 +819,11 @@ export const dictionary = {
   'explore.planner.paceHeading': 'Ritmo',
   'explore.planner.briefHeading': 'Tu resumen',
   'explore.planner.generate': 'Esbozar el viaje',
+  'explore.planner.issuesHeading': 'Antes de que el planificador pueda esbozarlo',
+  'explore.planner.issue.invalidDate': 'Indica la llegada y la salida en formato AAAA-MM-DD.',
+  'explore.planner.issue.reversedDates': 'La fecha de salida debe ser posterior a la de llegada.',
+  'explore.planner.issue.tripTooLong': 'El planificador esboza como máximo 10 noches cada vez.',
+  'explore.planner.issue.travelers': 'Planifica para entre 1 y 12 viajeros.',
   'explore.planner.sampleHeading': 'O abre un ejemplo ya trabajado',
   'explore.planner.back': 'Editar el resumen',
   'explore.planner.titleLabel': 'Título del itinerario',

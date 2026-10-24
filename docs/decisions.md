@@ -542,3 +542,261 @@ no destination photography.
 
 **Cost.** One documented exception to a product commitment, scoped to one
 surface, plus the re-hosting work above before any external use.
+
+---
+
+## ADR-026 — ARC never confirms a payment; it books against one already confirmed
+
+**Status.** Accepted, 2026-10-24.
+
+**Context.** Until now the only payments provider was `SimulatedPaymentsProvider`,
+which returns a succeeded intent unconditionally, and `checkout()` hard-refused
+any other. That is correct for a demo and leaves no answer to the first question
+a pilot asks: what happens when real money is involved?
+
+The obvious implementation — checkout creates *and confirms* a payment, then
+books — has a failure window that cannot be closed. Between taking the money and
+writing the order there is a hold that may have expired, a slot that may have
+filled, and a basket a second tab may have changed. Every one of those leaves
+ARC holding a guest's money for a booking it cannot make, and the only recovery
+is an automatic refund — which is a consequential action with no `Approval` row
+behind it, and so forbidden by non-negotiable 6.
+
+**Decision.** The payment is confirmed by the client, before checkout, and ARC
+reads it back.
+
+- `PaymentsProvider` gains `retrieveIntent`. `checkout()` takes an optional
+  `paymentIntentId`: **required** when the provider is live, **refused** when it
+  is not.
+- For a live provider, checkout retrieves the intent and requires `succeeded`.
+  It never calls `confirm`, and `StripePaymentsProvider.createIntent` does not
+  send `confirm=true`.
+- The *authoritative* amount is the provider's, read back from the provider —
+  never the client's claim and never what ARC asked for. The transaction
+  re-reads the basket lines and refuses to commit if the two disagree.
+- A mismatch is a refused checkout plus an audit row
+  (`commerce.checkout.payment_mismatch`), not an automatic refund. An operator
+  reconciles it. That is slower and it is the honest answer.
+- For the simulated provider nothing changes from the outside: there is no
+  client-side step, so checkout creates the intent itself and it comes back
+  `succeeded` and marked simulated.
+
+**Consequences.**
+
+- An order exists only once its payment does, so `CONFIRMED` continues to mean
+  what it says and `OrderStatus.FAILED` is reachable only from the *later*
+  failure of a payment that had succeeded.
+- That later failure is what the webhook is for.
+  `POST /api/webhooks/stripe` verifies the signature over the raw bytes, and
+  `applyPaymentEvent` fails the order, returns every place through
+  `returnCapacity`, and reverses the earnings lines with offsetting negative
+  entries so each ledger account still sums to what is owed. The event id is
+  claimed in `IdempotencyKey` **inside** the same transaction as the effect, so
+  a redelivery is a no-op and a crash does not make an event unprocessable.
+- `payment_intent.succeeded` is deliberately **not** handled. Checkout already
+  confirmed the order against that intent, and re-confirming from an event would
+  let a replay resurrect an order the guest has since cancelled.
+- A webhook can only act on an order whose `paymentProvider` is `stripe`, so a
+  live event can never mutate a simulated booking.
+- A live provider requires `STRIPE_SECRET_KEY` **and**
+  `STRIPE_WEBHOOK_SECRET`. Without the second, a payment that later failed would
+  leave a confirmed order holding capacity for ever, so starting
+  half-configured is a refusal rather than a silent condition.
+- Demo mode still moves no money, and now refuses to three depths: `getEnv()`,
+  `getIntegrations()` and `checkout()` each reject a live provider while
+  `ARC_DATA_MODE=demo`. The webhook route 404s there.
+- **Not built.** The client-side confirmation step itself. The guest surface has
+  no payment element, because there is no mode in which this build may render
+  one. A pilot needs that UI plus `ARC_DATA_MODE=pilot`, and the server side it
+  will talk to is what exists here.
+
+**Cost.** Two round trips instead of one for a live payment, and a reconciliation
+an operator performs by hand in the mismatch case.
+
+---
+
+## ADR-027 — The published catalogue and the illustrative set are shown side by side, never merged
+
+**Status.** Accepted, 2026-10-24.
+
+**Context.** `src/modules/discovery/service.ts` is a database-backed read model
+of the published catalogue — 350 lines, tested, scoped to
+`ExperienceStatus.PUBLISHED` and `EntityStatus.ACTIVE`, taking no identifier
+from the client. Until now **no route rendered it**. The public surface ran
+entirely on the illustrative content set ported from the Magic Patterns export,
+so the one destination this build has real data for was showing fixtures. This
+was the largest architectural gap the readiness audit found.
+
+The obvious fix is to merge the two: adapt the database rows into the content
+shapes and concatenate. Two things make that wrong.
+
+**They are different claims.** "Illustrative" means nobody is behind this
+listing. "Unverified" means a real supplier is, and ARC has not checked them.
+A visitor who cannot tell which list they are reading cannot tell which claim
+they are being made — and the second is the one a hotel partner is being asked
+to evaluate.
+
+**They are different currencies.** The content set is USD
+(`CONTENT_CURRENCY`); the catalogue is in the property's own currency. The
+browse page's price filter is a single scale. One slider over two currencies is
+a slider that lies, and reconciling them would mean inventing an exchange rate
+in a build whose first non-negotiable about money is that it is exact.
+
+**Decision.** `modules/discovery/live.ts` adapts the read model into the
+content types the existing components already render, and the pages show the
+two catalogues as separate, labelled sections.
+
+Five rules govern the adapter, and each is a refusal:
+
+1. **Nothing is invented to fill a field.** No photograph, no host biography, no
+   years of experience, no step-by-step itinerary, no room size, no rating.
+   Those fields became optional on the content types and are left empty.
+2. **Claims stay claims.** `hostClaims` is the supplier's own
+   `claimedCertifications`, passed through. `provenance` carries the row's real
+   `VerificationStatus`, so only an `/admin` decision can produce verified
+   wording (non-negotiable 2).
+3. **Currency travels with the price.** Every card and estimator reads the
+   listing's currency instead of assuming `CONTENT_CURRENCY`.
+4. **An unpriced listing is not a listing.** A published experience with no
+   active BASE price is omitted rather than shown as "price on request" by a
+   product that holds the price list.
+5. **A rejected supplier is not shown.** The published-catalogue predicate does
+   not exclude one; the adapter does.
+
+It returns **no availability** — no slots, no holds, no "places left". A
+published price is a fact about a price list, not an offer on a date.
+
+**Consequences.**
+
+- Live sections appear on `/`, `/experiences` and `/stays`; `/experiences/[slug]`
+  and `/stays/[slug]` try the database first and fall through to the content
+  set, so a real listing is never shadowed by a fixture that shares its slug.
+- `ListingBadge` gained a third state. It could already say "verified by ARC"
+  and never did, because nothing reaching it had a real status; now something
+  does, and the wording is reachable only from a recorded admin decision.
+- `ExperienceCategory` gained a `Transport` member. The database has a
+  `TRANSPORT` category and none of the content set's five buckets it honestly
+  maps to; squeezing an airport transfer into "Nature" is how a filter starts
+  lying. The map is exhaustive over the Prisma enum, so a new database category
+  fails typecheck rather than landing in whichever bucket was nearest.
+- `AbilityLevel` has five members and the content set's `Difficulty` four.
+  `IMPROVER` and `INTERMEDIATE` both read as "Moderate"; collapsing two
+  adjacent middle levels loses less than inventing a fifth word, and the detail
+  page shows the real ability range alongside.
+- A live card renders on its tinted plate with no image, permanently. ADR-025
+  scoped destination imagery to the *content* set; giving a real supplier's
+  listing a stock photograph is the thing that decision scoped away.
+- On an unseeded database every live section disappears rather than rendering
+  an empty shelf.
+
+**Not done.** `/destinations/[slug]`, `/culture/[destination]`, `/search` and
+`/plan` still read the content set alone. The places and conditions the read
+model exposes (`listPublicPlaces`, `getPublicConditions`) are rendered on the
+guest portal and not yet on the public destination page.
+
+**Cost.** Two catalogues visible on one surface, which is more to explain than
+one. That is the honest shape of the thing: the product has one real
+destination and a demonstration of what eight would look like.
+
+---
+
+## ADR-028 — `/sign-in` is a real sign-in page (supersedes ADR-023's treatment of it)
+
+**Status.** Accepted, 2026-10-24. Supersedes the `/sign-in` decision in ADR-023.
+
+**Context.** ADR-023 made `/sign-in` 404 outside demo mode and stripped the
+guest list from it. That was right: the page was public and rendered every
+guest's portal token into the markup, which is a bearer credential served to
+anyone who asked. 404ing it was the correct emergency answer to a page that
+should not have existed in that form.
+
+It was also the only way in. There were no passwords — `signInAs(userId)` took
+a user id from a click — so a build with no demo switcher had no authentication
+at all, and `/admin`, `/owner` and `/partner` were unreachable in a pilot.
+
+**Decision.** `/sign-in` renders a password form in every mode, and the demo
+account switcher only while `ARC_DATA_MODE=demo`.
+
+- The password form is first and is the page's purpose. `verifyCredentials`
+  does the work: scrypt, NFKC-normalised input, a constant-cost comparison
+  against an unmatchable hash for an unknown email, and rate limits on both the
+  email and the caller.
+- `listDemoAccounts()` is called only when `demoMode`, so outside demo mode
+  nothing enumerates users and no token reaches the markup. The leak ADR-023
+  closed stays closed by construction rather than by the whole page being
+  absent.
+- `next` is passed through `safeNext`, which refuses anything not starting with
+  a single `/`.
+
+**Consequences.** ADR-023's other half — the portal token being time-boxed as
+well as scoped — stands unchanged and is unrelated to this. The demo switcher
+is now the exception rather than the mechanism, which is the right way round.
+
+---
+
+## ADR-029 — An activity's operating window is one gate with four callers
+
+**Status.** Accepted, 2026-10-24.
+
+**Context.** Whether an activity may run at a given time on a given date was
+decided in three places: `modules/destination/suitability.ts`,
+`modules/itinerary/scoring.ts`, and nowhere at all on the two write paths that
+create departures (`catalog.addSlot`, `suppliers.scheduleAvailability`).
+
+The two read-side copies had drifted. One emitted an exclusion code the other
+did not, and neither checked season at all on one path. More seriously, a slot
+could be *written* outside the window the activity declares — so the gate was
+being asked to exclude departures that should never have existed, and a
+supplier scheduling a 16:30 dawn surf got no refusal, just a departure nobody
+could book.
+
+**Decision.** `modules/destination/operating-window.ts` is the one gate.
+
+- `gateByOperatingWindow` returns `{ allowed, exclusions, notes }` for the read
+  paths, with the codes `outside_activity_operating_window` and
+  `out_of_season`.
+- `assertWithinOperatingWindow` throws `invalid` for the write paths.
+- Four callers, two in each layer. A fifth has one function to call rather than
+  a convention to remember.
+- `scheduleAvailability` throws for a requested start time outside the window —
+  that is a mistake worth refusing — but silently skips out-of-season *days*
+  inside a requested range, exactly as it already skips past days. Refusing the
+  whole range because one month of it is closed would be useless.
+
+**Consequences.** One integration test fixture and one e2e spec broke, both
+because they created a departure from the wall clock and so sometimes outside
+the activity's hours. Both were wrong and now state their hour explicitly;
+neither was the gate being wrong. A test that passes only between 07:00 and
+16:00 is a test that will fail in somebody else's timezone.
+
+---
+
+## ADR-030 — An organization carries a platform commission default, not just a hotel one
+
+**Status.** Accepted, 2026-10-24.
+
+**Context.** `resolveCommission` fell back to
+`organization.defaultCommissionBps` for the hotel's share and **zero** for
+ARC's when no rule matched. So a tenant with no commission rule produced ledger
+lines in which the platform earned nothing: ARC's revenue depended on somebody
+remembering to write a rule per property, per category or per experience.
+
+Nothing failed. The ledger balanced, the split re-summed to gross, and the
+missing money simply went to the supplier.
+
+**Decision.** `Organization.defaultPlatformCommissionBps` (default 500), and
+`resolveCommission` takes both defaults as an explicit `CommissionDefaults`
+argument rather than reading one from the row and hard-coding the other.
+
+- The signature change is the point. A caller must now state both, so a future
+  one cannot omit the platform share by accident — it is a typecheck failure
+  rather than a zero.
+- A tenant that genuinely negotiated a zero platform share sets it to zero, and
+  that is a decision in a column rather than an accident in a fallback.
+- `/owner/revenue/commission` administers rules and both defaults, converting
+  percentages to basis points and pesos to centavos exactly once at the form
+  edge.
+
+**Consequences.** The seed states both defaults explicitly. A unit test asserts
+the zero case still works, so the fix cannot be read as "the platform share may
+never be zero".

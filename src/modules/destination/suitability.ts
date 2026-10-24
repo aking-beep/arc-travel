@@ -1,7 +1,8 @@
 import { prisma } from '@/lib/db'
 import { notFound, safetyConstraint } from '@/lib/errors'
 import { type AbilityLevel } from '@/lib/prisma-types'
-import { toLocalDateKey } from '@/lib/dates'
+import { toLocalDateKey, toLocalTimeString } from '@/lib/dates'
+import { gateByOperatingWindow } from './operating-window'
 import {
   abilityRank,
   gateByConditions,
@@ -76,6 +77,9 @@ export async function evaluateSlotForGuest(options: {
                 maxSafeRisk: true,
                 guideRequired: true,
                 conditionsSensitive: true,
+                earliestStart: true,
+                latestStart: true,
+                seasonMonths: true,
                 placeId: true,
                 place: { select: { id: true, typicalRisk: true } },
               },
@@ -105,6 +109,22 @@ export async function evaluateSlotForGuest(options: {
     ? (await getConditions([place.id], [forDate], now)).get(`${place.id}:${forDate}`) ?? null
     : null
 
+  /**
+   * The activity's operating window, gated here as well as in `scoreCandidate`.
+   * Not recommended must mean not sellable: a dawn-only session listed at 23:00
+   * was excluded from every itinerary and still purchasable from the experience
+   * page until this gate existed.
+   */
+  const window = gateByOperatingWindow({
+    window: {
+      earliestStart: activity.earliestStart,
+      latestStart: activity.latestStart,
+      seasonMonths: activity.seasonMonths,
+    },
+    startTime: toLocalTimeString(slot.startsAt),
+    forDate,
+  })
+
   const gate: ConditionsGate = gateByConditions({
     guestAbility: guest.surfAbility,
     activityMaxSafeRisk: activity.maxSafeRisk,
@@ -125,9 +145,9 @@ export async function evaluateSlotForGuest(options: {
   return {
     slotId: slot.id,
     experienceId: experience.id,
-    allowed: gate.allowed,
-    exclusions: gate.exclusions,
-    notes: gate.notes,
+    allowed: gate.allowed && window.allowed,
+    exclusions: [...gate.exclusions, ...window.exclusions],
+    notes: [...gate.notes, ...window.notes],
     snapshot: gate.snapshot,
     usedBaseline: gate.usedBaseline,
     guestAbility: guest.surfAbility,

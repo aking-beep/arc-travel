@@ -215,13 +215,15 @@ export default async function CulturePage({
                       className="group flex items-center gap-4 py-4"
                     >
                       <div className="bg-sand relative size-16 shrink-0 overflow-hidden rounded-xl">
-                        <Image
-                          src={experience.image}
-                          alt=""
-                          fill
-                          sizes="64px"
-                          className="object-cover"
-                        />
+                        {experience.image ? (
+                          <Image
+                            src={experience.image}
+                            alt=""
+                            fill
+                            sizes="64px"
+                            className="object-cover"
+                          />
+                        ) : null}
                       </div>
                       <span className="flex-1">
                         <span className="group-hover:text-sage block text-lg transition-colors duration-150">

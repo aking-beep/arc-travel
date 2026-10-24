@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { conflict, forbidden, notFound } from '@/lib/errors'
-import { EntityStatus, Role, VerificationStatus } from '@/lib/prisma-types'
+import { EntityStatus, InvitationKind, Role, VerificationStatus } from '@/lib/prisma-types'
+import { createInvitation } from '@/modules/auth/invitations'
 import { assertOrganizationAccess, assertPropertyAccess, type ActorContext } from '@/modules/tenancy/context'
 import { recordAudit } from '@/modules/workflows/audit'
 import { amenitySchema, partnerInviteSchema, propertyProfileSchema, roomTypeSchema } from './schemas'
@@ -289,11 +290,25 @@ export async function addAmenity(
  * saying they trust an operator is not the same as ARC having checked their
  * documents, and the product keeps those two facts apart.
  */
+export interface PartnerInviteResult {
+  supplierId: string
+  /**
+   * The invitation the partner needs to set their own password, present only
+   * when this call created the account.
+   *
+   * Returned rather than emailed: `ARC_ENABLE_OUTBOUND_MESSAGING` is false and
+   * no message leaves this system without an `Approval` row, so the owner is
+   * handed the link and passes it on themselves. That is a smaller promise
+   * than "we have emailed your partner", and it is a true one.
+   */
+  invitation: { token: string; expiresAt: Date } | null
+}
+
 export async function invitePartner(
   actor: ActorContext,
   propertyId: string,
   raw: unknown,
-): Promise<{ supplierId: string }> {
+): Promise<PartnerInviteResult> {
   const { organizationId } = await assertPropertyAccess(actor, propertyId, Role.OWNER, Role.ADMIN)
   const input = partnerInviteSchema.parse(raw)
 
@@ -351,6 +366,8 @@ export async function invitePartner(
           email,
           name: input.contactName,
           phone: input.contactPhone ?? null,
+          // No password. ARC never invents a credential for someone else; the
+          // invitation below is how this person takes the account over.
         },
         select: { id: true },
       }))
@@ -406,7 +423,26 @@ export async function invitePartner(
       tx,
     )
 
-    return { supplierId: supplier.id }
+    /*
+     * A new contact gets an invitation; an existing account does not need one,
+     * because the person already has a password of their own.
+     */
+    const invitation = existing
+      ? null
+      : await createInvitation(
+          {
+            userId: contact.id,
+            kind: InvitationKind.SUPPLIER,
+            organizationId,
+            invitedById: actor.userId,
+          },
+          tx,
+        )
+
+    return {
+      supplierId: supplier.id,
+      invitation: invitation ? { token: invitation.token, expiresAt: invitation.expiresAt } : null,
+    }
   })
 
   return result

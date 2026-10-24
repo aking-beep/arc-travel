@@ -278,6 +278,42 @@ describe('expiry', () => {
     expect(availability.get(tenant.slotId)?.held).toBe(0)
   })
 
+  it('sweeps every tenant when no slot is named, in bounded batches', async () => {
+    /*
+     * The scheduled sweep exists for the holds no read path ever looks at: a
+     * guest abandons a basket on a departure nobody opens again, and `held`
+     * stands for ever while `placeHold` refuses places that are free.
+     */
+    const others = [
+      await createTenant({ capacity: 6 }),
+      await createTenant({ capacity: 6 }),
+      await createTenant({ capacity: 6 }),
+    ]
+    // One hold each, in four different tenants: `placeHold` resizes an
+    // existing hold in place rather than stacking (ADR-014), so a second hold
+    // on the same cart and slot would not be a second row.
+    for (const t of [tenant, ...others]) {
+      await placeHold({
+        organizationId: t.organizationId,
+        slotId: t.slotId,
+        cartId: await makeCart(t),
+        quantity: 1,
+        ttlMinutes: -1,
+      })
+    }
+
+    // `limit` bounds one Serializable transaction. A batch of one proves the
+    // caller can converge over several runs rather than locking every row.
+    expect(await sweepExpiredHolds({ limit: 1 })).toBe(1)
+    expect(await sweepExpiredHolds({ limit: 1 })).toBe(1)
+    expect(await sweepExpiredHolds({ limit: 10 })).toBe(2)
+    expect(await sweepExpiredHolds({ limit: 10 })).toBe(0)
+
+    for (const t of [tenant, ...others]) {
+      expect((await slotState(t.slotId)).held).toBe(0)
+    }
+  })
+
   it('leaves an unexpired hold alone', async () => {
     const cartId = await makeCart(tenant)
     await placeHold({

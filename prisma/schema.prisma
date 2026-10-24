@@ -265,8 +265,16 @@ model Organization {
   legalName   String?
   countryCode String       @default("MX")
   status      EntityStatus @default(DRAFT)
-  /// Platform commission in basis points, overridable per CommissionRule.
+  /// Hotel's commission in basis points when no CommissionRule matches,
+  /// overridable per CommissionRule.
   defaultCommissionBps Int  @default(1500)
+  /// ARC's own share in basis points when no CommissionRule matches.
+  ///
+  /// This used to be hard-coded to zero inside `resolveCommission`, which meant
+  /// a tenant with no rule produced ledger lines where the platform earned
+  /// nothing: ARC's revenue depended on somebody remembering to write a rule.
+  /// 500 bps matches the default written into every SupplierAgreement.
+  defaultPlatformCommissionBps Int @default(500)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
@@ -284,6 +292,7 @@ model Organization {
   auditEvents      AuditEvent[]
   analyticsEvents  AnalyticsEvent[]
   idempotencyKeys  IdempotencyKey[]
+  invitations      Invitation[]
 
   @@index([status])
 }
@@ -362,6 +371,8 @@ model User {
   agentRuns   AgentRun[]
   supplierContacts Supplier[]
   cultureChangeReviews CultureSourceChange[]
+  invitations      Invitation[] @relation("InvitationUser")
+  invitationsSent  Invitation[] @relation("InvitationSender")
 }
 
 /// Binds a user to an organization with a role. The sole source of authority.
@@ -917,6 +928,15 @@ model Order {
   items        OrderItem[]
   ledgerEntries LedgerEntry[]
 
+  /// One order per payment, enforced by the database.
+  ///
+  /// The idempotency key stops a *repeated request* booking twice; it does
+  /// nothing about the same payment arriving under a fresh key, which is a
+  /// client retrying after a timeout with a new uuid. Without this, one
+  /// confirmed Stripe intent could confirm two orders and consume capacity
+  /// twice for a single charge. Nullable, so the many rows that predate a
+  /// provider reference do not collide (Postgres treats NULLs as distinct).
+  @@unique([paymentProvider, paymentReference])
   @@index([organizationId, propertyId, status])
   @@index([propertyId, confirmedAt])
   @@index([guestId])
@@ -1398,4 +1418,81 @@ model CultureSourceChange {
 
   @@index([verification, detectedAt])
   @@index([sourceKey, verification, reviewedAt])
+}
+
+/// One fixed-window rate-limit counter.
+///
+/// The only rate limiter used to be a `Map` in module scope, which on a
+/// serverless runtime means the effective limit is the configured limit times
+/// the number of warm instances — harmless while the AI provider is a mock and
+/// a billing exposure the moment it is not. This is the same algorithm with
+/// the counter where every instance can see it.
+///
+/// Rows are disposable: a window that has passed is pruned lazily on a later
+/// call, the same way expired holds are swept.
+model RateLimitCounter {
+  id String @id @default(uuid())
+
+  /// Namespaced subject, e.g. `ai:org:<uuid>` or `portal-miss:ip:<hash>`.
+  /// Never a raw IP address or token — callers pass an opaque digest.
+  bucket String
+
+  /// Start of the fixed window this row counts, truncated to the window size.
+  windowStart DateTime
+
+  /// Requests counted in this window.
+  count Int @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([bucket, windowStart])
+  @@index([windowStart])
+}
+
+/// An invitation to take over an account that someone else created.
+///
+/// `invitePartner` creates the partner's `User` row — it has to, because the
+/// supplier record needs a contact — but that row has no password, and ARC must
+/// not invent one and mail it. The invitation is the handover: a single-use,
+/// time-boxed token that lets exactly one person set the password on exactly
+/// one account.
+///
+/// Only the token's hash is stored, for the same reason a password's is: a
+/// leaked database must not yield working invitation links.
+model Invitation {
+  id     String @id @default(uuid())
+  userId String
+
+  /// SHA-256 of the token. The token itself exists only in the link.
+  tokenHash String @unique
+
+  /// What the invitation is for, so the acceptance page can say so.
+  kind InvitationKind
+
+  /// The organization the invitation is on behalf of, for the audit trail.
+  organizationId String?
+  /// Who sent it. Null for one created by a system path.
+  invitedById String?
+
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  /// Set when an owner withdraws an invitation before it is accepted.
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  user         User          @relation("InvitationUser", fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy    User?         @relation("InvitationSender", fields: [invitedById], references: [id], onDelete: SetNull)
+
+  @@index([userId, acceptedAt])
+  @@index([organizationId, acceptedAt])
+  @@index([expiresAt])
+}
+
+enum InvitationKind {
+  /// A local partner invited by a hotel owner.
+  SUPPLIER
+  /// A staff member invited to an existing property.
+  STAFF
 }

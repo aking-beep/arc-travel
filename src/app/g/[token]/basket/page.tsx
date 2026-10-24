@@ -8,7 +8,7 @@ import { Money } from '@/components/money'
 import { createTranslator } from '@/lib/i18n'
 import { getLocale } from '@/lib/i18n/server'
 import { toLocalDateKey, toLocalTimeString } from '@/lib/dates'
-import { resolvePortalContext } from '@/modules/guest/portal'
+import { resolvePortalForRequest } from '../resolve'
 import { getCartView, getOrCreateCart, validateCart } from '@/modules/commerce/cart'
 import { BasketActions, CheckoutForm } from './forms'
 
@@ -16,7 +16,7 @@ export const metadata = { title: 'Your basket' }
 
 export default async function BasketPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params
-  const context = await resolvePortalContext(token)
+  const context = await resolvePortalForRequest(token)
   const locale = await getLocale()
   const t = createTranslator(locale)
 

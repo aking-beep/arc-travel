@@ -3,7 +3,7 @@ import { ArrowRight, CheckCircle2, Circle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { LinkButton } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Money } from '@/components/money'
+import { DemoFigure, Money } from '@/components/money'
 import { requireActor } from '@/modules/auth/service'
 import { getOnboardingState, getPropertyOverview, listArrivals, resolveOperatingProperty } from '@/modules/hotels/service'
 import { prisma } from '@/lib/db'
@@ -54,11 +54,13 @@ export default async function OwnerDashboardPage() {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-semibold">
-              <Money
-                amountMinor={earned._sum.hotelEarningsMinor ?? 0}
-                currency={property.currency}
-                intent="earned"
-              />
+              <DemoFigure>
+                <Money
+                  amountMinor={earned._sum.hotelEarningsMinor ?? 0}
+                  currency={property.currency}
+                  intent="earned"
+                />
+              </DemoFigure>
             </p>
             <p className="text-sand-500 mt-1 text-xs">
               Your share of {earned._count} simulated orders. Not room revenue.

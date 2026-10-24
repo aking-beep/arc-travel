@@ -9,6 +9,7 @@ import {
   Store,
   Sunrise,
   Tags,
+  Users,
 } from 'lucide-react'
 import { DemoBanner } from '@/components/demo-banner'
 import { LocaleSwitcher } from '@/components/locale-switcher'
@@ -26,6 +27,7 @@ const NAV = [
   { href: '/owner/briefing', label: 'Morning briefing', icon: Sunrise },
   { href: '/owner/catalog', label: 'Catalog', icon: Tags },
   { href: '/owner/partners', label: 'Partners', icon: Store },
+  { href: '/owner/guests', label: 'Guests', icon: Users },
   { href: '/owner/arrivals', label: 'Arrivals', icon: CalendarCheck },
   { href: '/owner/approvals', label: 'Approvals', icon: ClipboardCheck },
   { href: '/owner/revenue', label: 'Revenue', icon: LineChart },

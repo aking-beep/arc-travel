@@ -59,10 +59,24 @@ function specificityOf(rule: CommissionRuleInput): ResolvedCommission['specifici
   return 'organization-default'
 }
 
+/**
+ * The organization's fallback split, used when no rule matches.
+ *
+ * `platformBps` used to be hard-coded to zero here, which meant a tenant with
+ * no commission rule generated ledger lines where ARC earned nothing — the
+ * platform's own revenue depended on somebody remembering to write a rule.
+ * Both halves of the default now come from the organization row, so the
+ * fallback is a stated commercial position rather than an omission.
+ */
+export interface CommissionDefaults {
+  hotelBps: number
+  platformBps: number
+}
+
 export function resolveCommission(
   rules: CommissionRuleInput[],
   target: CommissionTarget,
-  organizationDefaultBps: number,
+  defaults: CommissionDefaults,
 ): ResolvedCommission {
   const applicable = rules
     .filter((r) => r.isActive)
@@ -87,8 +101,8 @@ export function resolveCommission(
     return {
       ruleId: null,
       basis: CommissionBasis.PERCENT_OF_GROSS,
-      hotelShare: organizationDefaultBps,
-      platformShare: 0,
+      hotelShare: defaults.hotelBps,
+      platformShare: defaults.platformBps,
       specificity: 'organization-default',
     }
   }

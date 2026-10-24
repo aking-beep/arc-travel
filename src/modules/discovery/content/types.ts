@@ -65,6 +65,23 @@ export const PROPERTY_TYPES: PropertyType[] = ['Boutique Hotel', 'Design Hotel',
  */
 export type ListingStatus = 'illustrative'
 
+/**
+ * Where a listing came from.
+ *
+ * The content set is illustrative throughout. The published catalogue in the
+ * database is not: its rows describe a real supplier in Puerto Escondido and
+ * carry a real `VerificationStatus` that only `/admin` can set. The two must be
+ * distinguishable on the page, because "illustrative" and "unverified" are
+ * different claims — the first says nobody is behind this listing, the second
+ * says somebody is and ARC has not checked them.
+ *
+ * Absent means illustrative, so every existing content entry keeps its meaning
+ * without being edited.
+ */
+export type ListingProvenance =
+  | { kind: 'illustrative' }
+  | { kind: 'live'; verification: 'UNVERIFIED' | 'PENDING' | 'VERIFIED' | 'REJECTED' }
+
 export type Room = { name: string; sleeps: number; size: string; priceMinor: number; note: string }
 
 export type Property = {
@@ -73,10 +90,19 @@ export type Property = {
   destination: string
   type: PropertyType
   verification: ListingStatus
+  /** Empty on a live listing — see `Experience.image`. */
   images: string[]
   pricePerNightMinor: number
-  rating: number
-  reviews: number
+  /** Defaults to `CONTENT_CURRENCY`. A live listing is in the property's own currency. */
+  currency?: string
+  /**
+   * Sample figures, labelled as such wherever they appear. Absent on a live
+   * listing: a rating nobody left is a commercial signal this product does not
+   * get to manufacture, and a real property with no reviews has none.
+   */
+  rating?: number
+  reviews?: number
+  provenance?: ListingProvenance
   summary: string
   description: string[]
   amenities: string[]
@@ -87,9 +113,19 @@ export type Property = {
   checkOut: string
 }
 
-export type ExperienceCategory = 'Adventure' | 'Culture' | 'Wellness' | 'Food' | 'Nature'
+/**
+ * `Transport` is here for the live catalogue, not for the content set.
+ *
+ * The database's own taxonomy has a TRANSPORT category and nothing in these
+ * five buckets it honestly maps to; squeezing an airport transfer into
+ * "Nature" to avoid widening a union is how a filter starts lying. The map in
+ * `modules/discovery/live.ts` is exhaustive over the Prisma enum, so a new
+ * database category fails typecheck rather than landing in whichever bucket
+ * was nearest.
+ */
+export type ExperienceCategory = 'Adventure' | 'Culture' | 'Wellness' | 'Food' | 'Nature' | 'Transport'
 
-export const EXPERIENCE_CATEGORIES: ExperienceCategory[] = ['Adventure', 'Culture', 'Wellness', 'Food', 'Nature']
+export const EXPERIENCE_CATEGORIES: ExperienceCategory[] = ['Adventure', 'Culture', 'Wellness', 'Food', 'Nature', 'Transport']
 
 export type Difficulty = 'Easy' | 'Moderate' | 'Challenging' | 'Expert'
 
@@ -100,19 +136,35 @@ export type Experience = {
   category: ExperienceCategory
   activity: string
   verification: ListingStatus
-  image: string
+  /**
+   * Absent on a live listing.
+   *
+   * ADR-025 scoped destination imagery to this *content* set. A real
+   * supplier's experience has no licensed photograph, and giving it a stock
+   * one would be the exact thing that decision scoped away, so a live card
+   * renders on its tinted plate instead.
+   */
+  image?: string
   priceMinor: number
+  /** Defaults to `CONTENT_CURRENCY`. A live listing is in the property's currency. */
+  currency?: string
   durationHours: number
   duration: string
   difficulty: Difficulty
   groupSize: string
   summary: string
   description: string[]
-  host: { name: string; role: string; years: number; bio: string }
+  /**
+   * `role`, `years` and `bio` are optional because the database does not hold
+   * them. Filling them in for a live listing would be inventing a biography
+   * for a real person.
+   */
+  host: { name: string; role?: string; years?: number; bio?: string }
   itinerary: { time: string; step: string }[]
   meetingPoint: string
   hostClaims: string[]
   included: string[]
+  provenance?: ListingProvenance
 }
 
 export type ArticleCategory = 'Destination Stories' | 'Adventure' | 'Cultural Guides' | 'Travel Technology'

@@ -11,6 +11,7 @@ import { getTranslator } from '@/lib/i18n/server'
 import { getDestination } from '@/modules/discovery/content/destinations'
 import { experiences } from '@/modules/discovery/content/experiences'
 import { getStay, stays } from '@/modules/discovery/content/stays'
+import { liveStay } from '@/modules/discovery/live'
 import { CONTENT_CURRENCY } from '@/modules/discovery/content/types'
 
 export async function generateStaticParams() {
@@ -19,7 +20,9 @@ export async function generateStaticParams() {
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  const stay = getStay(slug)
+  const { locale } = await getTranslator()
+  const live = await liveStay(locale)
+  const stay = live?.slug === slug ? live : getStay(slug)
   return { title: stay?.name ?? 'Stay' }
 }
 
@@ -36,10 +39,12 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
  */
 export default async function StayDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  const stay = getStay(slug)
-  if (!stay) notFound()
-
   const { t, locale } = await getTranslator()
+
+  // The real property first, for the reason in `../../experiences/[slug]`.
+  const live = await liveStay(locale)
+  const stay = live?.slug === slug ? live : getStay(slug)
+  if (!stay) notFound()
   const destination = getDestination(stay.destination)
   const nearby = experiences.filter((e) => e.destination === stay.destination).slice(0, 3)
 

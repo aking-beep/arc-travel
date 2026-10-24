@@ -1,7 +1,18 @@
-import { afterAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { prisma } from '@/lib/db'
+import { localInstant, toDateKey } from '@/lib/dates'
 import { isAppError } from '@/lib/errors'
+import { money, type Money } from '@/lib/money'
+import { getIntegrations } from '@/modules/integrations/defaults'
+import {
+  providerFailed,
+  providerOk,
+  type PaymentIntent,
+  type PaymentsProvider,
+  type ProviderResult,
+  type RefundResult,
+} from '@/modules/integrations/types'
 import { CartStatus, OrderItemStatus, OrderStatus } from '@/lib/prisma-types'
 import { addToCart, getOrCreateCart, removeFromCart, validateCart } from '@/modules/commerce/cart'
 import { cancelOrderItem, checkout, confirmOrderItemBySupplier } from '@/modules/commerce/checkout'
@@ -331,36 +342,55 @@ describe('cancellation and refunds', () => {
   })
 
   it('refunds nothing outside the window but still returns the place', async () => {
-    const soon = await createTenant({
+    /*
+     * A long notice period against the standard ten-days-out departure, not a
+     * departure two hours from now.
+     *
+     * The wall-clock fixture was the same latent bug as the one below it, one
+     * step further on: it took the *UTC* hour as a *local* departure time, so
+     * whenever the suite ran after about 16:00 UTC the departure fell outside
+     * the activity's 06:00–18:00 operating window and `addToCart` refused it
+     * before the refund rule was ever reached. It passed locally and failed in
+     * CI at 19:23 UTC. What the test is actually about is a cancellation that
+     * arrives too late, and the policy is the honest way to say that: 336
+     * hours of notice required, 240 hours remaining.
+     */
+    const lateNotice = await createTenant({
       capacity: 4,
-      departureDate: new Date(Date.now() + 2 * 3_600_000).toISOString().slice(0, 10),
-      departureTime: new Date(Date.now() + 2 * 3_600_000).toISOString().slice(11, 16),
-      cancellationPolicyHours: 24,
+      cancellationPolicyHours: 336,
     })
-    const cartId = await cartFor(soon)
-    await addToCart({ cartId, slotId: soon.slotId, quantity: 1 })
-    const order = await checkout({ cartId, guestId: soon.guestId, idempotencyKey: randomUUID() })
+    const cartId = await cartFor(lateNotice)
+    await addToCart({ cartId, slotId: lateNotice.slotId, quantity: 1 })
+    const order = await checkout({ cartId, guestId: lateNotice.guestId, idempotencyKey: randomUUID() })
 
     const item = await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.orderId } })
     const result = await cancelOrderItem({
       orderItemId: item.id,
       reason: 'late',
-      authority: { kind: 'guest', guestId: soon.guestId },
+      authority: { kind: 'guest', guestId: lateNotice.guestId },
     })
 
     expect(result.withinWindow).toBe(false)
     expect(result.refundMinor).toBe(0)
     expect(result.orderStatus).toBe(OrderStatus.CANCELLED)
-    expect((await slotState(soon.slotId)).booked).toBe(0)
+    expect((await slotState(lateNotice.slotId)).booked).toBe(0)
   })
 
   it('marks an order partially cancelled while other lines survive', async () => {
+    // A stated local departure hour rather than "now, twelve days on": the
+    // activity's operating window is enforced at the point of sale, so a
+    // fixture built from the wall clock became unbookable whenever the suite
+    // ran outside 06:00–18:00 local.
+    const secondStartsAt = localInstant(
+      toDateKey(new Date(Date.now() + 12 * 86_400_000)),
+      '09:00',
+    )
     const second = await prisma.availabilitySlot.create({
       data: {
         organizationId: tenant.organizationId,
         experienceId: tenant.experienceId,
-        startsAt: new Date(Date.now() + 12 * 86_400_000),
-        endsAt: new Date(Date.now() + 12 * 86_400_000 + 7_200_000),
+        startsAt: secondStartsAt,
+        endsAt: new Date(secondStartsAt.getTime() + 7_200_000),
         capacity: 4,
         currency: 'MXN',
       },
@@ -544,5 +574,260 @@ describe('supplier confirmation', () => {
     await expect(
       confirmOrderItemBySupplier({ orderItemId: item.id, supplierId: other.supplierId }),
     ).rejects.toSatisfy((error: unknown) => isAppError(error) && error.code === 'NOT_FOUND')
+  })
+})
+
+describe('one order per payment', () => {
+  /*
+   * Raised by a reviewer on PR #4, and correct.
+   *
+   * The idempotency key stops a repeated *request* booking twice. It says
+   * nothing about the same payment arriving under a fresh key, which is
+   * exactly what a client retrying after a timeout does. Without a constraint,
+   * one confirmed intent could confirm two orders and consume capacity twice
+   * for a single charge.
+   */
+  it('refuses a second order against a payment already used', async () => {
+    const cartId = await cartFor(tenant)
+    await addToCart({ cartId, slotId: tenant.slotId, quantity: 1 })
+    const order = await checkout({
+      cartId,
+      guestId: tenant.guestId,
+      idempotencyKey: randomUUID(),
+    })
+
+    const paid = await prisma.order.findUniqueOrThrow({
+      where: { id: order.orderId },
+      select: { paymentProvider: true, paymentReference: true },
+    })
+    expect(paid.paymentReference).toBeTruthy()
+
+    // The guarantee is the database's, not a check somebody has to remember.
+    await expect(
+      prisma.order.create({
+        data: {
+          organizationId: tenant.organizationId,
+          propertyId: tenant.propertyId,
+          guestId: tenant.guestId,
+          reference: `DUPE-${Date.now()}`,
+          currency: 'MXN',
+          paymentProvider: paid.paymentProvider,
+          paymentReference: paid.paymentReference,
+        },
+      }),
+    ).rejects.toThrow(/Unique constraint|paymentReference/i)
+  })
+
+  it('still allows many orders with no provider reference at all', async () => {
+    // Postgres treats NULLs as distinct, which is what keeps the constraint
+    // from blocking rows that predate a provider reference.
+    for (const n of [1, 2]) {
+      await prisma.order.create({
+        data: {
+          organizationId: tenant.organizationId,
+          propertyId: tenant.propertyId,
+          reference: `NOPAY-${n}-${Date.now()}`,
+          currency: 'MXN',
+          paymentReference: null,
+        },
+      })
+    }
+    expect(
+      await prisma.order.count({
+        where: { organizationId: tenant.organizationId, paymentReference: null },
+      }),
+    ).toBe(2)
+  })
+})
+
+describe('a payment that no longer matches its basket', () => {
+  /**
+   * A provider that confirms an amount the basket has since stopped being.
+   *
+   * This is the only way to reach the mismatch branch from a test: the real
+   * simulated provider is asked for the basket's own total, so it can never
+   * disagree with it. Swapping the provider on the integrations object is
+   * deliberate — it exercises the real `checkout` path rather than a mock of
+   * it.
+   */
+  class StalePaymentsProvider implements PaymentsProvider {
+    readonly name = 'simulated'
+    readonly isLive = false
+
+    async createIntent(input: {
+      amount: Money
+      orderReference: string
+    }): Promise<ProviderResult<PaymentIntent>> {
+      return providerOk(this.name, {
+        reference: `SIMULATED-STALE-${input.orderReference}`,
+        status: 'succeeded' as const,
+        // One peso short of whatever was asked for.
+        amount: money(input.amount.amountMinor - 100, input.amount.currency),
+        isSimulated: true,
+      })
+    }
+
+    async retrieveIntent(): Promise<ProviderResult<PaymentIntent>> {
+      return providerFailed<PaymentIntent>(this.name, 'not_applicable')
+    }
+
+    async refund(): Promise<ProviderResult<RefundResult>> {
+      return providerFailed<RefundResult>(this.name, 'not_applicable')
+    }
+  }
+
+  let restore: PaymentsProvider | null = null
+
+  beforeEach(() => {
+    const integrations = getIntegrations() as { payments: PaymentsProvider }
+    restore = integrations.payments
+    integrations.payments = new StalePaymentsProvider()
+  })
+
+  afterEach(() => {
+    if (restore) (getIntegrations() as { payments: PaymentsProvider }).payments = restore
+    restore = null
+  })
+
+  it('refuses the checkout and leaves a record that outlives the rollback', async () => {
+    const cartId = await cartFor(tenant)
+    await addToCart({ cartId, slotId: tenant.slotId, quantity: 1 })
+
+    await expect(
+      checkout({ cartId, guestId: tenant.guestId, idempotencyKey: randomUUID() }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' })
+
+    // Nothing booked, nothing converted, the hold still standing.
+    expect(await prisma.order.count({ where: { organizationId: tenant.organizationId } })).toBe(0)
+    expect((await slotState(tenant.slotId)).booked).toBe(0)
+    expect((await slotState(tenant.slotId)).held).toBe(1)
+
+    /*
+     * The point of the test. This row was written on the transaction's own
+     * `tx` and so rolled back with the refusal — leaving a payment the
+     * provider holds, no order, and no trace of either. It is now written
+     * after the rollback, outside any transaction.
+     */
+    const audit = await prisma.auditEvent.findFirstOrThrow({
+      where: { action: 'commerce.checkout.payment_mismatch' },
+    })
+    expect(audit.actorKind).toBe('system')
+    expect(audit.metadataJson).toMatchObject({
+      paidMinor: 94_900,
+      basketMinor: 95_000,
+      paymentProvider: 'simulated',
+    })
+  })
+})
+
+describe('a payment reused across checkouts', () => {
+  /**
+   * A provider that hands back the same reference every time.
+   *
+   * Which is what a client retrying after a timeout looks like from the
+   * server's side: same confirmed payment, fresh idempotency key. The real
+   * simulated provider derives its reference from the order reference, so it
+   * cannot reproduce this.
+   */
+  class FixedReferencePaymentsProvider implements PaymentsProvider {
+    readonly name = 'simulated'
+    readonly isLive = false
+    constructor(private readonly shortfallMinor = 0) {}
+
+    async createIntent(input: { amount: Money }): Promise<ProviderResult<PaymentIntent>> {
+      return providerOk(this.name, {
+        reference: 'SIMULATED-FIXED-REFERENCE',
+        status: 'succeeded' as const,
+        amount: money(input.amount.amountMinor - this.shortfallMinor, input.amount.currency),
+        isSimulated: true,
+      })
+    }
+
+    async retrieveIntent(): Promise<ProviderResult<PaymentIntent>> {
+      return providerFailed<PaymentIntent>(this.name, 'not_applicable')
+    }
+
+    async refund(): Promise<ProviderResult<RefundResult>> {
+      return providerFailed<RefundResult>(this.name, 'not_applicable')
+    }
+  }
+
+  let restore: PaymentsProvider | null = null
+
+  function usePayments(provider: PaymentsProvider) {
+    const integrations = getIntegrations() as { payments: PaymentsProvider }
+    restore ??= integrations.payments
+    integrations.payments = provider
+  }
+
+  afterEach(() => {
+    if (restore) (getIntegrations() as { payments: PaymentsProvider }).payments = restore
+    restore = null
+  })
+
+  it('reports reuse rather than a mismatch, even when the basket also changed', async () => {
+    /*
+     * Raised by a reviewer, and right. With the amount check first, this case
+     * wrote `payment_mismatch` — which tells an operator that ARC holds money
+     * it never delivered, and sends them to reconcile a payment that had in
+     * fact already confirmed an order.
+     */
+    await prisma.order.create({
+      data: {
+        organizationId: tenant.organizationId,
+        propertyId: tenant.propertyId,
+        reference: `PRIOR-${Date.now()}`,
+        currency: 'MXN',
+        paymentProvider: 'simulated',
+        paymentReference: 'SIMULATED-FIXED-REFERENCE',
+      },
+    })
+
+    // Both wrong at once: the payment is spent *and* a peso short.
+    usePayments(new FixedReferencePaymentsProvider(100))
+    const cartId = await cartFor(tenant)
+    await addToCart({ cartId, slotId: tenant.slotId, quantity: 1 })
+
+    await expect(
+      checkout({ cartId, guestId: tenant.guestId, idempotencyKey: randomUUID() }),
+    ).rejects.toMatchObject({ code: 'CONFLICT', message: /already been used/ })
+
+    expect(
+      await prisma.auditEvent.count({ where: { action: 'commerce.checkout.payment_mismatch' } }),
+    ).toBe(0)
+  })
+
+  it('refuses the loser of a race with a conflict, never a 500', async () => {
+    /*
+     * The pre-read can lose a race; the unique index cannot. Whichever way
+     * the two transactions interleave — one retrying into the read, or one
+     * violating the index — the guest must get a 409 and not an unmapped
+     * Prisma error surfacing as a server fault.
+     */
+    usePayments(new FixedReferencePaymentsProvider())
+
+    const other = await createTenant({ capacity: 4, priceMinor: 95_000 })
+    const [cartA, cartB] = await Promise.all([cartFor(tenant), cartFor(other)])
+    await addToCart({ cartId: cartA, slotId: tenant.slotId, quantity: 1 })
+    await addToCart({ cartId: cartB, slotId: other.slotId, quantity: 1 })
+
+    const results = await Promise.allSettled([
+      checkout({ cartId: cartA, guestId: tenant.guestId, idempotencyKey: randomUUID() }),
+      checkout({ cartId: cartB, guestId: other.guestId, idempotencyKey: randomUUID() }),
+    ])
+
+    const fulfilled = results.filter((r) => r.status === 'fulfilled')
+    const rejected = results.filter((r) => r.status === 'rejected')
+    expect(fulfilled).toHaveLength(1)
+    expect(rejected).toHaveLength(1)
+
+    const reason = (rejected[0] as PromiseRejectedResult).reason
+    expect(isAppError(reason)).toBe(true)
+    expect((reason as { code: string }).code).toBe('CONFLICT')
+
+    // And the capacity the loser did not get is still available.
+    expect(
+      (await slotState(tenant.slotId)).booked + (await slotState(other.slotId)).booked,
+    ).toBe(1)
   })
 })

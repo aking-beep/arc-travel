@@ -6,7 +6,8 @@ import { EmptyState } from '@/components/ui/states'
 import { Money } from '@/components/money'
 import { createTranslator } from '@/lib/i18n'
 import { getLocale } from '@/lib/i18n/server'
-import { listGuestCatalog, resolvePortalContext } from '@/modules/guest/portal'
+import { listGuestCatalog } from '@/modules/guest/portal'
+import { resolvePortalForRequest } from '../resolve'
 
 export const metadata = { title: 'Explore' }
 
@@ -18,7 +19,7 @@ export default async function ExplorePage({
   searchParams: Promise<{ category?: string }>
 }) {
   const [{ token }, { category }] = await Promise.all([params, searchParams])
-  const context = await resolvePortalContext(token)
+  const context = await resolvePortalForRequest(token)
   const locale = await getLocale()
   const t = createTranslator(locale)
 

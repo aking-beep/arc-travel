@@ -1,4 +1,4 @@
-import { resolvePortalContext } from '@/modules/guest/portal'
+import { resolvePortalForRequest } from '../resolve'
 import { getGuestPreferences } from '@/modules/preferences/service'
 import { getLocale } from '@/lib/i18n/server'
 import { createTranslator } from '@/lib/i18n'
@@ -8,7 +8,7 @@ export const metadata = { title: 'Your preferences' }
 
 export default async function IntakePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params
-  const context = await resolvePortalContext(token)
+  const context = await resolvePortalForRequest(token)
   const preferences = await getGuestPreferences(context.guestId)
   const locale = await getLocale()
   const t = createTranslator(locale)

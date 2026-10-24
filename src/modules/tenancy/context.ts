@@ -169,8 +169,22 @@ export async function assertGuestAccess(
  * property in the database — including the only route to a VERIFIED status.
  * Organization-level administration is what OWNER is for.
  */
+/**
+ * The one predicate for platform-admin authority.
+ *
+ * Exported so a layout can redirect on the same rule the services enforce.
+ * `/admin`'s layout used to admit `memberships.some(m => m.role === ADMIN)` as
+ * well, which is exactly the cross-tenant escalation this guard was narrowed to
+ * reject: a tenant-scoped ADMIN got past the layout and then threw out of every
+ * service behind it, so the disagreement showed up as an error page instead of
+ * a redirect.
+ */
+export function isPlatformAdmin(actor: ActorContext): boolean {
+  return actor.isPlatformAdmin
+}
+
 export function assertPlatformAdmin(actor: ActorContext): void {
-  if (!actor.isPlatformAdmin) {
+  if (!isPlatformAdmin(actor)) {
     throw forbidden('Platform administrator access required.')
   }
 }

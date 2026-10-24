@@ -1,4 +1,6 @@
 import { addDays, daysBetween, toDateKey, type DateKey } from '@/lib/dates'
+import { invalid } from '@/lib/errors'
+import { MAX_PLANNABLE_NIGHTS, plannerIssues } from './schemas'
 import { destinations, getDestination } from './content/destinations'
 import { experiences } from './content/experiences'
 import { stays } from './content/stays'
@@ -71,6 +73,16 @@ type PoolItem = Omit<ItineraryActivity, 'id' | 'time'> & { slot: ItineraryActivi
 
 /** Every candidate activity for a destination, in a stable order. */
 export function activityPool(prefs: PlannerPreferences): PoolItem[] {
+  // The brief is refused rather than quietly repaired. A reversed range used
+  // to become a one-day trip and a party of zero priced the lodging at zero —
+  // on the first screen a prospective hotel sees. The form shows the same
+  // reasons and disables drafting, so this throw is a backstop for any other
+  // caller.
+  const issues = plannerIssues(prefs)
+  if (issues.length > 0) {
+    throw invalid('This brief cannot be planned as stated.', { issues })
+  }
+
   const dest = getDestination(prefs.destination) ?? destinations[0]!
   const bps = BUDGET_BPS[prefs.budget]
 
@@ -144,11 +156,18 @@ export function pickStay(prefs: PlannerPreferences): Property | undefined {
   return sorted[Math.floor((sorted.length - 1) / 2)]
 }
 
-/** Nights between the stated dates, clamped to something plannable. */
+/**
+ * Nights between the stated dates.
+ *
+ * Still clamped, but the clamp no longer hides anything: `buildItinerary`
+ * refuses a brief `plannerIssues` rejects, so by the time this runs the span is
+ * known to be between one night and `MAX_PLANNABLE_NIGHTS`. The clamp remains
+ * for the form, which calls this while a visitor is mid-edit.
+ */
 export function tripLength(prefs: PlannerPreferences): number {
   const nights = daysBetween(prefs.startDate, prefs.endDate)
   if (!Number.isFinite(nights)) return 5
-  return Math.min(10, Math.max(1, nights))
+  return Math.min(MAX_PLANNABLE_NIGHTS, Math.max(1, nights))
 }
 
 /**
@@ -162,6 +181,16 @@ export function buildItinerary(
   source: Itinerary['source'] = 'rules-engine',
   id?: string,
 ): Itinerary {
+  // The brief is refused rather than quietly repaired. A reversed range used
+  // to become a one-day trip and a party of zero priced the lodging at zero —
+  // on the first screen a prospective hotel sees. The form shows the same
+  // reasons and disables drafting, so this throw is a backstop for any other
+  // caller.
+  const issues = plannerIssues(prefs)
+  if (issues.length > 0) {
+    throw invalid('This brief cannot be planned as stated.', { issues })
+  }
+
   const dest = getDestination(prefs.destination) ?? destinations[0]!
   const pool = activityPool(prefs)
   const stay = pickStay(prefs)

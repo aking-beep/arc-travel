@@ -22,6 +22,13 @@ import { SaveButton } from './save-button'
  *
  * Images come from the CDN the export shipped with — see ADR-025 — so each one
  * sits on a tinted plate that reads as intentional if the CDN is unreachable.
+ * A *live* listing has no image at all and renders on that plate permanently:
+ * a real supplier's experience has no licensed photograph, and giving it a
+ * stock one is what ADR-025 scoped away.
+ *
+ * Currency is read from the listing rather than assumed. The content set is
+ * USD; the live catalogue is in the property's own currency, and rendering
+ * pesos under a dollar sign would be a lie about a price.
  */
 
 const HOVER_IMAGE =
@@ -111,7 +118,7 @@ export function PropertyCard({
           <p className="mt-auto text-sm">
             <Money
               amountMinor={property.pricePerNightMinor}
-              currency={CONTENT_CURRENCY}
+              currency={property.currency ?? CONTENT_CURRENCY}
               locale={locale}
               intent="potential"
             />{' '}
@@ -135,7 +142,12 @@ export function PropertyCard({
           />
         ) : null}
         <div className="absolute top-3 left-3">
-          <ListingBadge status={property.verification} locale={locale} onImage />
+          <ListingBadge
+            status={property.verification}
+            provenance={property.provenance}
+            locale={locale}
+            onImage
+          />
         </div>
         <div className="absolute top-3 right-3">
           <SaveButton kind="stays" slug={property.slug} label={property.name} locale={locale} />
@@ -146,17 +158,23 @@ export function PropertyCard({
           <span className="truncate">
             {property.type} · {destination?.name}, {destination?.country}
           </span>
-          {/* A rating nobody gave. Labelled, never styled as social proof. */}
-          <span className="text-muted shrink-0 tabular-nums">
-            {property.rating} ({property.reviews} sample)
-          </span>
+          {/*
+            * A rating nobody gave. Labelled, never styled as social proof —
+            * and absent entirely on a live listing, which has no reviews
+            * because nobody has left one.
+            */}
+          {property.rating !== undefined ? (
+            <span className="text-muted shrink-0 tabular-nums">
+              {property.rating} ({property.reviews} sample)
+            </span>
+          ) : null}
         </div>
         <h3 className="mt-1.5 text-xl leading-snug">{property.name}</h3>
         <p className="text-muted mt-1.5 line-clamp-2 text-sm leading-relaxed">{property.summary}</p>
         <p className="mt-auto pt-3 text-sm">
           <Money
             amountMinor={property.pricePerNightMinor}
-            currency={CONTENT_CURRENCY}
+            currency={property.currency ?? CONTENT_CURRENCY}
             locale={locale}
             intent="potential"
           />{' '}
@@ -180,15 +198,22 @@ export function ExperienceCard({
   return (
     <Link href={`/experiences/${experience.slug}`} className="group flex h-full flex-col">
       <div className="bg-sand relative aspect-5/4 overflow-hidden rounded-2xl">
-        <Image
-          src={experience.image}
-          alt={experience.title}
-          fill
-          sizes="(max-width: 768px) 80vw, 33vw"
-          className={HOVER_IMAGE}
-        />
+        {experience.image ? (
+          <Image
+            src={experience.image}
+            alt={experience.title}
+            fill
+            sizes="(max-width: 768px) 80vw, 33vw"
+            className={HOVER_IMAGE}
+          />
+        ) : null}
         <div className="absolute top-3 left-3">
-          <ListingBadge status={experience.verification} locale={locale} onImage />
+          <ListingBadge
+            status={experience.verification}
+            provenance={experience.provenance}
+            locale={locale}
+            onImage
+          />
         </div>
         <div className="absolute top-3 right-3">
           <SaveButton
@@ -220,7 +245,7 @@ export function ExperienceCard({
         <p className="mt-auto pt-3 text-sm">
           <Money
             amountMinor={experience.priceMinor}
-            currency={CONTENT_CURRENCY}
+            currency={experience.currency ?? CONTENT_CURRENCY}
             locale={locale}
             intent="potential"
           />{' '}

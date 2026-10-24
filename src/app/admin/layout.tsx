@@ -4,7 +4,7 @@ import { Activity, Map, ShieldCheck } from 'lucide-react'
 import { DemoBanner } from '@/components/demo-banner'
 import { signOutAction } from '@/app/actions'
 import { getActor } from '@/modules/auth/service'
-import { Role } from '@/lib/prisma-types'
+import { isPlatformAdmin } from '@/modules/tenancy/context'
 
 export const metadata = { title: { default: 'Admin', template: '%s · ARC Stay' } }
 
@@ -18,8 +18,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const actor = await getActor()
   if (!actor) redirect('/sign-in?next=/admin')
 
-  const isAdmin = actor.isPlatformAdmin || actor.memberships.some((m) => m.role === Role.ADMIN)
-  if (!isAdmin) redirect('/sign-in?next=/admin')
+  // The same predicate `assertPlatformAdmin` uses. A tenant-scoped ADMIN
+  // membership is not platform authority — admitting it here produced an error
+  // page from the services behind this layout rather than a redirect.
+  if (!isPlatformAdmin(actor)) redirect('/sign-in?next=/admin')
 
   return (
     <div className="flex min-h-dvh flex-col">

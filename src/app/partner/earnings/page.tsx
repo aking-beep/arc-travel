@@ -1,7 +1,7 @@
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/states'
-import { Money } from '@/components/money'
+import { DemoFigure, Money } from '@/components/money'
 import { requireActor } from '@/modules/auth/service'
 import { getSupplierEarnings, resolveOperatingSupplier } from '@/modules/suppliers/service'
 
@@ -34,7 +34,13 @@ export default async function EarningsPage() {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-semibold">
-              <Money amountMinor={earnings.payableMinor} currency={earnings.currency} intent="earned" />
+              <DemoFigure>
+                <Money
+                  amountMinor={earnings.payableMinor}
+                  currency={earnings.currency}
+                  intent="earned"
+                />
+              </DemoFigure>
             </p>
           </CardContent>
         </Card>

@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation'
 import { randomUUID } from 'node:crypto'
 import { pesosToMinor, toFormState, type FormState } from '@/lib/form-state'
 import { ConsentType } from '@/lib/prisma-types'
-import { resolvePortalContext } from '@/modules/guest/portal'
+import { resolvePortalForRequest } from './resolve'
 import { saveIntake, revokeConsent } from '@/modules/preferences/service'
 import { buildItinerary } from '@/modules/itinerary/service'
 import { addToCart, clearCart, getOrCreateCart, removeFromCart } from '@/modules/commerce/cart'
@@ -22,7 +22,7 @@ import { itineraryRequestSchema } from '@/modules/preferences/schemas'
  */
 async function contextFor(formData: FormData) {
   const token = String(formData.get('token') ?? '')
-  return { token, context: await resolvePortalContext(token) }
+  return { token, context: await resolvePortalForRequest(token) }
 }
 
 export async function saveIntakeAction(_prev: FormState, formData: FormData): Promise<FormState> {

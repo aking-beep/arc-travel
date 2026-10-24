@@ -849,7 +849,7 @@ async function seedHistoricalOrders(
         propertyId,
         experienceId: line.experienceId,
         category: line.category,
-      }, 1500)
+      }, { hotelBps: 1500, platformBps: 500 })
       return splitEarnings(money(line.lineTotalMinor, CURRENCY), commission, line.quantity)
     })
 
@@ -1013,8 +1013,36 @@ async function seedProposals(organizationId: string, propertyId: string, experie
   })
 }
 
+/**
+ * The seed is a demo-mode tool, and refusing to run outside demo mode is the
+ * point.
+ *
+ * Everything it writes is deterministic by design — including six literal
+ * portal tokens and the rest from a fixed-seed PRNG — so anyone who can run
+ * this script from the public repository can derive every portal token in the
+ * database it wrote. That is the correct trade for a synthetic demo and
+ * catastrophic for a pilot: a stay's portal token is the guest surface's only
+ * credential.
+ *
+ * `vercel-build` calls `db:ensure-seed`, which seeds any empty database it
+ * finds, so this guard is what stands between a mis-set `ARC_DATA_MODE` and a
+ * pilot database full of guessable credentials. `ARC_ALLOW_SEED=1` is the
+ * deliberate, documented override for restoring a staging environment.
+ */
+function assertSeedAllowed(): void {
+  const mode = process.env.ARC_DATA_MODE ?? 'demo'
+  if (mode === 'demo' || process.env.ARC_ALLOW_SEED === '1') return
+
+  throw new Error(
+    `The demo seed refuses to run while ARC_DATA_MODE=${mode}. Every token it writes is ` +
+      'derivable from the public repository, and a portal token is a credential. Set ' +
+      'ARC_ALLOW_SEED=1 only for a throwaway environment.',
+  )
+}
+
 async function main(): Promise<void> {
   const started = Date.now()
+  assertSeedAllowed()
   const rng = createRng(SEED)
 
   console.log('▸ Clearing existing data…')

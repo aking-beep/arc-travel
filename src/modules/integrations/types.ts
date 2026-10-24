@@ -78,6 +78,17 @@ export interface PaymentsProvider {
     description: string
   }): Promise<ProviderResult<PaymentIntent>>
 
+  /**
+   * Reads back an intent the client created and confirmed.
+   *
+   * This is what makes "confirm the payment, then book" possible: the browser
+   * confirms with the provider, hands ARC the reference, and the server reads
+   * the authoritative amount and status rather than believing either. A
+   * provider with nothing to retrieve — the simulated one — returns
+   * `{ ok: false, reason: 'not_applicable' }` rather than a plausible intent.
+   */
+  retrieveIntent(input: { reference: string }): Promise<ProviderResult<PaymentIntent>>
+
   refund(input: {
     idempotencyKey: string
     paymentReference: string

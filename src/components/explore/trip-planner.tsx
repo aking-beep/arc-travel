@@ -4,6 +4,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { createTranslator, type AppLocale } from '@/lib/i18n'
 import type { Itinerary, PlannerPreferences } from '@/modules/discovery/content/types'
 import { activeGenerator } from '@/modules/discovery/planner'
+import { plannerIssues } from '@/modules/discovery/schemas'
 import { ItineraryBuilder } from './itinerary-builder'
 import { PlannerForm } from './planner-form'
 
@@ -45,6 +46,13 @@ export function TripPlanner({
   )
   const [itinerary, setItinerary] = useState<Itinerary | null>(initialItinerary ?? null)
 
+  /**
+   * Why the brief cannot be drafted, if it cannot. `buildItinerary` throws on
+   * the same list, so this is the readable half of one rule rather than a
+   * second, looser copy of it.
+   */
+  const issues = useMemo(() => plannerIssues(prefs), [prefs])
+
   if (itinerary) {
     return (
       <ItineraryBuilder
@@ -64,7 +72,11 @@ export function TripPlanner({
         locale={locale}
         prefs={prefs}
         onChange={setPrefs}
-        onGenerate={() => setItinerary(activeGenerator.generate(prefs, now))}
+        issues={issues}
+        onGenerate={() => {
+          if (issues.length > 0) return
+          setItinerary(activeGenerator.generate(prefs, now))
+        }}
         samples={samples}
         onOpenSample={(sample) => {
           setPrefs(sample.preferences)

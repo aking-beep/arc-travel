@@ -38,6 +38,8 @@ const envSchema = z.object({
 
   PAYMENTS_PROVIDER: z.enum(['simulated', 'stripe']).default('simulated'),
   STRIPE_SECRET_KEY: z.string().optional(),
+  /** Signs the webhook payloads. Without it no event can be trusted, so a live provider requires it. */
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
 
   MAPS_PROVIDER: z.enum(['fixture', 'mapbox', 'google']).default('fixture'),
   MAPBOX_ACCESS_TOKEN: z.string().optional(),
@@ -54,6 +56,14 @@ const envSchema = z.object({
   ANALYTICS_PROVIDER: z.enum(['internal', 'posthog']).default('internal'),
   POSTHOG_KEY: z.string().optional(),
   SENTRY_DSN: z.string().optional(),
+
+  /**
+   * Shared secret for the scheduled jobs under `/api/cron`.
+   *
+   * Unset means those routes 404 rather than run unauthenticated: an
+   * unconfigured secret is "off", never "open".
+   */
+  CRON_SECRET: z.string().optional(),
 })
 
 export type Env = z.infer<typeof envSchema>
@@ -101,6 +111,26 @@ export function getEnv(): Env {
       'PAYMENTS_PROVIDER must be "simulated" while ARC_DATA_MODE=demo. ' +
         'Set ARC_DATA_MODE=pilot (with explicit approval) before enabling a live provider.',
     )
+  }
+
+  /*
+   * A live payments provider is refused unless it is fully configured.
+   *
+   * Both halves are required, and the webhook secret is not optional: without
+   * it `POST /api/webhooks/stripe` can verify nothing, so a payment that later
+   * failed would leave a confirmed order holding capacity for ever. Starting
+   * half-configured would make that a silent condition rather than a refusal.
+   */
+  if (env.PAYMENTS_PROVIDER === 'stripe') {
+    if (!env.STRIPE_SECRET_KEY) {
+      throw new Error('PAYMENTS_PROVIDER=stripe requires STRIPE_SECRET_KEY.')
+    }
+    if (!env.STRIPE_WEBHOOK_SECRET) {
+      throw new Error(
+        'PAYMENTS_PROVIDER=stripe requires STRIPE_WEBHOOK_SECRET. Without it the webhook ' +
+          'cannot verify an event, and a payment that later fails would never release its capacity.',
+      )
+    }
   }
 
   // The demo is offline by design. A live advice source would also put real,

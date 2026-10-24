@@ -1,6 +1,7 @@
 import { AbilityLevel, ConditionsRisk, ExperienceCategory, Pace } from '@/lib/prisma-types'
 import { abilityRank, riskRank, type ConditionsGate } from '@/modules/destination/conditions'
-import { monthOf, parseTime, type DateKey } from '@/lib/dates'
+import { type DateKey } from '@/lib/dates'
+import { gateByOperatingWindow } from '@/modules/destination/operating-window'
 
 /**
  * Deterministic matching and scoring.
@@ -144,17 +145,19 @@ export function applyHardFilters(
     )
   }
 
-  if (!candidate.activitySeasonMonths.includes(monthOf(forDate))) {
-    exclusions.push('out_of_season')
-  }
-
-  const start = parseTime(candidate.startTime)
-  if (
-    start < parseTime(candidate.activityEarliestStart) ||
-    start > parseTime(candidate.activityLatestStart)
-  ) {
-    exclusions.push('outside_activity_hours')
-  }
+  // The same pure gate `evaluateSlotForGuest` runs, so a departure the planner
+  // refuses to recommend is a departure the basket refuses to take.
+  const window = gateByOperatingWindow({
+    window: {
+      earliestStart: candidate.activityEarliestStart,
+      latestStart: candidate.activityLatestStart,
+      seasonMonths: candidate.activitySeasonMonths,
+    },
+    startTime: candidate.startTime,
+    forDate,
+  })
+  exclusions.push(...window.exclusions)
+  notes.push(...window.notes)
 
   // Mobility is a free-text note, so this is a heuristic and labelled as one
   // rather than silently filtering. Carrizalillo's ~160 steps are the specific

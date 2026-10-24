@@ -1,6 +1,7 @@
 import { prisma, type Prisma } from '@/lib/db'
 import { AppError, conflict, invalid, notFound } from '@/lib/errors'
 import { getEnv } from '@/lib/env'
+import { assertWithinRateLimit } from '@/lib/rate-limit'
 import { money } from '@/lib/money'
 import { orderReference } from '@/lib/ids'
 import {
@@ -11,6 +12,8 @@ import {
   type ExperienceCategory,
 } from '@/lib/prisma-types'
 import { assertPropertyAccess, type ActorContext } from '@/modules/tenancy/context'
+import { getIntegrations } from '@/modules/integrations/defaults'
+import type { PaymentIntent, PaymentsProvider } from '@/modules/integrations/types'
 import { consumeHold, inSerializableTransaction, returnCapacity } from '@/modules/inventory/service'
 import { recordAudit } from '@/modules/workflows/audit'
 import { track } from '@/modules/analytics/track'
@@ -40,6 +43,16 @@ export interface CheckoutInput {
   guestId: string
   /** Supplied by the client; the same key must produce the same order. */
   idempotencyKey: string
+  /**
+   * The provider-side intent the client already confirmed.
+   *
+   * Required when the payments provider is live, forbidden when it is not.
+   * ARC never confirms a payment on the guest's behalf: the browser confirms
+   * with the provider, hands back the reference, and the server reads the
+   * authoritative amount and status from the provider rather than from the
+   * client. See ADR-026.
+   */
+  paymentIntentId?: string | null
   now?: Date
 }
 
@@ -58,16 +71,27 @@ export interface CheckoutResult {
 
 const CHECKOUT_SCOPE = 'commerce.checkout'
 
+/** Checkout attempts one guest may make in a minute. */
+export const CHECKOUTS_PER_MINUTE = 12
+
 export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
   const now = input.now ?? new Date()
   const env = getEnv()
 
-  if (env.PAYMENTS_PROVIDER !== 'simulated') {
-    // Defence in depth. getEnv() already refuses this combination, but a
-    // checkout path is not the place to rely on validation elsewhere.
+  const payments = getIntegrations().payments
+
+  if (payments.isLive && env.ARC_DATA_MODE === 'demo') {
+    /*
+     * Defence in depth, three deep.
+     *
+     * `getEnv()` refuses the combination, `getIntegrations()` refuses it
+     * again, and it is refused a third time here — because a checkout path is
+     * the last place to rely on validation elsewhere, and "demo mode moves no
+     * money" is a product commitment rather than a configuration detail.
+     */
     throw new AppError(
       'DEMO_MODE_BLOCKED',
-      'Live payments are not enabled in this build.',
+      'Live payments cannot be used while this build is in demo mode.',
     )
   }
 
@@ -85,6 +109,25 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
   })
   if (!cart) throw notFound('Basket')
   if (cart.guestId !== input.guestId) throw notFound('Basket')
+
+  /*
+   * A ceiling on checkout attempts per guest.
+   *
+   * Idempotency already makes a duplicate submission of the *same* key safe,
+   * and the serializable transaction makes concurrent distinct ones correct.
+   * Neither bounds how many a caller may make: each one opens a transaction,
+   * writes ledger rows and can take holds, so an unbounded loop is a
+   * database-level denial of service against the tenant from a credential that
+   * is a QR code. Generous enough that a guest retrying a flaky connection
+   * never sees it.
+   */
+  await assertWithinRateLimit({
+    bucket: `checkout:guest:${cart.guestId}`,
+    limit: CHECKOUTS_PER_MINUTE,
+    windowSeconds: 60,
+    message: 'Too many checkout attempts. Wait a minute and try again.',
+    now,
+  })
 
   // --- Idempotency ---------------------------------------------------------
   // Claim the key first. The unique constraint on (organizationId, scope, key)
@@ -140,19 +183,44 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
       })
     }
 
+    /*
+     * The payment, resolved before the transaction opens.
+     *
+     * A network call inside a Serializable transaction holds locks for the
+     * provider's latency and would be re-issued by every retry, so the money
+     * question is settled first and the transaction only records the answer.
+     *
+     * Two shapes, and the provider decides which:
+     *
+     *   * **Live.** The client has already confirmed the intent with the
+     *     provider. ARC reads it back and requires `succeeded`. It never
+     *     confirms on the guest's behalf, so there is no path on which ARC
+     *     takes money and then discovers it cannot deliver the basket.
+     *   * **Simulated.** No client-side step exists, so the intent is created
+     *     here and comes back `succeeded` and marked simulated. A
+     *     `paymentIntentId` on this path is a client confusing itself about
+     *     which build it is talking to, and is refused rather than ignored.
+     */
+    const reference = orderReference()
+    const intent = await resolvePayment(payments, {
+      cartId: cart.id,
+      currency: cart.currency,
+      idempotencyKey: input.idempotencyKey,
+      paymentIntentId: input.paymentIntentId ?? null,
+      orderReference: reference,
+    })
+
     const [commissionRules, organization] = await Promise.all([
       prisma.commissionRule.findMany({
         where: { organizationId: cart.organizationId, isActive: true },
       }),
       prisma.organization.findUnique({
         where: { id: cart.organizationId },
-        select: { defaultCommissionBps: true },
+        select: { defaultCommissionBps: true, defaultPlatformCommissionBps: true },
       }),
     ])
 
     result = await inSerializableTransaction(async (tx) => {
-      const reference = orderReference()
-
       /**
        * Cart, lines and holds are read **inside** the transaction.
        *
@@ -219,26 +287,130 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
 
       const totals = computeCartTotals(items, liveCart.currency)
 
-      const order = await tx.order.create({
-        data: {
-          organizationId: cart.organizationId,
-          propertyId: cart.propertyId,
-          guestId: cart.guestId,
-          stayId: cart.stayId,
-          reference,
-          status: OrderStatus.PENDING,
-          currency: cart.currency,
-          subtotalMinor: totals.subtotalMinor,
-          feesMinor: totals.feesMinor,
-          totalMinor: totals.totalMinor,
-          isSimulated: true,
-          paymentProvider: 'simulated',
-          // Marked unmistakably as fake so it can never be reconciled against
-          // a real payment processor by accident.
-          paymentReference: `SIMULATED-${reference}`,
-        },
-        select: { id: true, reference: true },
+      /*
+       * One order per payment, re-read inside the transaction.
+       *
+       * The idempotency key stops a repeated *request*; it says nothing about
+       * the same payment arriving under a fresh key, which is what a client
+       * retrying after a timeout does. The unique index on
+       * `(paymentProvider, paymentReference)` is the guarantee — this read is
+       * here so the guest gets a sentence rather than a constraint violation,
+       * and it is inside the transaction because `inSerializableTransaction`
+       * re-runs the whole body on a serialization failure.
+       *
+       * It comes *before* the amount check deliberately. The other way round,
+       * a reused payment against a basket that had since changed was recorded
+       * as a `payment_mismatch` — which tells an operator that ARC holds money
+       * it never delivered, and sends them to reconcile a payment that in fact
+       * already confirmed an order. Reuse is the more specific answer, so it
+       * is the one given.
+       */
+      const alreadyPaid = await tx.order.findFirst({
+        where: { paymentProvider: payments.name, paymentReference: intent.reference },
+        select: { reference: true },
       })
+      if (alreadyPaid) {
+        throw conflict(
+          'That payment has already been used for a booking. Nothing further has been charged.',
+          { paymentReference: intent.reference, orderReference: alreadyPaid.reference },
+        )
+      }
+
+      /**
+       * The payment must be for this basket, as the basket is *now*.
+       *
+       * The intent was resolved from a read outside the transaction. If a
+       * second tab changed the basket in between, the amount the provider holds
+       * is not the amount this order is for — and the lines are re-read inside
+       * here precisely so that mismatch is caught rather than committed.
+       *
+       * No automatic refund is attempted. Moving money back is a consequential
+       * action and needs an `Approval` row naming who decided (non-negotiable
+       * 6), so the honest outcome is a refused checkout, an audit row, and a
+       * reconciliation an operator performs. The intent is left as the
+       * provider holds it.
+       */
+      if (
+        intent.amount.amountMinor !== totals.totalMinor ||
+        intent.amount.currency !== totals.currency
+      ) {
+        /*
+         * The record of this is written *after* the rollback, not on `tx`.
+         *
+         * Writing it here was wrong in exactly the way that matters: the
+         * transaction this throw unwinds takes the audit row with it, so the
+         * one surviving trace of a payment ARC holds and cannot deliver would
+         * have been rolled back with the refusal. The payload travels on the
+         * error and the `catch` below persists it outside any transaction.
+         */
+        throw conflict(
+          'Your basket changed after the payment was authorised. Nothing has been booked; ' +
+            'contact the property so the payment can be reconciled.',
+          {
+            paymentReference: intent.reference,
+            paymentMismatch: {
+              paymentReference: intent.reference,
+              paymentProvider: payments.name,
+              paidMinor: intent.amount.amountMinor,
+              paidCurrency: intent.amount.currency,
+              basketMinor: totals.totalMinor,
+              basketCurrency: totals.currency,
+              simulated: intent.isSimulated,
+            },
+          },
+        )
+      }
+
+      // A real ledger line must not read as a simulated one, and a simulated
+      // line must never read as real.
+      const memoPrefix = intent.isSimulated ? 'Simulated ' : ''
+
+      /*
+       * The read above can lose a race; the index cannot.
+       *
+       * Two overlapping checkouts sharing one payment under different
+       * idempotency keys both pass that read, and the loser violates the
+       * unique index here. `inSerializableTransaction` retries only
+       * serialization failures and `toFormState` re-throws anything that is
+       * not an `AppError`, so left unmapped this reached the guest as a 500 —
+       * for the one case where the honest answer is specific and reassuring.
+       */
+      const order = await tx.order
+        .create({
+          data: {
+            organizationId: cart.organizationId,
+            propertyId: cart.propertyId,
+            guestId: cart.guestId,
+            stayId: cart.stayId,
+            reference,
+            status: OrderStatus.PENDING,
+            currency: cart.currency,
+            subtotalMinor: totals.subtotalMinor,
+            feesMinor: totals.feesMinor,
+            totalMinor: totals.totalMinor,
+            // From the provider, never from the environment: the simulated
+            // provider marks every intent simulated and prefixes its reference
+            // `SIMULATED-`, so a fake payment can never be reconciled against
+            // a real processor by accident.
+            isSimulated: intent.isSimulated,
+            paymentProvider: payments.name,
+            paymentReference: intent.reference,
+          },
+          select: { id: true, reference: true },
+        })
+        .catch((error: unknown) => {
+          const prismaError = error as { code?: string; meta?: { target?: string[] } }
+          if (
+            prismaError.code === 'P2002' &&
+            prismaError.meta?.target?.includes('paymentReference')
+          ) {
+            throw conflict(
+              'That payment has already been used for a booking. Nothing further has been charged.',
+              { paymentReference: intent.reference },
+            )
+          }
+          throw error
+        })
 
       let hotelTotal = 0
       let platformTotal = 0
@@ -252,7 +424,10 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
             experienceId: item.experienceId,
             category: item.experience.category as ExperienceCategory,
           },
-          organization?.defaultCommissionBps ?? 1500,
+          {
+            hotelBps: organization?.defaultCommissionBps ?? 1500,
+            platformBps: organization?.defaultPlatformCommissionBps ?? 500,
+          },
         )
 
         const split = splitEarnings(
@@ -304,7 +479,7 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
               account: 'hotel_earnings',
               amountMinor: split.hotel.amountMinor,
               currency: cart.currency,
-              memo: `Simulated hotel share · ${item.experience.titleEn}`,
+              memo: `${memoPrefix}hotel share · ${item.experience.titleEn}`,
             },
             {
               organizationId: cart.organizationId,
@@ -313,7 +488,7 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
               account: 'platform_commission',
               amountMinor: split.platform.amountMinor,
               currency: cart.currency,
-              memo: `Simulated ARC commission · ${item.experience.titleEn}`,
+              memo: `${memoPrefix}ARC commission · ${item.experience.titleEn}`,
             },
             {
               organizationId: cart.organizationId,
@@ -322,7 +497,7 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
               account: 'supplier_payable',
               amountMinor: split.supplier.amountMinor,
               currency: cart.currency,
-              memo: `Simulated supplier payable · ${item.experience.titleEn}`,
+              memo: `${memoPrefix}supplier payable · ${item.experience.titleEn}`,
             },
           ],
         })
@@ -372,7 +547,9 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
             reference: confirmed.reference,
             itemCount: items.length,
             totalMinor: confirmed.totalMinor,
-            simulated: true,
+            simulated: intent.isSimulated,
+            paymentProvider: payments.name,
+            paymentReference: intent.reference,
             idempotencyKey: input.idempotencyKey,
           },
         },
@@ -385,7 +562,7 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
         status: confirmed.status,
         totalMinor: confirmed.totalMinor,
         currency: confirmed.currency,
-        isSimulated: true,
+        isSimulated: intent.isSimulated,
         itemCount: items.length,
         replayed: false,
       }
@@ -420,6 +597,29 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
     // Every throw between the claim and the commit is inside this try, so no
     // path can orphan the key.
     await releaseIdempotencyKey(cart.organizationId, input.idempotencyKey)
+
+    /*
+     * A payment ARC holds and did not deliver is the one failure that must
+     * outlive the rollback.
+     *
+     * No automatic refund is attempted: moving money back is a consequential
+     * action and needs an `Approval` row naming who decided (non-negotiable
+     * 6). So the honest outcome is a refused checkout, a durable record, and a
+     * reconciliation an operator performs — and `recordAudit` is called with
+     * no `tx` precisely so it commits on its own.
+     */
+    const mismatch = paymentMismatchDetails(error)
+    if (mismatch) {
+      await recordAudit({
+        organizationId: cart.organizationId,
+        actorKind: 'system',
+        action: 'commerce.checkout.payment_mismatch',
+        entityType: 'Cart',
+        entityId: cart.id,
+        metadata: mismatch,
+      })
+    }
+
     throw error
   }
 
@@ -434,11 +634,117 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
       itemCount: result.itemCount,
       totalMinor: result.totalMinor,
       currency: result.currency,
-      simulated: true,
+      simulated: result.isSimulated,
     },
   })
 
   return result
+}
+
+/**
+ * Settles the money question before the transaction opens.
+ *
+ * Returns the intent the order will be written against, or throws. It never
+ * returns an intent that is not `succeeded`: an order exists only once its
+ * payment does, which is what makes `OrderStatus.CONFIRMED` mean something and
+ * why the webhook in `payment-events.ts` only has to handle a payment that
+ * stopped standing *later*.
+ */
+/** Audit metadata for a payment that no longer matches its basket, if that is what this is. */
+type PaymentMismatch = Record<string, string | number | boolean>
+
+function paymentMismatchDetails(error: unknown): PaymentMismatch | null {
+  if (!(error instanceof AppError)) return null
+  const details = error.details
+  if (details === null || typeof details !== 'object') return null
+  const payload = (details as { paymentMismatch?: unknown }).paymentMismatch
+  if (payload === null || typeof payload !== 'object') return null
+  return payload as PaymentMismatch
+}
+
+async function resolvePayment(
+  payments: PaymentsProvider,
+  input: {
+    cartId: string
+    currency: string
+    idempotencyKey: string
+    paymentIntentId: string | null
+    orderReference: string
+  },
+): Promise<PaymentIntent> {
+  if (payments.isLive) {
+    if (!input.paymentIntentId) {
+      throw invalid('This checkout needs a confirmed payment before it can be completed.')
+    }
+
+    const read = await payments.retrieveIntent({ reference: input.paymentIntentId })
+    if (!read.ok || !read.data) {
+      // The provider's own reason, not an invented one. A provider that could
+      // not answer must not be read as a provider that said no.
+      throw new AppError(
+        'PAYMENT_UNAVAILABLE',
+        'We could not confirm your payment with the payment provider. Nothing has been booked.',
+        { reason: read.reason },
+      )
+    }
+
+    if (read.data.status !== 'succeeded') {
+      throw new AppError(
+        'PAYMENT_NOT_COMPLETED',
+        'Your payment has not completed. Nothing has been booked.',
+        { status: read.data.status },
+      )
+    }
+    if (read.data.isSimulated) {
+      // A live provider reporting a simulated intent is a wiring error, and
+      // the wrong way to discover it is a booking nobody paid for.
+      throw new AppError('INTERNAL', 'The payment provider returned a simulated payment.')
+    }
+
+    return read.data
+  }
+
+  if (input.paymentIntentId) {
+    throw invalid(
+      'This build takes no real payments, so a payment reference cannot be accepted.',
+    )
+  }
+
+  /*
+   * The amount is read from the basket outside the transaction purely so the
+   * provider can be asked for it. The transaction re-reads the lines and
+   * refuses to commit if the two disagree — these numbers are the question,
+   * not the answer.
+   */
+  const lines = await prisma.cartItem.findMany({
+    where: { cartId: input.cartId },
+    select: { unitPriceMinor: true, quantity: true, bookingFeeMinor: true },
+  })
+  if (lines.length === 0) throw invalid('Your basket is empty.')
+  const provisional = computeCartTotals(lines, input.currency)
+
+  const created = await payments.createIntent({
+    idempotencyKey: input.idempotencyKey,
+    amount: money(provisional.totalMinor, provisional.currency),
+    orderReference: input.orderReference,
+    description: `ARC Stay order ${input.orderReference}`,
+  })
+  if (!created.ok || !created.data) {
+    throw new AppError(
+      'PAYMENT_UNAVAILABLE',
+      'We could not start the payment. Nothing has been booked.',
+      { reason: created.reason },
+    )
+  }
+  if (created.data.status !== 'succeeded') {
+    throw new AppError(
+      'PAYMENT_NOT_COMPLETED',
+      'Your payment has not completed. Nothing has been booked.',
+      { status: created.data.status },
+    )
+  }
+
+  return created.data
 }
 
 async function releaseIdempotencyKey(organizationId: string, key: string): Promise<void> {

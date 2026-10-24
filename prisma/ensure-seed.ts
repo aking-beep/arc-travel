@@ -28,6 +28,14 @@ async function countOrganizations(): Promise<number> {
 }
 
 async function main(): Promise<void> {
+  // The seed itself refuses to run outside demo mode, but saying so here keeps
+  // the hosted build's log honest rather than making it look like a failure.
+  const mode = process.env.ARC_DATA_MODE ?? 'demo'
+  if (mode !== 'demo' && process.env.ARC_ALLOW_SEED !== '1') {
+    console.log('[ensure-seed] ARC_DATA_MODE=%s — not seeding synthetic data.', mode)
+    return
+  }
+
   const existing = await countOrganizations()
   if (existing > 0) {
     console.log(
