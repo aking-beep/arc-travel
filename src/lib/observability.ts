@@ -46,10 +46,41 @@ const EXPECTED: ReadonlySet<AppErrorCode> = new Set<AppErrorCode>([
   'PAYMENT_NOT_COMPLETED',
 ])
 
+/** Every code this build defines. A 5xx one is a fault; anything else expected. */
+const KNOWN: ReadonlySet<AppErrorCode> = new Set<AppErrorCode>([
+  ...EXPECTED,
+  'PAYMENT_UNAVAILABLE',
+  'INTERNAL',
+])
+
+/**
+ * Reads an `AppError`'s code **structurally**, not with `instanceof`.
+ *
+ * This was found by a test run rather than by reading: every `NOT_FOUND` from
+ * the guest portal was being reported as a fault. `instanceof` compares class
+ * identity, and `src/instrumentation.ts` is bundled separately from the route
+ * chunks, so the `AppError` an action threw is not the `AppError` this module
+ * imported — two copies of the same class, and every check between them false.
+ *
+ * `isAppError` in `lib/errors` keeps using `instanceof` deliberately: inside
+ * one bundle it is exact, and it is used for control flow. Here the input has
+ * crossed a bundle boundary, so the shape is the only thing that survived.
+ */
+function appErrorCode(error: unknown): AppErrorCode | null {
+  if (error === null || typeof error !== 'object') return null
+  if (error instanceof AppError) return error.code
+
+  const candidate = error as { name?: unknown; code?: unknown; status?: unknown }
+  if (candidate.name !== 'AppError') return null
+  if (typeof candidate.code !== 'string' || typeof candidate.status !== 'number') return null
+  // Only a code this build knows. An unrecognised one is a fault, not a
+  // silently-expected error, so a renamed code cannot mute reporting.
+  return KNOWN.has(candidate.code as AppErrorCode) ? (candidate.code as AppErrorCode) : null
+}
+
 export function severityOf(error: unknown): Severity {
-  if (error instanceof AppError) {
-    return EXPECTED.has(error.code) ? 'expected' : 'fault'
-  }
+  const code = appErrorCode(error)
+  if (code) return EXPECTED.has(code) ? 'expected' : 'fault'
   // A ZodError that escaped a service, a Prisma error, a TypeError: all bugs.
   return 'fault'
 }
@@ -83,7 +114,7 @@ export async function reportError(
   const severity = severityOf(error)
 
   try {
-    const code = error instanceof AppError ? error.code : null
+    const code = appErrorCode(error)
     const type = error instanceof Error ? error.name : typeof error
     const message = error instanceof Error ? error.message : String(error)
 

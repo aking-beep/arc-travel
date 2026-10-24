@@ -612,3 +612,88 @@ reads it back.
 
 **Cost.** Two round trips instead of one for a live payment, and a reconciliation
 an operator performs by hand in the mismatch case.
+
+---
+
+## ADR-027 — The published catalogue and the illustrative set are shown side by side, never merged
+
+**Status.** Accepted, 2026-10-24.
+
+**Context.** `src/modules/discovery/service.ts` is a database-backed read model
+of the published catalogue — 350 lines, tested, scoped to
+`ExperienceStatus.PUBLISHED` and `EntityStatus.ACTIVE`, taking no identifier
+from the client. Until now **no route rendered it**. The public surface ran
+entirely on the illustrative content set ported from the Magic Patterns export,
+so the one destination this build has real data for was showing fixtures. This
+was the largest architectural gap the readiness audit found.
+
+The obvious fix is to merge the two: adapt the database rows into the content
+shapes and concatenate. Two things make that wrong.
+
+**They are different claims.** "Illustrative" means nobody is behind this
+listing. "Unverified" means a real supplier is, and ARC has not checked them.
+A visitor who cannot tell which list they are reading cannot tell which claim
+they are being made — and the second is the one a hotel partner is being asked
+to evaluate.
+
+**They are different currencies.** The content set is USD
+(`CONTENT_CURRENCY`); the catalogue is in the property's own currency. The
+browse page's price filter is a single scale. One slider over two currencies is
+a slider that lies, and reconciling them would mean inventing an exchange rate
+in a build whose first non-negotiable about money is that it is exact.
+
+**Decision.** `modules/discovery/live.ts` adapts the read model into the
+content types the existing components already render, and the pages show the
+two catalogues as separate, labelled sections.
+
+Five rules govern the adapter, and each is a refusal:
+
+1. **Nothing is invented to fill a field.** No photograph, no host biography, no
+   years of experience, no step-by-step itinerary, no room size, no rating.
+   Those fields became optional on the content types and are left empty.
+2. **Claims stay claims.** `hostClaims` is the supplier's own
+   `claimedCertifications`, passed through. `provenance` carries the row's real
+   `VerificationStatus`, so only an `/admin` decision can produce verified
+   wording (non-negotiable 2).
+3. **Currency travels with the price.** Every card and estimator reads the
+   listing's currency instead of assuming `CONTENT_CURRENCY`.
+4. **An unpriced listing is not a listing.** A published experience with no
+   active BASE price is omitted rather than shown as "price on request" by a
+   product that holds the price list.
+5. **A rejected supplier is not shown.** The published-catalogue predicate does
+   not exclude one; the adapter does.
+
+It returns **no availability** — no slots, no holds, no "places left". A
+published price is a fact about a price list, not an offer on a date.
+
+**Consequences.**
+
+- Live sections appear on `/`, `/experiences` and `/stays`; `/experiences/[slug]`
+  and `/stays/[slug]` try the database first and fall through to the content
+  set, so a real listing is never shadowed by a fixture that shares its slug.
+- `ListingBadge` gained a third state. It could already say "verified by ARC"
+  and never did, because nothing reaching it had a real status; now something
+  does, and the wording is reachable only from a recorded admin decision.
+- `ExperienceCategory` gained a `Transport` member. The database has a
+  `TRANSPORT` category and none of the content set's five buckets it honestly
+  maps to; squeezing an airport transfer into "Nature" is how a filter starts
+  lying. The map is exhaustive over the Prisma enum, so a new database category
+  fails typecheck rather than landing in whichever bucket was nearest.
+- `AbilityLevel` has five members and the content set's `Difficulty` four.
+  `IMPROVER` and `INTERMEDIATE` both read as "Moderate"; collapsing two
+  adjacent middle levels loses less than inventing a fifth word, and the detail
+  page shows the real ability range alongside.
+- A live card renders on its tinted plate with no image, permanently. ADR-025
+  scoped destination imagery to the *content* set; giving a real supplier's
+  listing a stock photograph is the thing that decision scoped away.
+- On an unseeded database every live section disappears rather than rendering
+  an empty shelf.
+
+**Not done.** `/destinations/[slug]`, `/culture/[destination]`, `/search` and
+`/plan` still read the content set alone. The places and conditions the read
+model exposes (`listPublicPlaces`, `getPublicConditions`) are rendered on the
+guest portal and not yet on the public destination page.
+
+**Cost.** Two catalogues visible on one surface, which is more to explain than
+one. That is the honest shape of the thing: the product has one real
+destination and a demonstration of what eight would look like.

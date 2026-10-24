@@ -10,6 +10,7 @@ import { SaveButton } from '@/components/explore/save-button'
 import { getTranslator } from '@/lib/i18n/server'
 import { getDestination } from '@/modules/discovery/content/destinations'
 import { experiences, getExperience } from '@/modules/discovery/content/experiences'
+import { liveExperience } from '@/modules/discovery/live'
 import { CONTENT_CURRENCY } from '@/modules/discovery/content/types'
 
 export async function generateStaticParams() {
@@ -18,7 +19,8 @@ export async function generateStaticParams() {
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  const experience = getExperience(slug)
+  const { locale } = await getTranslator()
+  const experience = (await liveExperience(slug, locale)) ?? getExperience(slug)
   return { title: experience?.title ?? 'Experience' }
 }
 
@@ -43,10 +45,19 @@ export default async function ExperienceDetailPage({
   params: Promise<{ slug: string }>
 }) {
   const { slug } = await params
-  const experience = getExperience(slug)
-  if (!experience) notFound()
-
   const { t, locale } = await getTranslator()
+
+  /*
+   * The published catalogue first, the content set second.
+   *
+   * A slug belongs to one or the other and the database is the authority where
+   * both could answer: a real supplier's listing must not be shadowed by a
+   * fixture that happens to share a slug. `liveExperience` returns null rather
+   * than throwing for an unknown or unpublished slug, which is what makes a
+   * fall-through rather than a 500.
+   */
+  const experience = (await liveExperience(slug, locale)) ?? getExperience(slug)
+  if (!experience) notFound()
   const destination = getDestination(experience.destination)
 
   const related = experiences
@@ -83,16 +94,23 @@ export default async function ExperienceDetailPage({
           ) : null}
         </p>
         <div className="bg-sand relative aspect-4/3 overflow-hidden rounded-3xl md:aspect-21/9">
-          <Image
-            src={experience.image}
-            alt={experience.title}
-            fill
-            priority
-            sizes="100vw"
-            className="object-cover"
-          />
+          {experience.image ? (
+            <Image
+              src={experience.image}
+              alt={experience.title}
+              fill
+              priority
+              sizes="100vw"
+              className="object-cover"
+            />
+          ) : null}
           <div className="absolute top-4 left-4">
-            <ListingBadge status={experience.verification} locale={locale} onImage />
+            <ListingBadge
+              status={experience.verification}
+              provenance={experience.provenance}
+              locale={locale}
+              onImage
+            />
           </div>
           <div className="absolute top-4 right-4">
             <SaveButton
@@ -147,7 +165,12 @@ export default async function ExperienceDetailPage({
             ))}
           </section>
 
-          <section className="mt-14">
+          {/*
+            * Only when there is one. The database holds no step-by-step
+            * breakdown, so a live listing shows an empty heading rather than
+            * an invented schedule — which is to say, it shows nothing.
+            */}
+          <section className={experience.itinerary.length > 0 ? 'mt-14' : 'hidden'}>
             <h2 className="mb-6 text-2xl md:text-3xl">How the day unfolds</h2>
             <ol className="border-line relative ml-2 border-l">
               {experience.itinerary.map((step) => (
@@ -170,10 +193,15 @@ export default async function ExperienceDetailPage({
             <div>
               <p className="text-muted text-xs">{t('explore.experience.hostedBy')}</p>
               <p className="mt-1 text-2xl">{experience.host.name}</p>
-              <p className="text-sage text-sm">
-                {experience.host.role} · {experience.host.years} years
-              </p>
-              <p className="text-muted mt-3 text-sm leading-relaxed">{experience.host.bio}</p>
+              {experience.host.role ? (
+                <p className="text-sage text-sm">
+                  {experience.host.role}
+                  {experience.host.years !== undefined ? ` · ${experience.host.years} years` : ''}
+                </p>
+              ) : null}
+              {experience.host.bio ? (
+                <p className="text-muted mt-3 text-sm leading-relaxed">{experience.host.bio}</p>
+              ) : null}
             </div>
           </section>
 
@@ -201,6 +229,11 @@ export default async function ExperienceDetailPage({
                 {t('explore.experience.claimsNote')}
               </p>
               <ul className="space-y-3">
+                {experience.hostClaims.length === 0 ? (
+                  <li className="text-muted text-sm">
+                    {t('explore.experience.noClaims')}
+                  </li>
+                ) : null}
                 {experience.hostClaims.map((claim) => (
                   <li key={claim} className="flex gap-2 text-sm leading-relaxed">
                     <Info className="text-muted mt-0.5 size-4 shrink-0" aria-hidden />
@@ -224,7 +257,7 @@ export default async function ExperienceDetailPage({
           <PartyEstimator
             locale={locale}
             amountMinor={experience.priceMinor}
-            currency={CONTENT_CURRENCY}
+            currency={experience.currency ?? CONTENT_CURRENCY}
             minParty={1}
             maxParty={10}
             defaultParty={2}

@@ -1,10 +1,10 @@
 import Link from 'next/link'
-import { ArrowRight, Info } from 'lucide-react'
+import { ArrowRight, Info, ShieldCheck } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/cn'
 import type { AppLocale } from '@/lib/i18n'
 import { createTranslator } from '@/lib/i18n'
-import type { ListingStatus } from '@/modules/discovery/content/types'
+import type { ListingProvenance, ListingStatus } from '@/modules/discovery/content/types'
 
 /**
  * Shared presentation for the public destination surface.
@@ -25,19 +25,40 @@ import type { ListingStatus } from '@/modules/discovery/content/types'
  * real `VerificationStatus` reaches this surface it will come from a row an
  * admin wrote, and it will need its own component.
  */
+/**
+ * What a listing's standing actually is.
+ *
+ * Three states, and the distinction between the first two is the point.
+ * "Illustrative" says nobody is behind this listing. "Unverified" says a real
+ * supplier is and ARC has not checked them. Collapsing the two would make the
+ * live catalogue read as a fixture, or the fixtures read as real trade.
+ *
+ * Only `/admin` can produce a VERIFIED row (CLAUDE.md non-negotiable 2), so
+ * the verified wording is reachable only from a decision an admin recorded —
+ * never from content, and never from this component's own judgement.
+ */
 export function ListingBadge({
   status,
+  provenance,
   locale,
   onImage = false,
   className,
 }: {
   status: ListingStatus
+  provenance?: ListingProvenance
   locale: AppLocale
   onImage?: boolean
   className?: string
 }) {
   const t = createTranslator(locale)
   void status
+
+  const verified = provenance?.kind === 'live' && provenance.verification === 'VERIFIED'
+  const label = verified
+    ? t('explore.verification.verified')
+    : provenance?.kind === 'live'
+      ? t('explore.verification.unverified')
+      : t('explore.verification.illustrative')
 
   return (
     <span
@@ -47,8 +68,12 @@ export function ListingBadge({
         className,
       )}
     >
-      <Info className="size-3.5" aria-hidden />
-      {t('explore.verification.unverified')}
+      {verified ? (
+        <ShieldCheck className="size-3.5" aria-hidden />
+      ) : (
+        <Info className="size-3.5" aria-hidden />
+      )}
+      {label}
     </span>
   )
 }

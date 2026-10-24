@@ -47,6 +47,49 @@ describe('severityOf', () => {
   })
 })
 
+describe('severityOf across a bundle boundary', () => {
+  it('classifies an AppError that lost its class identity', () => {
+    /*
+     * Found by a test run, not by reading: every NOT_FOUND from the guest
+     * portal was being reported as a fault. `src/instrumentation.ts` is
+     * bundled separately from the route chunks, so the `AppError` an action
+     * threw is not the `AppError` the reporter imported — two copies of one
+     * class, and every `instanceof` between them false.
+     */
+    const crossBundle = Object.assign(new Error('Stay not found.'), {
+      name: 'AppError',
+      code: 'NOT_FOUND',
+      status: 404,
+    })
+    expect(severityOf(crossBundle)).toBe('expected')
+  })
+
+  it('still treats a 5xx code as a fault across that boundary', () => {
+    const crossBundle = Object.assign(new Error('nope'), {
+      name: 'AppError',
+      code: 'INTERNAL',
+      status: 500,
+    })
+    expect(severityOf(crossBundle)).toBe('fault')
+  })
+
+  it('does not let an unrecognised code mute reporting', () => {
+    // A renamed or invented code must be a fault, not a silently-expected
+    // error — otherwise anything can claim to be routine.
+    const impostor = Object.assign(new Error('trust me'), {
+      name: 'AppError',
+      code: 'TOTALLY_FINE',
+      status: 200,
+    })
+    expect(severityOf(impostor)).toBe('fault')
+  })
+
+  it('ignores a lookalike with no status, which is not an AppError at all', () => {
+    const lookalike = Object.assign(new Error('x'), { name: 'AppError', code: 'NOT_FOUND' })
+    expect(severityOf(lookalike)).toBe('fault')
+  })
+})
+
 describe('parseDsn', () => {
   it('builds the envelope endpoint and extracts the key', () => {
     expect(parseDsn('https://abc123@o4507.ingest.sentry.io/4509')).toEqual({

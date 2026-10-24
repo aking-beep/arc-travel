@@ -345,6 +345,13 @@ export const dictionary = {
   'explore.verification.unverified': 'Unverified listing',
   'explore.verification.unverifiedNote':
     'ARC has not checked this host. In this demonstration build none of them have been.',
+  'explore.verification.illustrative': 'Illustrative listing',
+  'explore.verification.illustrativeNote':
+    'Nobody is behind this listing. It shows what the surface looks like with a catalogue in it.',
+  'explore.source.live': 'From the published catalogue',
+  'explore.source.liveNote':
+    'A real supplier in Puerto Escondido, read from the catalogue they maintain. Prices are their published price list, not an offer on a date.',
+  'explore.source.illustrative': 'Illustrative',
   'explore.guide.heading': 'Local guide',
   'explore.guide.lede':
     'Reference for this stretch of coast. No availability, no prices, no recommendation — the places, what the water has been doing, and sourced notes for the country.',
@@ -764,6 +771,13 @@ export const dictionary = {
   'explore.verification.unverified': 'Anuncio sin verificar',
   'explore.verification.unverifiedNote':
     'ARC no ha comprobado a este anfitrión. En este build de demostración no se ha comprobado a ninguno.',
+  'explore.verification.illustrative': 'Anuncio ilustrativo',
+  'explore.verification.illustrativeNote':
+    'No hay nadie detrás de este anuncio. Muestra cómo se ve la superficie con un catálogo dentro.',
+  'explore.source.live': 'Del catálogo publicado',
+  'explore.source.liveNote':
+    'Un proveedor real de Puerto Escondido, leído del catálogo que mantiene. Los precios son su lista publicada, no una oferta para una fecha.',
+  'explore.source.illustrative': 'Ilustrativo',
   'explore.guide.heading': 'Guía local',
   'explore.guide.lede':
     'Referencia de este tramo de costa. Sin disponibilidad, sin precios y sin recomendación: los lugares, qué ha estado haciendo el mar y notas del país con su fuente.',

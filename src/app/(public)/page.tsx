@@ -15,6 +15,7 @@ import { articles } from '@/modules/discovery/content/articles'
 import { getCulture } from '@/modules/discovery/content/culture'
 import { destinations } from '@/modules/discovery/content/destinations'
 import { experiences } from '@/modules/discovery/content/experiences'
+import { liveExperiences, liveStays } from '@/modules/discovery/live'
 import { sampleItineraries } from '@/modules/discovery/content/itineraries'
 import { stays } from '@/modules/discovery/content/stays'
 import { CONTENT_CURRENCY } from '@/modules/discovery/content/types'
@@ -46,6 +47,21 @@ export default async function ExploreHomePage() {
   ]
     .map((slug) => experiences.find((e) => e.slug === slug))
     .filter((e): e is NonNullable<typeof e> => e !== undefined)
+
+  /*
+   * The published catalogue, if there is one.
+   *
+   * Everything above and below this is the illustrative content set. This is
+   * the real thing — one property in Puerto Escondido and the experiences its
+   * suppliers maintain — read from the database and kept in its own band so a
+   * visitor can tell the two apart. `liveExperiences` returns an empty array
+   * on an unseeded database, and the band disappears rather than rendering an
+   * empty shelf.
+   */
+  const [liveCatalogue, liveProperties] = await Promise.all([
+    liveExperiences(locale),
+    liveStays(locale),
+  ])
 
   const culture = getCulture('puerto-escondido')
   const sample = sampleItineraries[0]
@@ -202,6 +218,27 @@ export default async function ExploreHomePage() {
         </div>
         <IllustrativeNote className="mt-6">{t('explore.stay.estimateNote')}</IllustrativeNote>
       </Shell>
+
+      {/* The published catalogue */}
+      {liveCatalogue.length > 0 || liveProperties.length > 0 ? (
+        <Band>
+          <Shell className="py-20 md:py-24">
+            <SectionHeading
+              title={t('explore.source.live')}
+              kicker={t('explore.source.liveNote')}
+              action={{ href: '/experiences', label: t('explore.nav.experiences') }}
+            />
+            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+              {liveProperties.map((property) => (
+                <PropertyCard key={property.slug} property={property} locale={locale} />
+              ))}
+              {liveCatalogue.slice(0, 3).map((experience) => (
+                <ExperienceCard key={experience.slug} experience={experience} locale={locale} />
+              ))}
+            </div>
+          </Shell>
+        </Band>
+      ) : null}
 
       {/* Experiences */}
       <Shell className="pt-20 md:pt-28">
