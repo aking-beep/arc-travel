@@ -697,3 +697,106 @@ guest portal and not yet on the public destination page.
 **Cost.** Two catalogues visible on one surface, which is more to explain than
 one. That is the honest shape of the thing: the product has one real
 destination and a demonstration of what eight would look like.
+
+---
+
+## ADR-028 — `/sign-in` is a real sign-in page (supersedes ADR-023's treatment of it)
+
+**Status.** Accepted, 2026-10-24. Supersedes the `/sign-in` decision in ADR-023.
+
+**Context.** ADR-023 made `/sign-in` 404 outside demo mode and stripped the
+guest list from it. That was right: the page was public and rendered every
+guest's portal token into the markup, which is a bearer credential served to
+anyone who asked. 404ing it was the correct emergency answer to a page that
+should not have existed in that form.
+
+It was also the only way in. There were no passwords — `signInAs(userId)` took
+a user id from a click — so a build with no demo switcher had no authentication
+at all, and `/admin`, `/owner` and `/partner` were unreachable in a pilot.
+
+**Decision.** `/sign-in` renders a password form in every mode, and the demo
+account switcher only while `ARC_DATA_MODE=demo`.
+
+- The password form is first and is the page's purpose. `verifyCredentials`
+  does the work: scrypt, NFKC-normalised input, a constant-cost comparison
+  against an unmatchable hash for an unknown email, and rate limits on both the
+  email and the caller.
+- `listDemoAccounts()` is called only when `demoMode`, so outside demo mode
+  nothing enumerates users and no token reaches the markup. The leak ADR-023
+  closed stays closed by construction rather than by the whole page being
+  absent.
+- `next` is passed through `safeNext`, which refuses anything not starting with
+  a single `/`.
+
+**Consequences.** ADR-023's other half — the portal token being time-boxed as
+well as scoped — stands unchanged and is unrelated to this. The demo switcher
+is now the exception rather than the mechanism, which is the right way round.
+
+---
+
+## ADR-029 — An activity's operating window is one gate with four callers
+
+**Status.** Accepted, 2026-10-24.
+
+**Context.** Whether an activity may run at a given time on a given date was
+decided in three places: `modules/destination/suitability.ts`,
+`modules/itinerary/scoring.ts`, and nowhere at all on the two write paths that
+create departures (`catalog.addSlot`, `suppliers.scheduleAvailability`).
+
+The two read-side copies had drifted. One emitted an exclusion code the other
+did not, and neither checked season at all on one path. More seriously, a slot
+could be *written* outside the window the activity declares — so the gate was
+being asked to exclude departures that should never have existed, and a
+supplier scheduling a 16:30 dawn surf got no refusal, just a departure nobody
+could book.
+
+**Decision.** `modules/destination/operating-window.ts` is the one gate.
+
+- `gateByOperatingWindow` returns `{ allowed, exclusions, notes }` for the read
+  paths, with the codes `outside_activity_operating_window` and
+  `out_of_season`.
+- `assertWithinOperatingWindow` throws `invalid` for the write paths.
+- Four callers, two in each layer. A fifth has one function to call rather than
+  a convention to remember.
+- `scheduleAvailability` throws for a requested start time outside the window —
+  that is a mistake worth refusing — but silently skips out-of-season *days*
+  inside a requested range, exactly as it already skips past days. Refusing the
+  whole range because one month of it is closed would be useless.
+
+**Consequences.** One integration test fixture and one e2e spec broke, both
+because they created a departure from the wall clock and so sometimes outside
+the activity's hours. Both were wrong and now state their hour explicitly;
+neither was the gate being wrong. A test that passes only between 07:00 and
+16:00 is a test that will fail in somebody else's timezone.
+
+---
+
+## ADR-030 — An organization carries a platform commission default, not just a hotel one
+
+**Status.** Accepted, 2026-10-24.
+
+**Context.** `resolveCommission` fell back to
+`organization.defaultCommissionBps` for the hotel's share and **zero** for
+ARC's when no rule matched. So a tenant with no commission rule produced ledger
+lines in which the platform earned nothing: ARC's revenue depended on somebody
+remembering to write a rule per property, per category or per experience.
+
+Nothing failed. The ledger balanced, the split re-summed to gross, and the
+missing money simply went to the supplier.
+
+**Decision.** `Organization.defaultPlatformCommissionBps` (default 500), and
+`resolveCommission` takes both defaults as an explicit `CommissionDefaults`
+argument rather than reading one from the row and hard-coding the other.
+
+- The signature change is the point. A caller must now state both, so a future
+  one cannot omit the platform share by accident — it is a typecheck failure
+  rather than a zero.
+- A tenant that genuinely negotiated a zero platform share sets it to zero, and
+  that is a decision in a column rather than an accident in a fallback.
+- `/owner/revenue/commission` administers rules and both defaults, converting
+  percentages to basis points and pesos to centavos exactly once at the form
+  edge.
+
+**Consequences.** The seed states both defaults explicitly. A unit test asserts
+the zero case still works, so the fix cannot be read as "the platform share may
+never be zero".

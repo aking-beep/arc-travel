@@ -135,8 +135,11 @@ Combine a day and a wall-clock time with `localInstant`. Do not construct a
   this and it has already caught one real instance.
 - Every list and panel renders a loading, empty and error state. A blank panel
   cannot tell an owner "no arrivals today" from "this is broken".
-- Any money figure in a demo build renders with its marker. Use `<Money>` and
-  its `intent` prop (`earned` | `potential` | `neutral`).
+- Every money figure goes through `<Money>` with its `intent`
+  (`earned` | `potential` | `neutral`). `<Money>` formats from minor units; it
+  does **not** carry the demo marker. The marker is three things: `DemoBanner`
+  on every surface, `DemoFigure` around every *headline* figure, and nothing
+  around a figure inside a table — thirty badges down a column stop being read.
 - Add both EN and ES keys together — `_EsIsComplete` fails typecheck otherwise.
 
 ### Testing
@@ -178,7 +181,12 @@ Two E2E habits, learned the hard way and recorded in the specs:
 | CHECK constraints live in `prisma/constraints.sql`, not the schema | ADR-020. Prisma cannot express them, and application-only invariants fail silently |
 | `returnCapacity` throws instead of clamping | ADR-020. The clamp kept the counter non-negative while hiding the double-cancellation that caused it |
 | `invitePartner` refuses an email that already has an account | ADR-021. It used to `upsert`, rewriting a stranger's profile and grafting a membership onto it |
-| `/sign-in` 404s outside demo mode and lists no guests | ADR-023. The page was public and rendered every guest's portal token into the markup |
+| `/sign-in` 404s outside demo mode and lists no guests | **Superseded by ADR-028.** The page now works in every mode and lists accounts only in demo mode, because real passwords exist |
+| `/experiences` shows two catalogues rather than one list | ADR-027. "Illustrative" and "unverified" are different claims, and the two sets are in different currencies |
+| A live listing has no photograph at all | ADR-027. ADR-025 scoped imagery to the content set; a stock photo on a real supplier's listing is what that scoped away |
+| `checkout()` takes a payment it did not confirm | ADR-026. Confirming and then booking has a window that can only be closed with an automatic refund, which needs an `Approval` row |
+| The operating-window gate is its own module with four callers | ADR-029. The hours check existed three times and disagreed with itself |
+| An organization has a platform commission default as well as a hotel one | ADR-030. The platform share fell back to zero, so ARC earned nothing unless somebody wrote a rule |
 
 ## Review
 

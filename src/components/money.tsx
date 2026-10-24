@@ -5,11 +5,25 @@ import { cn } from '@/lib/cn'
 /**
  * Money display.
  *
- * Two deliberate choices. First, every figure in a demo build renders with a
- * marker so no screenshot can be mistaken for real trading data. Second,
  * `intent` distinguishes money that has actually been earned from money that
- * might be — the owner surface must never add those together, because the
- * single number the pilot is judged on is the earned one.
+ * might be. The owner surface must never add those together, because the single
+ * number the pilot is judged on is the earned one (ADR-007).
+ *
+ * This component does **not** carry the demo marker, and the comment here used
+ * to claim it did. What is actually true, stated precisely so the claim is
+ * checkable:
+ *
+ *   * Every surface renders `DemoBanner`, so no page of figures is unmarked.
+ *   * Every headline figure — the one a screenshot would be *of* — is wrapped
+ *     in `DemoFigure`, which puts the badge next to the number itself.
+ *   * A figure inside a table or a list is not individually badged. Thirty
+ *     badges down a column is noise that stops being read, which is a worse
+ *     outcome than one badge on the total above it.
+ *
+ * `Money` cannot decide this for itself: `isDemoMode()` reads the environment
+ * and half the callers are client components, so demo-ness would have to be
+ * threaded through every one of them as a prop. The marker is therefore the
+ * caller's to place, and the rule above is where to place it.
  */
 export function Money({
   amountMinor,

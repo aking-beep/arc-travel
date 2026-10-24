@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/states'
-import { Money } from '@/components/money'
+import { DemoFigure, Money } from '@/components/money'
 import { requireActor } from '@/modules/auth/service'
 import { resolveOperatingProperty } from '@/modules/hotels/service'
 import { getRevenueAnalytics } from '@/modules/analytics/reports'
@@ -43,11 +43,13 @@ export default async function RevenuePage() {
         </CardHeader>
         <CardContent>
           <p className="text-3xl font-semibold">
-            <Money
-              amountMinor={report.headline.perStayMinor}
-              currency={report.currency}
-              intent="earned"
-            />
+            <DemoFigure>
+              <Money
+                amountMinor={report.headline.perStayMinor}
+                currency={report.currency}
+                intent="earned"
+              />
+            </DemoFigure>
             <span className="text-sand-500 ml-2 text-base font-normal">per stay</span>
           </p>
           <dl className="text-sand-700 mt-4 grid gap-4 text-sm sm:grid-cols-4">
