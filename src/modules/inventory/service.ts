@@ -76,9 +76,18 @@ export interface SlotAvailability {
  * Releases holds whose TTL has passed and returns how many were swept.
  *
  * Called on read paths as well as explicitly: an expiry that only happens when
- * a cron job runs is an expiry that does not happen.
+ * a cron job runs is an expiry that does not happen. The scheduled sweep
+ * (`POST /api/cron/sweep-holds`) exists for the holds no read path ever looks
+ * at — a slot nobody opens again keeps its phantom `held` for ever, and
+ * `placeHold` then refuses places that are free.
+ *
+ * `limit` bounds one call. Every sweep runs in a single Serializable
+ * transaction, so an unbounded one over a neglected database would hold locks
+ * across thousands of rows; the scheduled caller passes a batch size and loops.
  */
-export async function sweepExpiredHolds(options: { slotIds?: string[]; now?: Date } = {}): Promise<number> {
+export async function sweepExpiredHolds(
+  options: { slotIds?: string[]; now?: Date; limit?: number } = {},
+): Promise<number> {
   const now = options.now ?? new Date()
 
   const expired = await prisma.inventoryHold.findMany({
@@ -88,6 +97,10 @@ export async function sweepExpiredHolds(options: { slotIds?: string[]; now?: Dat
       ...(options.slotIds ? { slotId: { in: options.slotIds } } : {}),
     },
     select: { id: true, slotId: true, quantity: true },
+    // Oldest first, so a bounded sweep makes progress rather than re-reading
+    // the same page while new expiries arrive.
+    orderBy: { expiresAt: 'asc' },
+    ...(options.limit ? { take: options.limit } : {}),
   })
 
   if (expired.length === 0) return 0

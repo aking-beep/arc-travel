@@ -7,15 +7,29 @@ interface Call {
   init: RequestInit
 }
 
-function stub(responses: Array<{ status: number; body: unknown }>) {
+interface Stubbed {
+  status: number
+  body: unknown
+}
+
+function stub(responses: Stubbed[]) {
   const calls: Call[] = []
   let index = 0
   const fetchImpl = async (url: string, init?: RequestInit): Promise<Response> => {
     calls.push({ url, init: init ?? {} })
-    const next = responses[Math.min(index++, responses.length - 1)]
+    const next = responses.at(Math.min(index++, responses.length - 1))
+    if (!next) throw new Error('stub() was given no responses')
     return new Response(JSON.stringify(next.body), { status: next.status })
   }
   return { calls, fetchImpl }
+}
+
+/** The one call the assertion is about. Fails loudly rather than optionally. */
+function onlyCall(calls: Call[]): Call {
+  expect(calls).toHaveLength(1)
+  const call = calls[0]
+  if (!call) throw new Error('no call was made')
+  return call
 }
 
 const INTENT = {
@@ -49,13 +63,13 @@ describe('StripePaymentsProvider', () => {
       description: 'ARC Stay order ARC-0001',
     })
 
-    expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe('https://api.stripe.com/v1/payment_intents')
-    const headers = calls[0].init.headers as Record<string, string>
+    const call = onlyCall(calls)
+    expect(call.url).toBe('https://api.stripe.com/v1/payment_intents')
+    const headers = call.init.headers as Record<string, string>
     expect(headers['idempotency-key']).toBe('key-1')
     expect(headers.authorization).toBe('Bearer sk_test_not_a_real_key')
 
-    const body = new URLSearchParams(String(calls[0].init.body))
+    const body = new URLSearchParams(String(call.init.body))
     expect(body.get('amount')).toBe('285000')
     expect(body.get('currency')).toBe('mxn')
     expect(body.get('metadata[order_reference]')).toBe('ARC-0001')
@@ -198,7 +212,7 @@ describe('StripePaymentsProvider', () => {
       amount: money(1_000, 'MXN'),
       reason: 'guest cancelled inside the window',
     })
-    const body = new URLSearchParams(String(calls[0].init.body))
+    const body = new URLSearchParams(String(onlyCall(calls).init.body))
     expect(body.get('reason')).toBeNull()
     expect(body.get('metadata[arc_reason]')).toBe('guest cancelled inside the window')
   })

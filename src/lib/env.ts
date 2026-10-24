@@ -56,6 +56,14 @@ const envSchema = z.object({
   ANALYTICS_PROVIDER: z.enum(['internal', 'posthog']).default('internal'),
   POSTHOG_KEY: z.string().optional(),
   SENTRY_DSN: z.string().optional(),
+
+  /**
+   * Shared secret for the scheduled jobs under `/api/cron`.
+   *
+   * Unset means those routes 404 rather than run unauthenticated: an
+   * unconfigured secret is "off", never "open".
+   */
+  CRON_SECRET: z.string().optional(),
 })
 
 export type Env = z.infer<typeof envSchema>
