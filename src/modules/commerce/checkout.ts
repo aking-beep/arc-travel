@@ -305,14 +305,21 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
         intent.amount.amountMinor !== totals.totalMinor ||
         intent.amount.currency !== totals.currency
       ) {
-        await recordAudit(
+        /*
+         * The record of this is written *after* the rollback, not on `tx`.
+         *
+         * Writing it here was wrong in exactly the way that matters: the
+         * transaction this throw unwinds takes the audit row with it, so the
+         * one surviving trace of a payment ARC holds and cannot deliver would
+         * have been rolled back with the refusal. The payload travels on the
+         * error and the `catch` below persists it outside any transaction.
+         */
+        throw conflict(
+          'Your basket changed after the payment was authorised. Nothing has been booked; ' +
+            'contact the property so the payment can be reconciled.',
           {
-            organizationId: cart.organizationId,
-            actorKind: 'system',
-            action: 'commerce.checkout.payment_mismatch',
-            entityType: 'Cart',
-            entityId: cart.id,
-            metadata: {
+            paymentReference: intent.reference,
+            paymentMismatch: {
               paymentReference: intent.reference,
               paymentProvider: payments.name,
               paidMinor: intent.amount.amountMinor,
@@ -322,12 +329,28 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
               simulated: intent.isSimulated,
             },
           },
-          tx,
         )
+      }
+
+      /*
+       * One order per payment, re-read inside the transaction.
+       *
+       * The idempotency key stops a repeated *request*; it says nothing about
+       * the same payment arriving under a fresh key, which is what a client
+       * retrying after a timeout does. The unique index on
+       * `(paymentProvider, paymentReference)` is the guarantee — this read is
+       * here so the guest gets a sentence rather than a constraint violation,
+       * and it is inside the transaction because `inSerializableTransaction`
+       * re-runs the whole body on a serialization failure.
+       */
+      const alreadyPaid = await tx.order.findFirst({
+        where: { paymentProvider: payments.name, paymentReference: intent.reference },
+        select: { reference: true },
+      })
+      if (alreadyPaid) {
         throw conflict(
-          'Your basket changed after the payment was authorised. Nothing has been booked; ' +
-            'contact the property so the payment can be reconciled.',
-          { paymentReference: intent.reference },
+          'That payment has already been used for a booking. Nothing further has been charged.',
+          { paymentReference: intent.reference, orderReference: alreadyPaid.reference },
         )
       }
 
@@ -543,6 +566,29 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
     // Every throw between the claim and the commit is inside this try, so no
     // path can orphan the key.
     await releaseIdempotencyKey(cart.organizationId, input.idempotencyKey)
+
+    /*
+     * A payment ARC holds and did not deliver is the one failure that must
+     * outlive the rollback.
+     *
+     * No automatic refund is attempted: moving money back is a consequential
+     * action and needs an `Approval` row naming who decided (non-negotiable
+     * 6). So the honest outcome is a refused checkout, a durable record, and a
+     * reconciliation an operator performs — and `recordAudit` is called with
+     * no `tx` precisely so it commits on its own.
+     */
+    const mismatch = paymentMismatchDetails(error)
+    if (mismatch) {
+      await recordAudit({
+        organizationId: cart.organizationId,
+        actorKind: 'system',
+        action: 'commerce.checkout.payment_mismatch',
+        entityType: 'Cart',
+        entityId: cart.id,
+        metadata: mismatch,
+      })
+    }
+
     throw error
   }
 
@@ -573,6 +619,18 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
  * why the webhook in `payment-events.ts` only has to handle a payment that
  * stopped standing *later*.
  */
+/** Audit metadata for a payment that no longer matches its basket, if that is what this is. */
+type PaymentMismatch = Record<string, string | number | boolean>
+
+function paymentMismatchDetails(error: unknown): PaymentMismatch | null {
+  if (!(error instanceof AppError)) return null
+  const details = error.details
+  if (details === null || typeof details !== 'object') return null
+  const payload = (details as { paymentMismatch?: unknown }).paymentMismatch
+  if (payload === null || typeof payload !== 'object') return null
+  return payload as PaymentMismatch
+}
+
 async function resolvePayment(
   payments: PaymentsProvider,
   input: {

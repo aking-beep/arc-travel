@@ -1,8 +1,18 @@
-import { afterAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { prisma } from '@/lib/db'
 import { localInstant, toDateKey } from '@/lib/dates'
 import { isAppError } from '@/lib/errors'
+import { money, type Money } from '@/lib/money'
+import { getIntegrations } from '@/modules/integrations/defaults'
+import {
+  providerFailed,
+  providerOk,
+  type PaymentIntent,
+  type PaymentsProvider,
+  type ProviderResult,
+  type RefundResult,
+} from '@/modules/integrations/types'
 import { CartStatus, OrderItemStatus, OrderStatus } from '@/lib/prisma-types'
 import { addToCart, getOrCreateCart, removeFromCart, validateCart } from '@/modules/commerce/cart'
 import { cancelOrderItem, checkout, confirmOrderItemBySupplier } from '@/modules/commerce/checkout'
@@ -564,5 +574,148 @@ describe('supplier confirmation', () => {
     await expect(
       confirmOrderItemBySupplier({ orderItemId: item.id, supplierId: other.supplierId }),
     ).rejects.toSatisfy((error: unknown) => isAppError(error) && error.code === 'NOT_FOUND')
+  })
+})
+
+describe('one order per payment', () => {
+  /*
+   * Raised by a reviewer on PR #4, and correct.
+   *
+   * The idempotency key stops a repeated *request* booking twice. It says
+   * nothing about the same payment arriving under a fresh key, which is
+   * exactly what a client retrying after a timeout does. Without a constraint,
+   * one confirmed intent could confirm two orders and consume capacity twice
+   * for a single charge.
+   */
+  it('refuses a second order against a payment already used', async () => {
+    const cartId = await cartFor(tenant)
+    await addToCart({ cartId, slotId: tenant.slotId, quantity: 1 })
+    const order = await checkout({
+      cartId,
+      guestId: tenant.guestId,
+      idempotencyKey: randomUUID(),
+    })
+
+    const paid = await prisma.order.findUniqueOrThrow({
+      where: { id: order.orderId },
+      select: { paymentProvider: true, paymentReference: true },
+    })
+    expect(paid.paymentReference).toBeTruthy()
+
+    // The guarantee is the database's, not a check somebody has to remember.
+    await expect(
+      prisma.order.create({
+        data: {
+          organizationId: tenant.organizationId,
+          propertyId: tenant.propertyId,
+          guestId: tenant.guestId,
+          reference: `DUPE-${Date.now()}`,
+          currency: 'MXN',
+          paymentProvider: paid.paymentProvider,
+          paymentReference: paid.paymentReference,
+        },
+      }),
+    ).rejects.toThrow(/Unique constraint|paymentReference/i)
+  })
+
+  it('still allows many orders with no provider reference at all', async () => {
+    // Postgres treats NULLs as distinct, which is what keeps the constraint
+    // from blocking rows that predate a provider reference.
+    for (const n of [1, 2]) {
+      await prisma.order.create({
+        data: {
+          organizationId: tenant.organizationId,
+          propertyId: tenant.propertyId,
+          reference: `NOPAY-${n}-${Date.now()}`,
+          currency: 'MXN',
+          paymentReference: null,
+        },
+      })
+    }
+    expect(
+      await prisma.order.count({
+        where: { organizationId: tenant.organizationId, paymentReference: null },
+      }),
+    ).toBe(2)
+  })
+})
+
+describe('a payment that no longer matches its basket', () => {
+  /**
+   * A provider that confirms an amount the basket has since stopped being.
+   *
+   * This is the only way to reach the mismatch branch from a test: the real
+   * simulated provider is asked for the basket's own total, so it can never
+   * disagree with it. Swapping the provider on the integrations object is
+   * deliberate — it exercises the real `checkout` path rather than a mock of
+   * it.
+   */
+  class StalePaymentsProvider implements PaymentsProvider {
+    readonly name = 'simulated'
+    readonly isLive = false
+
+    async createIntent(input: {
+      amount: Money
+      orderReference: string
+    }): Promise<ProviderResult<PaymentIntent>> {
+      return providerOk(this.name, {
+        reference: `SIMULATED-STALE-${input.orderReference}`,
+        status: 'succeeded' as const,
+        // One peso short of whatever was asked for.
+        amount: money(input.amount.amountMinor - 100, input.amount.currency),
+        isSimulated: true,
+      })
+    }
+
+    async retrieveIntent(): Promise<ProviderResult<PaymentIntent>> {
+      return providerFailed<PaymentIntent>(this.name, 'not_applicable')
+    }
+
+    async refund(): Promise<ProviderResult<RefundResult>> {
+      return providerFailed<RefundResult>(this.name, 'not_applicable')
+    }
+  }
+
+  let restore: PaymentsProvider | null = null
+
+  beforeEach(() => {
+    const integrations = getIntegrations() as { payments: PaymentsProvider }
+    restore = integrations.payments
+    integrations.payments = new StalePaymentsProvider()
+  })
+
+  afterEach(() => {
+    if (restore) (getIntegrations() as { payments: PaymentsProvider }).payments = restore
+    restore = null
+  })
+
+  it('refuses the checkout and leaves a record that outlives the rollback', async () => {
+    const cartId = await cartFor(tenant)
+    await addToCart({ cartId, slotId: tenant.slotId, quantity: 1 })
+
+    await expect(
+      checkout({ cartId, guestId: tenant.guestId, idempotencyKey: randomUUID() }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' })
+
+    // Nothing booked, nothing converted, the hold still standing.
+    expect(await prisma.order.count({ where: { organizationId: tenant.organizationId } })).toBe(0)
+    expect((await slotState(tenant.slotId)).booked).toBe(0)
+    expect((await slotState(tenant.slotId)).held).toBe(1)
+
+    /*
+     * The point of the test. This row was written on the transaction's own
+     * `tx` and so rolled back with the refusal — leaving a payment the
+     * provider holds, no order, and no trace of either. It is now written
+     * after the rollback, outside any transaction.
+     */
+    const audit = await prisma.auditEvent.findFirstOrThrow({
+      where: { action: 'commerce.checkout.payment_mismatch' },
+    })
+    expect(audit.actorKind).toBe('system')
+    expect(audit.metadataJson).toMatchObject({
+      paidMinor: 94_900,
+      basketMinor: 95_000,
+      paymentProvider: 'simulated',
+    })
   })
 })

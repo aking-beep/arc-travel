@@ -928,6 +928,15 @@ model Order {
   items        OrderItem[]
   ledgerEntries LedgerEntry[]
 
+  /// One order per payment, enforced by the database.
+  ///
+  /// The idempotency key stops a *repeated request* booking twice; it does
+  /// nothing about the same payment arriving under a fresh key, which is a
+  /// client retrying after a timeout with a new uuid. Without this, one
+  /// confirmed Stripe intent could confirm two orders and consume capacity
+  /// twice for a single charge. Nullable, so the many rows that predate a
+  /// provider reference do not collide (Postgres treats NULLs as distinct).
+  @@unique([paymentProvider, paymentReference])
   @@index([organizationId, propertyId, status])
   @@index([propertyId, confirmedAt])
   @@index([guestId])

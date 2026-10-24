@@ -204,3 +204,15 @@ than none:
   platform admin and so cannot be polled by a checker.
 - **No log retention policy.** Logs go wherever the host puts them.
 - **No restore drill on a schedule.** See above; it is a manual step.
+- **No handling of a refund or a dispute raised at the provider.** The Stripe
+  webhook acts on `payment_intent.payment_failed` and
+  `payment_intent.canceled`, which covers a payment that stops standing after
+  ARC booked against it — a delayed-notification method that fails late. It
+  deliberately ignores `charge.refunded` and `charge.dispute.*`. Reversing a
+  confirmed booking is a consequential action and needs an `Approval` row
+  naming who decided (non-negotiable 6), so the alternative to ignoring those
+  events is ARC cancelling a guest's booking on its own, which this build does
+  not do. Until there is an approval queue for it, a refund or chargeback
+  raised at Stripe is reconciled by hand: find the order by its
+  `paymentReference`, and cancel through `/owner` so the audit trail names the
+  person who decided.
