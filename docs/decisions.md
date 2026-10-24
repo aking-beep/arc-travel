@@ -542,3 +542,73 @@ no destination photography.
 
 **Cost.** One documented exception to a product commitment, scoped to one
 surface, plus the re-hosting work above before any external use.
+
+---
+
+## ADR-026 — ARC never confirms a payment; it books against one already confirmed
+
+**Status.** Accepted, 2026-10-24.
+
+**Context.** Until now the only payments provider was `SimulatedPaymentsProvider`,
+which returns a succeeded intent unconditionally, and `checkout()` hard-refused
+any other. That is correct for a demo and leaves no answer to the first question
+a pilot asks: what happens when real money is involved?
+
+The obvious implementation — checkout creates *and confirms* a payment, then
+books — has a failure window that cannot be closed. Between taking the money and
+writing the order there is a hold that may have expired, a slot that may have
+filled, and a basket a second tab may have changed. Every one of those leaves
+ARC holding a guest's money for a booking it cannot make, and the only recovery
+is an automatic refund — which is a consequential action with no `Approval` row
+behind it, and so forbidden by non-negotiable 6.
+
+**Decision.** The payment is confirmed by the client, before checkout, and ARC
+reads it back.
+
+- `PaymentsProvider` gains `retrieveIntent`. `checkout()` takes an optional
+  `paymentIntentId`: **required** when the provider is live, **refused** when it
+  is not.
+- For a live provider, checkout retrieves the intent and requires `succeeded`.
+  It never calls `confirm`, and `StripePaymentsProvider.createIntent` does not
+  send `confirm=true`.
+- The *authoritative* amount is the provider's, read back from the provider —
+  never the client's claim and never what ARC asked for. The transaction
+  re-reads the basket lines and refuses to commit if the two disagree.
+- A mismatch is a refused checkout plus an audit row
+  (`commerce.checkout.payment_mismatch`), not an automatic refund. An operator
+  reconciles it. That is slower and it is the honest answer.
+- For the simulated provider nothing changes from the outside: there is no
+  client-side step, so checkout creates the intent itself and it comes back
+  `succeeded` and marked simulated.
+
+**Consequences.**
+
+- An order exists only once its payment does, so `CONFIRMED` continues to mean
+  what it says and `OrderStatus.FAILED` is reachable only from the *later*
+  failure of a payment that had succeeded.
+- That later failure is what the webhook is for.
+  `POST /api/webhooks/stripe` verifies the signature over the raw bytes, and
+  `applyPaymentEvent` fails the order, returns every place through
+  `returnCapacity`, and reverses the earnings lines with offsetting negative
+  entries so each ledger account still sums to what is owed. The event id is
+  claimed in `IdempotencyKey` **inside** the same transaction as the effect, so
+  a redelivery is a no-op and a crash does not make an event unprocessable.
+- `payment_intent.succeeded` is deliberately **not** handled. Checkout already
+  confirmed the order against that intent, and re-confirming from an event would
+  let a replay resurrect an order the guest has since cancelled.
+- A webhook can only act on an order whose `paymentProvider` is `stripe`, so a
+  live event can never mutate a simulated booking.
+- A live provider requires `STRIPE_SECRET_KEY` **and**
+  `STRIPE_WEBHOOK_SECRET`. Without the second, a payment that later failed would
+  leave a confirmed order holding capacity for ever, so starting
+  half-configured is a refusal rather than a silent condition.
+- Demo mode still moves no money, and now refuses to three depths: `getEnv()`,
+  `getIntegrations()` and `checkout()` each reject a live provider while
+  `ARC_DATA_MODE=demo`. The webhook route 404s there.
+- **Not built.** The client-side confirmation step itself. The guest surface has
+  no payment element, because there is no mode in which this build may render
+  one. A pilot needs that UI plus `ARC_DATA_MODE=pilot`, and the server side it
+  will talk to is what exists here.
+
+**Cost.** Two round trips instead of one for a live payment, and a reconciliation
+an operator performs by hand in the mismatch case.

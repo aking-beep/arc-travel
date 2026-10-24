@@ -14,6 +14,10 @@ export type AppErrorCode =
   | 'SAFETY_CONSTRAINT'
   | 'RATE_LIMITED'
   | 'DEMO_MODE_BLOCKED'
+  /** The payment provider could not be reached or could not answer. */
+  | 'PAYMENT_UNAVAILABLE'
+  /** The provider answered, and the payment has not succeeded. */
+  | 'PAYMENT_NOT_COMPLETED'
   | 'INTERNAL'
 
 const STATUS: Record<AppErrorCode, number> = {
@@ -28,6 +32,10 @@ const STATUS: Record<AppErrorCode, number> = {
   SAFETY_CONSTRAINT: 422,
   RATE_LIMITED: 429,
   DEMO_MODE_BLOCKED: 403,
+  // 502: the fault is upstream, and a retry may well succeed.
+  PAYMENT_UNAVAILABLE: 502,
+  // 402: the request was understood and the money is not there.
+  PAYMENT_NOT_COMPLETED: 402,
   INTERNAL: 500,
 }
 

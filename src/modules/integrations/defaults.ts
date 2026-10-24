@@ -21,6 +21,7 @@ import {
   type TravelAdviceProvider,
 } from './types'
 import { GovUkTravelAdviceProvider, govukPublicUrl } from './govuk'
+import { StripePaymentsProvider } from './stripe'
 import govukMexico from './fixtures/govuk-travel-advice-mexico.json'
 
 /**
@@ -52,6 +53,17 @@ export class SimulatedPaymentsProvider implements PaymentsProvider {
       amount: input.amount,
       isSimulated: true,
     })
+  }
+
+  async retrieveIntent(_input: { reference: string }): Promise<ProviderResult<PaymentIntent>> {
+    /*
+     * There is nothing to read back.
+     *
+     * This provider never created anything at a processor, so returning a
+     * succeeded intent here would be inventing a payment — and it is exactly
+     * the value `checkout()` would use to decide an order is paid for.
+     */
+    return providerFailed(this.name, 'not_applicable')
   }
 
   async refund(input: {
@@ -298,9 +310,11 @@ export class FixtureTravelAdviceProvider implements TravelAdviceProvider {
 /**
  * Chooses implementations from the environment.
  *
- * Only the defaults are wired. A live provider is a new class plus one case
- * here — the point of the interfaces being real types rather than env reads
- * scattered through the domain.
+ * Payments is the one boundary with a live implementation wired
+ * (`StripePaymentsProvider`, refused outright in demo mode); the rest resolve
+ * to their offline defaults. Each further live provider is a new class plus
+ * one case here — the point of the interfaces being real types rather than env
+ * reads scattered through the domain.
  */
 let cached: {
   payments: PaymentsProvider
@@ -321,7 +335,15 @@ export function getIntegrations() {
   }
 
   cached = {
-    payments: new SimulatedPaymentsProvider(),
+    /*
+     * `getEnv()` has already refused `stripe` without both of its secrets, so
+     * the non-null assertion here is on a value the environment contract
+     * guarantees rather than a hope.
+     */
+    payments:
+      env.PAYMENTS_PROVIDER === 'stripe'
+        ? new StripePaymentsProvider({ secretKey: env.STRIPE_SECRET_KEY ?? '' })
+        : new SimulatedPaymentsProvider(),
     maps: new FixtureMapsProvider(),
     conditions: new FixtureConditionsProvider(),
     messaging: new NoopMessagingProvider(),
