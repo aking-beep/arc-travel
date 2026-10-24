@@ -287,6 +287,35 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
 
       const totals = computeCartTotals(items, liveCart.currency)
 
+      /*
+       * One order per payment, re-read inside the transaction.
+       *
+       * The idempotency key stops a repeated *request*; it says nothing about
+       * the same payment arriving under a fresh key, which is what a client
+       * retrying after a timeout does. The unique index on
+       * `(paymentProvider, paymentReference)` is the guarantee — this read is
+       * here so the guest gets a sentence rather than a constraint violation,
+       * and it is inside the transaction because `inSerializableTransaction`
+       * re-runs the whole body on a serialization failure.
+       *
+       * It comes *before* the amount check deliberately. The other way round,
+       * a reused payment against a basket that had since changed was recorded
+       * as a `payment_mismatch` — which tells an operator that ARC holds money
+       * it never delivered, and sends them to reconcile a payment that in fact
+       * already confirmed an order. Reuse is the more specific answer, so it
+       * is the one given.
+       */
+      const alreadyPaid = await tx.order.findFirst({
+        where: { paymentProvider: payments.name, paymentReference: intent.reference },
+        select: { reference: true },
+      })
+      if (alreadyPaid) {
+        throw conflict(
+          'That payment has already been used for a booking. Nothing further has been charged.',
+          { paymentReference: intent.reference, orderReference: alreadyPaid.reference },
+        )
+      }
+
       /**
        * The payment must be for this basket, as the basket is *now*.
        *
@@ -332,54 +361,56 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
         )
       }
 
-      /*
-       * One order per payment, re-read inside the transaction.
-       *
-       * The idempotency key stops a repeated *request*; it says nothing about
-       * the same payment arriving under a fresh key, which is what a client
-       * retrying after a timeout does. The unique index on
-       * `(paymentProvider, paymentReference)` is the guarantee — this read is
-       * here so the guest gets a sentence rather than a constraint violation,
-       * and it is inside the transaction because `inSerializableTransaction`
-       * re-runs the whole body on a serialization failure.
-       */
-      const alreadyPaid = await tx.order.findFirst({
-        where: { paymentProvider: payments.name, paymentReference: intent.reference },
-        select: { reference: true },
-      })
-      if (alreadyPaid) {
-        throw conflict(
-          'That payment has already been used for a booking. Nothing further has been charged.',
-          { paymentReference: intent.reference, orderReference: alreadyPaid.reference },
-        )
-      }
-
       // A real ledger line must not read as a simulated one, and a simulated
       // line must never read as real.
       const memoPrefix = intent.isSimulated ? 'Simulated ' : ''
 
-      const order = await tx.order.create({
-        data: {
-          organizationId: cart.organizationId,
-          propertyId: cart.propertyId,
-          guestId: cart.guestId,
-          stayId: cart.stayId,
-          reference,
-          status: OrderStatus.PENDING,
-          currency: cart.currency,
-          subtotalMinor: totals.subtotalMinor,
-          feesMinor: totals.feesMinor,
-          totalMinor: totals.totalMinor,
-          // From the provider, never from the environment: the simulated
-          // provider marks every intent simulated and prefixes its reference
-          // `SIMULATED-`, so a fake payment can never be reconciled against a
-          // real processor by accident.
-          isSimulated: intent.isSimulated,
-          paymentProvider: payments.name,
-          paymentReference: intent.reference,
-        },
-        select: { id: true, reference: true },
-      })
+      /*
+       * The read above can lose a race; the index cannot.
+       *
+       * Two overlapping checkouts sharing one payment under different
+       * idempotency keys both pass that read, and the loser violates the
+       * unique index here. `inSerializableTransaction` retries only
+       * serialization failures and `toFormState` re-throws anything that is
+       * not an `AppError`, so left unmapped this reached the guest as a 500 —
+       * for the one case where the honest answer is specific and reassuring.
+       */
+      const order = await tx.order
+        .create({
+          data: {
+            organizationId: cart.organizationId,
+            propertyId: cart.propertyId,
+            guestId: cart.guestId,
+            stayId: cart.stayId,
+            reference,
+            status: OrderStatus.PENDING,
+            currency: cart.currency,
+            subtotalMinor: totals.subtotalMinor,
+            feesMinor: totals.feesMinor,
+            totalMinor: totals.totalMinor,
+            // From the provider, never from the environment: the simulated
+            // provider marks every intent simulated and prefixes its reference
+            // `SIMULATED-`, so a fake payment can never be reconciled against
+            // a real processor by accident.
+            isSimulated: intent.isSimulated,
+            paymentProvider: payments.name,
+            paymentReference: intent.reference,
+          },
+          select: { id: true, reference: true },
+        })
+        .catch((error: unknown) => {
+          const prismaError = error as { code?: string; meta?: { target?: string[] } }
+          if (
+            prismaError.code === 'P2002' &&
+            prismaError.meta?.target?.includes('paymentReference')
+          ) {
+            throw conflict(
+              'That payment has already been used for a booking. Nothing further has been charged.',
+              { paymentReference: intent.reference },
+            )
+          }
+          throw error
+        })
 
       let hotelTotal = 0
       let platformTotal = 0

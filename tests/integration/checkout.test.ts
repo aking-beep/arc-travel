@@ -719,3 +719,115 @@ describe('a payment that no longer matches its basket', () => {
     })
   })
 })
+
+describe('a payment reused across checkouts', () => {
+  /**
+   * A provider that hands back the same reference every time.
+   *
+   * Which is what a client retrying after a timeout looks like from the
+   * server's side: same confirmed payment, fresh idempotency key. The real
+   * simulated provider derives its reference from the order reference, so it
+   * cannot reproduce this.
+   */
+  class FixedReferencePaymentsProvider implements PaymentsProvider {
+    readonly name = 'simulated'
+    readonly isLive = false
+    constructor(private readonly shortfallMinor = 0) {}
+
+    async createIntent(input: { amount: Money }): Promise<ProviderResult<PaymentIntent>> {
+      return providerOk(this.name, {
+        reference: 'SIMULATED-FIXED-REFERENCE',
+        status: 'succeeded' as const,
+        amount: money(input.amount.amountMinor - this.shortfallMinor, input.amount.currency),
+        isSimulated: true,
+      })
+    }
+
+    async retrieveIntent(): Promise<ProviderResult<PaymentIntent>> {
+      return providerFailed<PaymentIntent>(this.name, 'not_applicable')
+    }
+
+    async refund(): Promise<ProviderResult<RefundResult>> {
+      return providerFailed<RefundResult>(this.name, 'not_applicable')
+    }
+  }
+
+  let restore: PaymentsProvider | null = null
+
+  function usePayments(provider: PaymentsProvider) {
+    const integrations = getIntegrations() as { payments: PaymentsProvider }
+    restore ??= integrations.payments
+    integrations.payments = provider
+  }
+
+  afterEach(() => {
+    if (restore) (getIntegrations() as { payments: PaymentsProvider }).payments = restore
+    restore = null
+  })
+
+  it('reports reuse rather than a mismatch, even when the basket also changed', async () => {
+    /*
+     * Raised by a reviewer, and right. With the amount check first, this case
+     * wrote `payment_mismatch` — which tells an operator that ARC holds money
+     * it never delivered, and sends them to reconcile a payment that had in
+     * fact already confirmed an order.
+     */
+    await prisma.order.create({
+      data: {
+        organizationId: tenant.organizationId,
+        propertyId: tenant.propertyId,
+        reference: `PRIOR-${Date.now()}`,
+        currency: 'MXN',
+        paymentProvider: 'simulated',
+        paymentReference: 'SIMULATED-FIXED-REFERENCE',
+      },
+    })
+
+    // Both wrong at once: the payment is spent *and* a peso short.
+    usePayments(new FixedReferencePaymentsProvider(100))
+    const cartId = await cartFor(tenant)
+    await addToCart({ cartId, slotId: tenant.slotId, quantity: 1 })
+
+    await expect(
+      checkout({ cartId, guestId: tenant.guestId, idempotencyKey: randomUUID() }),
+    ).rejects.toMatchObject({ code: 'CONFLICT', message: /already been used/ })
+
+    expect(
+      await prisma.auditEvent.count({ where: { action: 'commerce.checkout.payment_mismatch' } }),
+    ).toBe(0)
+  })
+
+  it('refuses the loser of a race with a conflict, never a 500', async () => {
+    /*
+     * The pre-read can lose a race; the unique index cannot. Whichever way
+     * the two transactions interleave — one retrying into the read, or one
+     * violating the index — the guest must get a 409 and not an unmapped
+     * Prisma error surfacing as a server fault.
+     */
+    usePayments(new FixedReferencePaymentsProvider())
+
+    const other = await createTenant({ capacity: 4, priceMinor: 95_000 })
+    const [cartA, cartB] = await Promise.all([cartFor(tenant), cartFor(other)])
+    await addToCart({ cartId: cartA, slotId: tenant.slotId, quantity: 1 })
+    await addToCart({ cartId: cartB, slotId: other.slotId, quantity: 1 })
+
+    const results = await Promise.allSettled([
+      checkout({ cartId: cartA, guestId: tenant.guestId, idempotencyKey: randomUUID() }),
+      checkout({ cartId: cartB, guestId: other.guestId, idempotencyKey: randomUUID() }),
+    ])
+
+    const fulfilled = results.filter((r) => r.status === 'fulfilled')
+    const rejected = results.filter((r) => r.status === 'rejected')
+    expect(fulfilled).toHaveLength(1)
+    expect(rejected).toHaveLength(1)
+
+    const reason = (rejected[0] as PromiseRejectedResult).reason
+    expect(isAppError(reason)).toBe(true)
+    expect((reason as { code: string }).code).toBe('CONFLICT')
+
+    // And the capacity the loser did not get is still available.
+    expect(
+      (await slotState(tenant.slotId)).booked + (await slotState(other.slotId)).booked,
+    ).toBe(1)
+  })
+})
