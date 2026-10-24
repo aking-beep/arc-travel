@@ -28,7 +28,7 @@ function dateKeyDaysFromNow(days: number): string {
 
 beforeEach(async () => {
   await resetDatabase()
-  resetRateLimits()
+  await resetRateLimits()
 })
 
 afterAll(async () => {

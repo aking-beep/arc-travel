@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { prisma, type Prisma } from '@/lib/db'
 import { getEnv } from '@/lib/env'
+import { consumeRateLimit, resetRateLimitCounters } from '@/lib/rate-limit'
 import { redact } from '@/lib/redact'
 import { AgentRunStatus } from '@/lib/prisma-types'
 import { AnthropicProvider } from './anthropic-provider'
@@ -46,31 +47,29 @@ export function resetProvider(): void {
 }
 
 /**
- * In-process rate limiter.
+ * Rate limiting for AI calls.
  *
- * Adequate for a single-instance POC and honest about not being more than
- * that: a horizontally scaled deployment needs this in Redis or Postgres. It is
- * here because an unbounded path to a paid API is a liability even in a demo.
+ * This was a `Map` in module scope, which on a serverless runtime means the
+ * effective limit is `AI_RATE_LIMIT_PER_MINUTE` multiplied by the number of
+ * warm instances. The counter now lives in Postgres
+ * (`src/lib/rate-limit.ts`), so every instance increments the same row, and
+ * the ceiling on an unbounded path to a paid API is a real ceiling.
+ *
+ * `now` stays a parameter so a test can step over a window boundary without
+ * waiting a minute.
  */
-const rateBuckets = new Map<string, number[]>()
-
-export function checkRateLimit(subjectKey: string, now = Date.now()): boolean {
-  const limit = getEnv().AI_RATE_LIMIT_PER_MINUTE
-  const windowStart = now - 60_000
-  const recent = (rateBuckets.get(subjectKey) ?? []).filter((t) => t > windowStart)
-
-  if (recent.length >= limit) {
-    rateBuckets.set(subjectKey, recent)
-    return false
-  }
-
-  recent.push(now)
-  rateBuckets.set(subjectKey, recent)
-  return true
+export async function checkRateLimit(subjectKey: string, now = Date.now()): Promise<boolean> {
+  const result = await consumeRateLimit({
+    bucket: `ai:${subjectKey}`,
+    limit: getEnv().AI_RATE_LIMIT_PER_MINUTE,
+    windowSeconds: 60,
+    now: new Date(now),
+  })
+  return result.allowed
 }
 
-export function resetRateLimits(): void {
-  rateBuckets.clear()
+export async function resetRateLimits(): Promise<void> {
+  await resetRateLimitCounters('ai:')
 }
 
 export interface RunAIInput<T> {
@@ -155,7 +154,7 @@ export async function runAI<T>(input: RunAIInput<T>): Promise<RunAIOutput<T>> {
     return { data: null, agentRunId, status: AgentRunStatus.BLOCKED, blockedReason: reason }
   }
 
-  if (!checkRateLimit(bucket)) {
+  if (!(await checkRateLimit(bucket))) {
     const agentRunId = await record(AgentRunStatus.BLOCKED, { blockedReason: 'rate_limited' })
     return { data: null, agentRunId, status: AgentRunStatus.BLOCKED, blockedReason: 'rate_limited' }
   }

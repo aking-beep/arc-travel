@@ -1,5 +1,11 @@
 import { prisma } from '@/lib/db'
-import { notFound } from '@/lib/errors'
+import { notFound, rateLimited } from '@/lib/errors'
+import {
+  assertWithinRateLimit,
+  consumeRateLimit,
+  peekRateLimit,
+  rateLimitSubject,
+} from '@/lib/rate-limit'
 import { fromPrismaLocale, type AppLocale } from '@/lib/i18n'
 import { daysBetween, toDateKey, type DateKey } from '@/lib/dates'
 import { StayStatus } from '@/lib/prisma-types'
@@ -21,6 +27,69 @@ import { StayStatus } from '@/lib/prisma-types'
  * standing credential. The token is time-boxed as well as scoped.
  */
 export const PORTAL_GRACE_DAYS = 7
+
+/**
+ * Per-caller ceilings on portal token resolution.
+ *
+ * A portal token is the guest surface's only credential, so an unlimited
+ * number of guesses per minute is the one brute-force surface the product has.
+ * Two buckets: every attempt, at a ceiling a real guest will never reach, and
+ * *failed* attempts, at a much tighter one — a guest with a valid QR code never
+ * misses, so a caller that misses ten times in a minute is enumerating.
+ *
+ * The caller's address is hashed before it is stored (`rateLimitSubject`): a
+ * counter does not need to know who anyone is.
+ */
+export const PORTAL_ATTEMPTS_PER_MINUTE = 120
+export const PORTAL_MISSES_PER_MINUTE = 10
+
+/**
+ * Guards one portal token resolution for one caller.
+ *
+ * Called from the app layer, which is the only place that can see a request
+ * header. `clientKey` is whatever identifies the caller there — the
+ * `x-forwarded-for` address in a hosted deployment. Null means the runtime
+ * gave us nothing to key on, and an unkeyable caller is not refused: dropping
+ * every anonymous request would be a worse failure than the one being
+ * prevented.
+ */
+export async function guardPortalAttempt(clientKey: string | null, now = new Date()): Promise<void> {
+  if (!clientKey) return
+  const subject = rateLimitSubject(clientKey)
+
+  // Read, not consume: checking whether a caller is over their failure ceiling
+  // must not itself count as a failure. `recordPortalMiss` is the only writer
+  // of this bucket. Checked first, so a caller already over it cannot keep
+  // probing by spending the wider allowance.
+  const misses = await peekRateLimit({
+    bucket: `portal-miss:${subject}`,
+    limit: PORTAL_MISSES_PER_MINUTE,
+    windowSeconds: 60,
+    now,
+  })
+  if (!misses.allowed) {
+    throw rateLimited('Too many attempts. Wait a minute and open the link from your QR code again.')
+  }
+
+  await assertWithinRateLimit({
+    bucket: `portal:${subject}`,
+    limit: PORTAL_ATTEMPTS_PER_MINUTE,
+    windowSeconds: 60,
+    message: 'Too many requests. Try again shortly.',
+    now,
+  })
+}
+
+/** Counts a failed resolution against the caller's tighter ceiling. */
+export async function recordPortalMiss(clientKey: string | null, now = new Date()): Promise<void> {
+  if (!clientKey) return
+  await consumeRateLimit({
+    bucket: `portal-miss:${rateLimitSubject(clientKey)}`,
+    limit: PORTAL_MISSES_PER_MINUTE,
+    windowSeconds: 60,
+    now,
+  })
+}
 
 export interface PortalContext {
   stayId: string

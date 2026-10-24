@@ -38,6 +38,9 @@ export const TABLES_IN_DELETE_ORDER = [
   'IdempotencyKey', 'CommissionRule', 'SupplierAgreement', 'Supplier', 'Consent', 'Stay',
   'Guest', 'RoomType', 'Membership', 'Property', 'User', 'Organization',
   'ConditionReport', 'TravelEdge', 'Place',
+  // Not tenant data, but a counter left over from one test will refuse the
+  // next one's requests.
+  'RateLimitCounter',
 ] as const
 
 export async function resetDatabase(): Promise<void> {

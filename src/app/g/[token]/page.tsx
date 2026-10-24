@@ -10,7 +10,7 @@ import { createTranslator } from '@/lib/i18n'
 import { getLocale } from '@/lib/i18n/server'
 import { toLocalTimeString } from '@/lib/dates'
 import { ItineraryItemKind } from '@/lib/prisma-types'
-import { resolvePortalContext } from '@/modules/guest/portal'
+import { resolvePortalForRequest } from './resolve'
 import { getItineraryForGuest } from '@/modules/itinerary/service'
 import { getConditions } from '@/modules/destination/conditions'
 import { getGuestPreferences } from '@/modules/preferences/service'
@@ -32,7 +32,7 @@ export default async function GuestItineraryPage({
   params: Promise<{ token: string }>
 }) {
   const { token } = await params
-  const context = await resolvePortalContext(token)
+  const context = await resolvePortalForRequest(token)
   const locale = await getLocale()
   const t = createTranslator(locale)
 

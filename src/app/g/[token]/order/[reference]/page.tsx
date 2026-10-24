@@ -7,7 +7,7 @@ import { Money } from '@/components/money'
 import { createTranslator } from '@/lib/i18n'
 import { getLocale } from '@/lib/i18n/server'
 import { toLocalDateKey, toLocalTimeString } from '@/lib/dates'
-import { resolvePortalContext } from '@/modules/guest/portal'
+import { resolvePortalForRequest } from '../../resolve'
 import { getOrderForGuest } from '@/modules/commerce/checkout'
 import { CancelBookingForm } from './forms'
 
@@ -19,7 +19,7 @@ export default async function OrderPage({
   params: Promise<{ token: string; reference: string }>
 }) {
   const { token, reference } = await params
-  const context = await resolvePortalContext(token)
+  const context = await resolvePortalForRequest(token)
   const order = await getOrderForGuest(reference, context.guestId)
   if (!order) notFound()
 

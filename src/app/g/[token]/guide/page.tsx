@@ -7,7 +7,7 @@ import { createTranslator } from '@/lib/i18n'
 import { getLocale } from '@/lib/i18n/server'
 import { addDays, dateRange, toDateKey } from '@/lib/dates'
 import { prisma } from '@/lib/db'
-import { resolvePortalContext } from '@/modules/guest/portal'
+import { resolvePortalForRequest } from '../resolve'
 import { getConditionsForDestination } from '@/modules/destination/conditions'
 import { getGuestCultureBrief } from '@/modules/culture-context/service'
 
@@ -23,7 +23,7 @@ export const metadata = { title: 'Local guide' }
  */
 export default async function GuidePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params
-  const context = await resolvePortalContext(token)
+  const context = await resolvePortalForRequest(token)
   const locale = await getLocale()
   const t = createTranslator(locale)
 

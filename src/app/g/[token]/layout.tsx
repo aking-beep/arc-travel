@@ -7,7 +7,7 @@ import { getLocale } from '@/lib/i18n/server'
 import { createTranslator } from '@/lib/i18n'
 import { getEnv } from '@/lib/env'
 import { prisma } from '@/lib/db'
-import { resolvePortalContext } from '@/modules/guest/portal'
+import { resolvePortalForRequest } from './resolve'
 
 /**
  * Guest portal shell.
@@ -28,7 +28,7 @@ export default async function GuestLayout({
 
   let context
   try {
-    context = await resolvePortalContext(token)
+    context = await resolvePortalForRequest(token)
   } catch (error) {
     if (isAppError(error) && error.code === 'NOT_FOUND') nextNotFound()
     throw error

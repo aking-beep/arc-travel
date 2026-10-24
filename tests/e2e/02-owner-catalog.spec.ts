@@ -40,8 +40,19 @@ test.describe('owner catalog', () => {
     await expect(page.getByText(/Add at least one departure/)).toBeVisible()
     await expect(page.getByRole('button', { name: /^Publish$/ })).toBeDisabled()
 
+    // The beginner surf lesson runs 07:00–16:00, and a departure outside the
+    // activity's own hours is refused at creation rather than merely hidden
+    // from the planner later.
     await page.getByLabel('Date').fill(dateKeyDaysFromNow(6))
     await page.getByLabel('Start', { exact: true }).fill('16:30')
+    await page.getByLabel('Capacity', { exact: true }).fill('5')
+    await page.getByRole('button', { name: /add departure/i }).click()
+    await expect(page.getByText(/departs between 07:00 and 16:00/i)).toBeVisible()
+
+    // The route remounts after the action, so the whole row is filled again
+    // rather than only the field that was wrong.
+    await page.getByLabel('Date').fill(dateKeyDaysFromNow(6))
+    await page.getByLabel('Start', { exact: true }).fill('15:00')
     await page.getByLabel('Capacity', { exact: true }).fill('5')
     await page.getByRole('button', { name: /add departure/i }).click()
     await expect(page.getByText(/Departure added/i)).toBeVisible()

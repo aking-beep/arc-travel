@@ -1399,3 +1399,32 @@ model CultureSourceChange {
   @@index([verification, detectedAt])
   @@index([sourceKey, verification, reviewedAt])
 }
+
+/// One fixed-window rate-limit counter.
+///
+/// The only rate limiter used to be a `Map` in module scope, which on a
+/// serverless runtime means the effective limit is the configured limit times
+/// the number of warm instances — harmless while the AI provider is a mock and
+/// a billing exposure the moment it is not. This is the same algorithm with
+/// the counter where every instance can see it.
+///
+/// Rows are disposable: a window that has passed is pruned lazily on a later
+/// call, the same way expired holds are swept.
+model RateLimitCounter {
+  id String @id @default(uuid())
+
+  /// Namespaced subject, e.g. `ai:org:<uuid>` or `portal-miss:ip:<hash>`.
+  /// Never a raw IP address or token — callers pass an opaque digest.
+  bucket String
+
+  /// Start of the fixed window this row counts, truncated to the window size.
+  windowStart DateTime
+
+  /// Requests counted in this window.
+  count Int @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([bucket, windowStart])
+  @@index([windowStart])
+}

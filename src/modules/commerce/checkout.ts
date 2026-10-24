@@ -1,6 +1,7 @@
 import { prisma, type Prisma } from '@/lib/db'
 import { AppError, conflict, invalid, notFound } from '@/lib/errors'
 import { getEnv } from '@/lib/env'
+import { assertWithinRateLimit } from '@/lib/rate-limit'
 import { money } from '@/lib/money'
 import { orderReference } from '@/lib/ids'
 import {
@@ -58,6 +59,9 @@ export interface CheckoutResult {
 
 const CHECKOUT_SCOPE = 'commerce.checkout'
 
+/** Checkout attempts one guest may make in a minute. */
+export const CHECKOUTS_PER_MINUTE = 12
+
 export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
   const now = input.now ?? new Date()
   const env = getEnv()
@@ -85,6 +89,25 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
   })
   if (!cart) throw notFound('Basket')
   if (cart.guestId !== input.guestId) throw notFound('Basket')
+
+  /*
+   * A ceiling on checkout attempts per guest.
+   *
+   * Idempotency already makes a duplicate submission of the *same* key safe,
+   * and the serializable transaction makes concurrent distinct ones correct.
+   * Neither bounds how many a caller may make: each one opens a transaction,
+   * writes ledger rows and can take holds, so an unbounded loop is a
+   * database-level denial of service against the tenant from a credential that
+   * is a QR code. Generous enough that a guest retrying a flaky connection
+   * never sees it.
+   */
+  await assertWithinRateLimit({
+    bucket: `checkout:guest:${cart.guestId}`,
+    limit: CHECKOUTS_PER_MINUTE,
+    windowSeconds: 60,
+    message: 'Too many checkout attempts. Wait a minute and try again.',
+    now,
+  })
 
   // --- Idempotency ---------------------------------------------------------
   // Claim the key first. The unique constraint on (organizationId, scope, key)
