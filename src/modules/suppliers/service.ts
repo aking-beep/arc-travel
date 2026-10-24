@@ -8,6 +8,7 @@ import {
   SlotStatus,
   type Prisma,
 } from '@/lib/prisma-types'
+import { isInSeason, isWithinHours } from '@/modules/destination/operating-window'
 import { assertSupplierAccess, type ActorContext } from '@/modules/tenancy/context'
 import { recordAudit } from '@/modules/workflows/audit'
 import { slotRangeSchema } from '@/modules/catalog/schemas'
@@ -198,9 +199,29 @@ export async function scheduleAvailability(
 
   const experience = await prisma.experience.findFirst({
     where: { id: input.experienceId, supplierId },
-    select: { id: true, durationMinutes: true, defaultCapacity: true, status: true },
+    select: {
+      id: true,
+      durationMinutes: true,
+      defaultCapacity: true,
+      status: true,
+      activity: { select: { earliestStart: true, latestStart: true, seasonMonths: true } },
+    },
   })
   if (!experience) throw notFound('Experience')
+
+  // Every requested start time must fall inside the activity's hours. This is
+  // bad input rather than an unlucky day, so it is refused outright: a partner
+  // who asks for 23:00 on a dawn-only session has made a mistake, and silently
+  // dropping it would hide it from them. Out-of-season *days* inside an
+  // otherwise valid range are skipped below instead, like past days are.
+  for (const startTime of input.startTimes) {
+    if (!isWithinHours(experience.activity, startTime)) {
+      throw invalid(
+        `This activity departs between ${experience.activity.earliestStart} and ${experience.activity.latestStart}; ${startTime} is outside that.`,
+        { startTime },
+      )
+    }
+  }
 
   const from = new Date(`${input.fromDate}T00:00:00.000Z`)
   const to = new Date(`${input.toDate}T00:00:00.000Z`)
@@ -217,6 +238,8 @@ export async function scheduleAvailability(
     const dateKey: DateKey = toDateKey(day)
 
     if (input.weekdays.length > 0 && !input.weekdays.includes(day.getUTCDay())) continue
+    // The activity does not run this month; no departure may exist on this day.
+    if (!isInSeason(experience.activity, dateKey)) continue
 
     for (const startTime of input.startTimes) {
       const startsAt = localInstant(dateKey, startTime)

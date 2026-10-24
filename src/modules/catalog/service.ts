@@ -9,6 +9,7 @@ import {
   SlotStatus,
   VerificationStatus,
 } from '@/lib/prisma-types'
+import { assertWithinOperatingWindow } from '@/modules/destination/operating-window'
 import { assertPropertyAccess, type ActorContext } from '@/modules/tenancy/context'
 import { recordAudit } from '@/modules/workflows/audit'
 import { track } from '@/modules/analytics/track'
@@ -485,13 +486,26 @@ export async function addSlot(actor: ActorContext, raw: unknown): Promise<{ id: 
   const input = slotInputSchema.parse(raw)
   const experience = await prisma.experience.findUnique({
     where: { id: input.experienceId },
-    select: { id: true, propertyId: true, durationMinutes: true },
+    select: {
+      id: true,
+      propertyId: true,
+      durationMinutes: true,
+      activity: { select: { earliestStart: true, latestStart: true, seasonMonths: true } },
+    },
   })
   if (!experience) throw notFound('Experience')
 
   const { organizationId } = await assertPropertyAccess(
     actor, experience.propertyId, Role.OWNER, Role.STAFF, Role.SUPPLIER, Role.ADMIN,
   )
+
+  // A departure outside the activity's hours or season is refused at creation,
+  // not merely hidden from the planner later. See `operating-window.ts`.
+  assertWithinOperatingWindow({
+    window: experience.activity,
+    startTime: input.startTime,
+    forDate: input.date,
+  })
 
   const startsAt = localInstant(input.date, input.startTime)
   const endsAt = new Date(startsAt.getTime() + experience.durationMinutes * 60_000)

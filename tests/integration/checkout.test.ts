@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { prisma } from '@/lib/db'
+import { localInstant, toDateKey } from '@/lib/dates'
 import { isAppError } from '@/lib/errors'
 import { CartStatus, OrderItemStatus, OrderStatus } from '@/lib/prisma-types'
 import { addToCart, getOrCreateCart, removeFromCart, validateCart } from '@/modules/commerce/cart'
@@ -355,12 +356,20 @@ describe('cancellation and refunds', () => {
   })
 
   it('marks an order partially cancelled while other lines survive', async () => {
+    // A stated local departure hour rather than "now, twelve days on": the
+    // activity's operating window is enforced at the point of sale, so a
+    // fixture built from the wall clock became unbookable whenever the suite
+    // ran outside 06:00–18:00 local.
+    const secondStartsAt = localInstant(
+      toDateKey(new Date(Date.now() + 12 * 86_400_000)),
+      '09:00',
+    )
     const second = await prisma.availabilitySlot.create({
       data: {
         organizationId: tenant.organizationId,
         experienceId: tenant.experienceId,
-        startsAt: new Date(Date.now() + 12 * 86_400_000),
-        endsAt: new Date(Date.now() + 12 * 86_400_000 + 7_200_000),
+        startsAt: secondStartsAt,
+        endsAt: new Date(secondStartsAt.getTime() + 7_200_000),
         capacity: 4,
         currency: 'MXN',
       },

@@ -7,6 +7,7 @@ import { DemoBanner } from '@/components/demo-banner'
 import { signInAction } from '@/app/actions'
 import { listDemoAccounts } from '@/modules/auth/service'
 import { isDemoMode } from '@/lib/env'
+import { safeNext } from '@/lib/demo-gate'
 
 export const metadata = { title: 'Sign in' }
 
@@ -28,7 +29,9 @@ export default async function SignInPage({
   if (!isDemoMode()) notFound()
 
   const { next } = await searchParams
-  const target = next && next.startsWith('/') ? next : '/'
+  // `safeNext`, not a local `startsWith('/')` check: the weaker form admitted
+  // `//evil.example.com`, which the browser treats as an absolute URL.
+  const target = safeNext(next)
   const accounts = await listDemoAccounts()
 
   const groups = [

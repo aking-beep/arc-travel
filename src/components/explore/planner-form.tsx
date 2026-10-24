@@ -20,6 +20,7 @@ import {
   type PropertyType,
 } from '@/modules/discovery/content/types'
 import { tripLength } from '@/modules/discovery/planner'
+import { PLANNER_ISSUE_KEYS, type PlannerIssue } from '@/modules/discovery/schemas'
 
 /**
  * The brief a visitor writes before the planner drafts anything.
@@ -119,6 +120,7 @@ export function PlannerForm({
   prefs,
   onChange,
   onGenerate,
+  issues = [],
   samples,
   onOpenSample,
   generatorLabel,
@@ -127,6 +129,8 @@ export function PlannerForm({
   prefs: PlannerPreferences
   onChange: (prefs: PlannerPreferences) => void
   onGenerate: () => void
+  /** Reasons the brief cannot be drafted. Empty when it can. */
+  issues?: PlannerIssue[]
   samples: Itinerary[]
   onOpenSample: (itinerary: Itinerary) => void
   generatorLabel: string
@@ -365,10 +369,27 @@ export function PlannerForm({
             </p>
           ) : null}
 
+          {issues.length > 0 ? (
+            <div
+              role="status"
+              className="border-ivory/25 mt-6 rounded-2xl border px-4 py-3 text-left"
+            >
+              <p className="text-ivory/80 text-xs tracking-wide">
+                {t('explore.planner.issuesHeading')}
+              </p>
+              <ul className="text-ivory/70 mt-2 space-y-1 text-[11px] leading-relaxed">
+                {issues.map((issue) => (
+                  <li key={issue}>{t(PLANNER_ISSUE_KEYS[issue])}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
           <button
             type="button"
             onClick={onGenerate}
-            className="bg-gold text-ink hover:bg-gold-hover mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-full text-sm transition-colors duration-150"
+            disabled={issues.length > 0}
+            className="bg-gold text-ink hover:bg-gold-hover mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-full text-sm transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {t('explore.planner.generate')}
             <ArrowRight className="size-4" aria-hidden />

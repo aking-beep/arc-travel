@@ -68,10 +68,23 @@ export function tokensMatch(presented: string | undefined, expected: string): bo
 }
 
 /**
- * Narrows a `?next=` value to a same-origin path, so the gate cannot be used
- * as an open redirect.
+ * Narrows a `?next=` value to a same-origin path, so no `?next=` anywhere can
+ * be used as an open redirect.
+ *
+ * Every caller that turns a client-supplied `next` into a `redirect()` or a
+ * form value goes through this — the demo gate, `setLocaleAction`,
+ * `signInAction` and the sign-in page. A second, weaker `startsWith('/')`
+ * check used to live on the sign-in page and admitted a protocol-relative
+ * `//evil.example.com`, which the browser resolves as an absolute URL.
+ *
+ * Rejected: anything not beginning with `/`, and anything whose second
+ * character is `/` or `\`. Browsers normalise a backslash to a forward slash
+ * in the authority position, so `/\evil.example.com` is an off-site
+ * navigation too.
  */
 export function safeNext(value: string | null | undefined): string {
-  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/'
+  if (!value || !value.startsWith('/')) return '/'
+  const second = value[1]
+  if (second === '/' || second === '\\') return '/'
   return value
 }

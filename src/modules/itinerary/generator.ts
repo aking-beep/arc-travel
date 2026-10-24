@@ -195,6 +195,17 @@ export function generateItinerary(input: GenerateInput): GeneratedItinerary {
       }
       rationale.push(...scored.notes)
 
+      /**
+       * Whether the leg gets a block of its own.
+       *
+       * Decided before the experience item is built, because it decides which
+       * of the two carries the fare. Counting it on both overstated the trip
+       * total by the fare of every transfer long enough to be shown — and
+       * disagreed with `dayCostPerPerson` above, which has always counted it
+       * once. A guest could be shown a plan over the budget they set.
+       */
+      const showsTransferBlock = travel.minutes >= 15 && travel.mode !== null
+
       const item: PlannedItem = {
         kind: ItineraryItemKind.EXPERIENCE,
         dayIndex,
@@ -207,8 +218,11 @@ export function generateItinerary(input: GenerateInput): GeneratedItinerary {
         title: candidate.title,
         score: scored.score,
         rationale,
+        // The fare belongs to whichever block represents the journey.
         estimatedCostMinor:
-          candidate.unitPriceMinor * guest.partySize + candidate.bookingFeeMinor + travel.costMinor,
+          candidate.unitPriceMinor * guest.partySize +
+          candidate.bookingFeeMinor +
+          (showsTransferBlock ? 0 : travel.costMinor),
         currency,
         travelMinutesFromPrev: travel.minutes,
         travelModeFromPrev: travel.mode,
@@ -216,7 +230,7 @@ export function generateItinerary(input: GenerateInput): GeneratedItinerary {
 
       // A transfer with real travel time gets its own visible block, so the
       // guest sees the 40-minute shuttle rather than wondering where it went.
-      if (travel.minutes >= 15 && travel.mode) {
+      if (showsTransferBlock && travel.mode) {
         placed.push({
           item: {
             kind: ItineraryItemKind.TRANSFER,
