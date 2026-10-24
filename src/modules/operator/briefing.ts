@@ -250,7 +250,7 @@ export async function buildMorningBriefing(
     prisma.commissionRule.findMany({ where: { organizationId, isActive: true } }),
     prisma.organization.findUniqueOrThrow({
       where: { id: organizationId },
-      select: { defaultCommissionBps: true },
+      select: { defaultCommissionBps: true, defaultPlatformCommissionBps: true },
     }),
   ])
 
@@ -376,7 +376,10 @@ export async function buildMorningBriefing(
         experienceId: slot.experience.id,
         category: slot.experience.category,
       },
-      organization.defaultCommissionBps,
+      {
+        hotelBps: organization.defaultCommissionBps,
+        platformBps: organization.defaultPlatformCommissionBps,
+      },
     )
     const upside = potentialHotelEarnings(gross, commission, slot.capacity)
 

@@ -849,7 +849,7 @@ async function seedHistoricalOrders(
         propertyId,
         experienceId: line.experienceId,
         category: line.category,
-      }, 1500)
+      }, { hotelBps: 1500, platformBps: 500 })
       return splitEarnings(money(line.lineTotalMinor, CURRENCY), commission, line.quantity)
     })
 

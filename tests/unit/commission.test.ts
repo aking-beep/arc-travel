@@ -34,12 +34,21 @@ const target = {
 }
 
 describe('resolveCommission', () => {
-  it('falls back to the organization default when nothing matches', () => {
-    const resolved = resolveCommission([], target, 1800)
+  it('falls back to both organization defaults when nothing matches', () => {
+    const resolved = resolveCommission([], target, { hotelBps: 1800, platformBps: 500 })
     expect(resolved.specificity).toBe('organization-default')
     expect(resolved.hotelShare).toBe(1800)
-    expect(resolved.platformShare).toBe(0)
+    // Both halves come from the organization. The platform share used to be
+    // hard-coded to zero here, so a tenant with no rule produced ledger lines
+    // where ARC earned nothing — its revenue depended on somebody remembering
+    // to write a rule.
+    expect(resolved.platformShare).toBe(500)
     expect(resolved.ruleId).toBeNull()
+  })
+
+  it('still honours a zero platform default, for a tenant that negotiated one', () => {
+    const resolved = resolveCommission([], target, { hotelBps: 1800, platformBps: 0 })
+    expect(resolved.platformShare).toBe(0)
   })
 
   it('prefers the most specific rule: experience over category over property', () => {
@@ -48,13 +57,13 @@ describe('resolveCommission', () => {
       rule({ id: 'category', propertyId: PROPERTY, category: ExperienceCategory.SURF, hotelShare: 2000 }),
       rule({ id: 'experience', propertyId: PROPERTY, experienceId: EXPERIENCE, hotelShare: 3000 }),
     ]
-    expect(resolveCommission(rules, target, 1500).ruleId).toBe('experience')
+    expect(resolveCommission(rules, target, { hotelBps: 1500, platformBps: 500 }).ruleId).toBe('experience')
 
     const withoutExperience = rules.filter((r) => r.id !== 'experience')
-    expect(resolveCommission(withoutExperience, target, 1500).ruleId).toBe('category')
+    expect(resolveCommission(withoutExperience, target, { hotelBps: 1500, platformBps: 500 }).ruleId).toBe('category')
 
     const propertyOnly = rules.filter((r) => r.id === 'property')
-    expect(resolveCommission(propertyOnly, target, 1500).ruleId).toBe('property')
+    expect(resolveCommission(propertyOnly, target, { hotelBps: 1500, platformBps: 500 }).ruleId).toBe('property')
   })
 
   it('ignores rules for another property, experience or category', () => {
@@ -63,12 +72,12 @@ describe('resolveCommission', () => {
       rule({ id: 'other-experience', propertyId: PROPERTY, experienceId: 'experience-2', hotelShare: 9000 }),
       rule({ id: 'other-category', propertyId: PROPERTY, category: ExperienceCategory.DINING, hotelShare: 9000 }),
     ]
-    expect(resolveCommission(rules, target, 1500).specificity).toBe('organization-default')
+    expect(resolveCommission(rules, target, { hotelBps: 1500, platformBps: 500 }).specificity).toBe('organization-default')
   })
 
   it('ignores inactive rules', () => {
     const rules = [rule({ id: 'inactive', propertyId: PROPERTY, isActive: false, hotelShare: 9000 })]
-    expect(resolveCommission(rules, target, 1500).hotelShare).toBe(1500)
+    expect(resolveCommission(rules, target, { hotelBps: 1500, platformBps: 500 }).hotelShare).toBe(1500)
   })
 
   it('breaks ties on priority, then on the newest rule', () => {
@@ -76,13 +85,13 @@ describe('resolveCommission', () => {
       rule({ id: 'low', propertyId: PROPERTY, priority: 1, hotelShare: 1000 }),
       rule({ id: 'high', propertyId: PROPERTY, priority: 9, hotelShare: 2000 }),
     ]
-    expect(resolveCommission(rules, target, 1500).ruleId).toBe('high')
+    expect(resolveCommission(rules, target, { hotelBps: 1500, platformBps: 500 }).ruleId).toBe('high')
 
     const samePriority = [
       rule({ id: 'older', propertyId: PROPERTY, createdAt: new Date('2026-01-01Z') }),
       rule({ id: 'newer', propertyId: PROPERTY, createdAt: new Date('2026-06-01Z') }),
     ]
-    expect(resolveCommission(samePriority, target, 1500).ruleId).toBe('newer')
+    expect(resolveCommission(samePriority, target, { hotelBps: 1500, platformBps: 500 }).ruleId).toBe('newer')
   })
 })
 
@@ -90,7 +99,7 @@ describe('splitEarnings', () => {
   const commission = resolveCommission(
     [rule({ id: 'r', propertyId: PROPERTY, hotelShare: 1500, platformShare: 500 })],
     target,
-    1500,
+    { hotelBps: 1500, platformBps: 500 },
   )
 
   it('splits gross three ways and balances exactly', () => {
@@ -125,7 +134,7 @@ describe('splitEarnings', () => {
         }),
       ],
       target,
-      1500,
+      { hotelBps: 1500, platformBps: 500 },
     )
     const split = splitEarnings(money(60_000), fixed, 2)
     expect(split.hotel.amountMinor).toBe(10_000)
@@ -145,7 +154,7 @@ describe('splitEarnings', () => {
         }),
       ],
       target,
-      1500,
+      { hotelBps: 1500, platformBps: 500 },
     )
     expect(() => splitEarnings(money(10_000), fixed, 1)).toThrow(/exceeds gross/)
   })
@@ -167,7 +176,7 @@ describe('potentialHotelEarnings', () => {
     const commission = resolveCommission(
       [rule({ id: 'r', propertyId: PROPERTY, hotelShare: 2000, platformShare: 500 })],
       target,
-      1500,
+      { hotelBps: 1500, platformBps: 500 },
     )
     expect(potentialHotelEarnings(money(100_000), commission).amountMinor).toBe(20_000)
   })

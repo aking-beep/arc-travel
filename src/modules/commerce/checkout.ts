@@ -169,7 +169,7 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
       }),
       prisma.organization.findUnique({
         where: { id: cart.organizationId },
-        select: { defaultCommissionBps: true },
+        select: { defaultCommissionBps: true, defaultPlatformCommissionBps: true },
       }),
     ])
 
@@ -275,7 +275,10 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
             experienceId: item.experienceId,
             category: item.experience.category as ExperienceCategory,
           },
-          organization?.defaultCommissionBps ?? 1500,
+          {
+            hotelBps: organization?.defaultCommissionBps ?? 1500,
+            platformBps: organization?.defaultPlatformCommissionBps ?? 500,
+          },
         )
 
         const split = splitEarnings(

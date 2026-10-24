@@ -265,8 +265,16 @@ model Organization {
   legalName   String?
   countryCode String       @default("MX")
   status      EntityStatus @default(DRAFT)
-  /// Platform commission in basis points, overridable per CommissionRule.
+  /// Hotel's commission in basis points when no CommissionRule matches,
+  /// overridable per CommissionRule.
   defaultCommissionBps Int  @default(1500)
+  /// ARC's own share in basis points when no CommissionRule matches.
+  ///
+  /// This used to be hard-coded to zero inside `resolveCommission`, which meant
+  /// a tenant with no rule produced ledger lines where the platform earned
+  /// nothing: ARC's revenue depended on somebody remembering to write a rule.
+  /// 500 bps matches the default written into every SupplierAgreement.
+  defaultPlatformCommissionBps Int @default(500)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 

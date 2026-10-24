@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/states'
@@ -75,6 +76,15 @@ export default async function RevenuePage() {
               </dd>
             </div>
           </dl>
+          <p className="text-sand-600 mt-3 text-sm">
+            <Link
+              href="/owner/revenue/commission"
+              className="text-jade-800 underline underline-offset-4"
+            >
+              Commission rules
+            </Link>{' '}
+            decide these shares, and show what a sale would split before a guest books on it.
+          </p>
           {report.totals.refundedMinor > 0 ? (
             <p className="text-sand-600 mt-3 text-sm">
               Net of <Money amountMinor={report.totals.refundedMinor} currency={report.currency} />{' '}
