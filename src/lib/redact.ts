@@ -19,7 +19,25 @@ const SENSITIVE_KEY =
   /(email|phone|password|passphrase|token|secret|apikey|api_key|authorization|credential|\bip\b|ipaddr|ip_address|card|cvv|iban|passport|dietary|mobility|medical|allerg)/i
 
 const EMAIL_RE = /[\w.+-]+@[\w-]+\.[\w.-]+/g
-const PHONE_RE = /(?:\+?\d[\d\s().-]{7,}\d)/g
+
+/**
+ * A telephone number in free text — and deliberately nothing else.
+ *
+ * The boundaries are the whole point, and they were added after this pattern
+ * ate part of an audit record: `evt_59cd7601-41ed-4d95-9be6-c8f721151699`
+ * became `evt_59cd7601-41ed-4d95-9be6-c8f[phone]`, because the tail of a UUID
+ * is a long enough run of digits to look like a phone number. That is the same
+ * failure as the unanchored `ip` above — an over-broad pattern quietly
+ * hollowing out the trail the product's credibility rests on — and it reaches
+ * every opaque identifier we record: event ids, order references, intent ids.
+ *
+ * So a match may not touch a word character or a hyphen on either side: a
+ * digit run inside a longer token is part of that token, not a phone number.
+ * The length floor is unchanged (nine characters), so nothing that was
+ * redacted before is exposed now; the upper bound is there because an
+ * unbounded run has no business being called a telephone number either.
+ */
+const PHONE_RE = /(?<![\w-])\+?\d[\d\s().-]{7,18}\d(?![\w-])/g
 
 export function redactString(value: string): string {
   return value.replace(EMAIL_RE, '[email]').replace(PHONE_RE, '[phone]')

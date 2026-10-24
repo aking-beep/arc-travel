@@ -332,27 +332,38 @@ describe('cancellation and refunds', () => {
   })
 
   it('refunds nothing outside the window but still returns the place', async () => {
-    const soon = await createTenant({
+    /*
+     * A long notice period against the standard ten-days-out departure, not a
+     * departure two hours from now.
+     *
+     * The wall-clock fixture was the same latent bug as the one below it, one
+     * step further on: it took the *UTC* hour as a *local* departure time, so
+     * whenever the suite ran after about 16:00 UTC the departure fell outside
+     * the activity's 06:00–18:00 operating window and `addToCart` refused it
+     * before the refund rule was ever reached. It passed locally and failed in
+     * CI at 19:23 UTC. What the test is actually about is a cancellation that
+     * arrives too late, and the policy is the honest way to say that: 336
+     * hours of notice required, 240 hours remaining.
+     */
+    const lateNotice = await createTenant({
       capacity: 4,
-      departureDate: new Date(Date.now() + 2 * 3_600_000).toISOString().slice(0, 10),
-      departureTime: new Date(Date.now() + 2 * 3_600_000).toISOString().slice(11, 16),
-      cancellationPolicyHours: 24,
+      cancellationPolicyHours: 336,
     })
-    const cartId = await cartFor(soon)
-    await addToCart({ cartId, slotId: soon.slotId, quantity: 1 })
-    const order = await checkout({ cartId, guestId: soon.guestId, idempotencyKey: randomUUID() })
+    const cartId = await cartFor(lateNotice)
+    await addToCart({ cartId, slotId: lateNotice.slotId, quantity: 1 })
+    const order = await checkout({ cartId, guestId: lateNotice.guestId, idempotencyKey: randomUUID() })
 
     const item = await prisma.orderItem.findFirstOrThrow({ where: { orderId: order.orderId } })
     const result = await cancelOrderItem({
       orderItemId: item.id,
       reason: 'late',
-      authority: { kind: 'guest', guestId: soon.guestId },
+      authority: { kind: 'guest', guestId: lateNotice.guestId },
     })
 
     expect(result.withinWindow).toBe(false)
     expect(result.refundMinor).toBe(0)
     expect(result.orderStatus).toBe(OrderStatus.CANCELLED)
-    expect((await slotState(soon.slotId)).booked).toBe(0)
+    expect((await slotState(lateNotice.slotId)).booked).toBe(0)
   })
 
   it('marks an order partially cancelled while other lines survive', async () => {
