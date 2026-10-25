@@ -23,6 +23,8 @@ export {
   OrderItemStatus,
   OrderStatus,
   Pace,
+  PaymentReversalCause,
+  PayoutStatus,
   PlaceKind,
   PriceKind,
   Prisma,

@@ -921,8 +921,16 @@ async function seedHistoricalOrders(
       })
 
       if (refunded) {
-        await prisma.ledgerEntry.create({
-          data: { organizationId, orderId: order.id, orderItemId: item.id, account: 'refund', amountMinor: -line.lineTotalMinor, currency: CURRENCY, memo: 'Simulated refund', createdAt: confirmedAt },
+        // Reversed per account, exactly as `cancelOrderItem` does. It used to
+        // be one entry on a `refund` account: the ledger balanced and each
+        // individual account was wrong, which stopped being survivable once
+        // `supplier_payable` became the basis for paying a partner.
+        await prisma.ledgerEntry.createMany({
+          data: [
+            { organizationId, orderId: order.id, orderItemId: item.id, account: 'hotel_earnings', amountMinor: -split.hotel.amountMinor, currency: CURRENCY, memo: 'Simulated refund · reversing hotel share', createdAt: confirmedAt },
+            { organizationId, orderId: order.id, orderItemId: item.id, account: 'platform_commission', amountMinor: -split.platform.amountMinor, currency: CURRENCY, memo: 'Simulated refund · reversing ARC commission', createdAt: confirmedAt },
+            { organizationId, orderId: order.id, orderItemId: item.id, account: 'supplier_payable', amountMinor: -split.supplier.amountMinor, currency: CURRENCY, memo: 'Simulated refund · reversing supplier payable', createdAt: confirmedAt },
+          ],
         })
       }
     }

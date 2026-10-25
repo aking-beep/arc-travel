@@ -6,6 +6,7 @@ import {
   Hotel,
   LayoutDashboard,
   LineChart,
+  Send,
   Store,
   Sunrise,
   Tags,
@@ -31,6 +32,7 @@ const NAV = [
   { href: '/owner/arrivals', label: 'Arrivals', icon: CalendarCheck },
   { href: '/owner/approvals', label: 'Approvals', icon: ClipboardCheck },
   { href: '/owner/revenue', label: 'Revenue', icon: LineChart },
+  { href: '/owner/payouts', label: 'Partner payouts', icon: Send },
   { href: '/owner/property', label: 'Property', icon: Hotel },
 ]
 

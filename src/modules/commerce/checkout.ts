@@ -805,6 +805,11 @@ export async function cancelOrderItem(options: {
       slotId: true,
       quantity: true,
       lineTotalMinor: true,
+      // The split as it was stored at checkout, which is what a reversal has
+      // to undo — not what the current commission rules would produce.
+      hotelEarningsMinor: true,
+      platformEarningsMinor: true,
+      supplierPayableMinor: true,
       currency: true,
       status: true,
       experience: { select: { titleEn: true, cancellationPolicyHours: true } },
@@ -874,17 +879,61 @@ export async function cancelOrderItem(options: {
     await returnCapacity(tx, { slotId: item.slotId, quantity: item.quantity })
 
     if (refund.refundMinor > 0) {
-      await tx.ledgerEntry.create({
-        data: {
+      /*
+       * Reversed per account, not as one `refund` line.
+       *
+       * It used to be a single entry on a `refund` account for the whole
+       * refunded amount. The ledger still balanced — the total moved by the
+       * same number — and each individual account was wrong: a cancelled
+       * line's `supplier_payable` stayed at its full positive value for ever,
+       * so "what this account sums to" was not what anybody was owed.
+       *
+       * That was survivable while nothing read the account. `modules/commerce/
+       * payouts` reads it to decide what to pay a partner, and the case it
+       * cannot survive is ordinary: the hotel pays the partner, and then the
+       * guest cancels inside the window. With one `refund` line there is no
+       * negative entry on the partner's account, so nothing nets the overpaid
+       * amount off their next payment and ARC has no record of being owed it.
+       *
+       * These are the same three reversals `modules/commerce/payment-events`
+       * writes when a payment stops standing, which is the other way a
+       * confirmed sale comes undone. Two paths that undo the same thing now
+       * write the same rows.
+       */
+      const reversals = [
+        { account: 'hotel_earnings', amountMinor: -item.hotelEarningsMinor },
+        { account: 'platform_commission', amountMinor: -item.platformEarningsMinor },
+        { account: 'supplier_payable', amountMinor: -item.supplierPayableMinor },
+      ].filter((entry) => entry.amountMinor !== 0)
+
+      /*
+       * The three shares sum to the line total, and a refund inside the
+       * window is the whole line (`computeRefund` is a cliff, not a scale), so
+       * the reversals sum to exactly what the single entry used to carry. If
+       * that ever stops being true the ledger stops balancing, and
+       * `/owner/revenue` says so rather than hiding it — but it is worth
+       * asserting here, where the fix is cheap, rather than discovering it on
+       * a page.
+       */
+      const reversedMinor = reversals.reduce((n, entry) => n + entry.amountMinor, 0)
+      if (reversedMinor !== -refund.refundMinor) {
+        throw new AppError(
+          'INTERNAL',
+          `Refund of ${refund.refundMinor} does not match the stored split, which sums to ${-reversedMinor}.`,
+        )
+      }
+
+      await tx.ledgerEntry.createMany({
+        data: reversals.map((entry) => ({
           organizationId: item.organizationId,
           orderId: item.orderId,
           orderItemId: item.id,
-          account: 'refund',
-          // Negative so the ledger sums to what is actually owed.
-          amountMinor: -refund.refundMinor,
+          account: entry.account,
+          // Negative so each account sums to what is actually owed.
+          amountMinor: entry.amountMinor,
           currency: item.currency,
-          memo: `Simulated refund · ${item.experience.titleEn}`,
-        },
+          memo: `Refund · reversing ${item.experience.titleEn}`,
+        })),
       })
     }
 

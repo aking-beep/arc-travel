@@ -866,3 +866,122 @@ revisits.
 - A payment is not opened for a basket with a blocking problem. Handing a guest
   a chargeable credential for an order `checkout()` is going to refuse is the
   one failure that takes money and gives nothing back.
+
+---
+
+## ADR-032 — ARC computes payouts and records them; it does not send money
+
+**Status.** Accepted, 2026-10-25.
+
+**Context.** ARC recorded, to the centavo, what every supplier was owed —
+`LedgerEntry` rows on `supplier_payable`, written in the same transaction as
+the order — and had no way to discharge any of it. A ledger of obligations with
+no settlement path is a list of people who have not been paid.
+
+**Decision.** `Payout` and `PayoutLine`, an owner-approved run, and a recorded
+settlement. No provider transfer.
+
+Paying automatically means every supplier is a connected account at a payment
+provider, which means KYC on each small Oaxacan operator before they can be
+paid at all. That is a commercial and legal process, not code. For a pilot with
+six suppliers in one town the money moves by transfer or in cash, and what ARC
+owes the hotel is an accurate number, a remittance advice, and a record of who
+authorised it.
+
+So the guarantee is narrower than "payouts work", and is stated exactly:
+
+1. **The amount is derived, not recomputed.** A run reads ledger rows;
+   `/partner/earnings` reads the same rows. A payout that recomputed the split
+   from orders would drift from the partner's own page the moment a commission
+   rule changed.
+2. **Nothing is paid twice.** `PayoutLine.ledgerEntryId` is unique. Two
+   concurrent runs both pass the `payoutLine: null` filter and the second one
+   loses at the index — the guarantee is the database's, per ADR-020.
+3. **A person authorised it.** `SETTLED` requires an approved `SUPPLIER_PAYOUT`
+   proposal, and `settlePayout` reads *that proposal's* approval rather than
+   trusting `Payout.status`, so a status advanced by any other path still
+   cannot pay.
+4. **A reversal reduces the next payout.** A period netting zero or less
+   produces no payout and leaves its entries unclaimed, so they offset the run
+   after. Writing them off would be ARC absorbing a refund it had already paid
+   out on.
+
+**A defect this surfaced.** `cancelOrderItem` wrote one negative entry on a
+`refund` account. The ledger balanced and *each individual account was wrong*:
+a cancelled line's `supplier_payable` stayed at its full positive value for
+ever. Survivable while nothing read the account. The case it cannot survive is
+ordinary — the hotel pays the partner, then the guest cancels inside the window
+— because there is no negative entry on the partner's account to net the
+overpayment off their next payment. Cancellation now writes the same three
+per-account reversals `payment-events` already wrote for a failed payment. The
+seed matches.
+
+**Consequences.** A deferred constraint trigger asserts a payout's lines sum to
+its declared total — a CHECK cannot read another table, and trusting the service
+is what ADR-020 argues against for invariants that matter. A CHECK refuses a
+`SETTLED` row with no method, reference, time and user. Approving a payout
+executes nothing (`executed: false`): ARC cannot send money, so an execution
+claiming to have paid would be the plainest lie in the codebase, and marking it
+`EXECUTED` would take it off the owner's list of things still to do.
+
+**Cost.** Somebody has to make a bank transfer and type a reference in.
+Automating it is Stripe Connect plus KYC per supplier, and that is a pilot
+decision rather than a coding one.
+
+---
+
+## ADR-033 — A refund or chargeback at the provider opens an approval; it cancels nothing
+
+**Status.** Accepted, 2026-10-25. Supersedes the "what this build does not
+have" entry in `docs/operations.md` that said these events were ignored.
+
+**Context.** The Stripe webhook acted on `payment_intent.payment_failed` and
+`payment_intent.canceled` and deliberately ignored `charge.refunded` and
+`charge.dispute.*`. So a guest could get their money back at Stripe and keep
+the boat seat for ever, and the hotel would pay a supplier out of money that
+had gone back to a cardholder.
+
+The reason it was ignored was sound: reversing a confirmed booking is a
+consequential action and needs an `Approval` row naming who decided
+(non-negotiable 6). The alternative to ignoring the event was ARC cancelling a
+guest's booking on its own.
+
+**Decision.** A third option, which is the one the proposal machinery was built
+for. A refund or dispute event:
+
+1. **Stamps the order** with `reversalReportedAt`, `reversalCause`,
+   `reversalEventId` and `reversedMinor`. Nothing is cancelled. The flag is what
+   excludes the order from a supplier payout in the meantime, so ARC cannot pay
+   out on a charge that has gone back.
+2. **Opens a `PAYMENT_REVERSAL` proposal** whose stored action is
+   `reverse_order_items` with the live items enumerated. Approving runs the
+   closed-union branch in `workflows/proposals` — the one code path allowed to
+   take a booking away — and writes the `Approval` row.
+
+**Why the items are enumerated at report time rather than resolved on
+approval.** The proposal describes a specific decision: the owner is agreeing to
+reverse *these* bookings. Recomputing the set on approval means a line added in
+between — the guest books something else on the same order — gets cancelled by
+an approval nobody gave for it.
+
+**Why rejecting is a real answer.** A refund can be a goodwill gesture the hotel
+intends to honour the booking through, and a dispute can be resolved in ARC's
+favour. Rejecting keeps the booking; the report stays on the order, so it is
+still excluded from a payout until somebody resolves it.
+
+**Why one open decision per order.** A second event — the other half of a
+partial refund, or a dispute following a refund — updates the amount and finds
+the proposal already open. Stacking a second would ask the same question twice
+and allow approving it twice, reversing the same lines on the second pass.
+`returnCapacity` throws rather than clamping (ADR-020), so that would be a
+constraint violation rather than a silent miscount, which is better but not an
+excuse.
+
+**Consequences.** `readPaymentEvent` now reads `charge.*` events, whose object
+*references* an intent rather than being one. That asymmetry was the stated
+reason for ignoring the family; what makes the reference safe is not where it
+comes from but what the handler may do with it. `charge.dispute.closed` is still
+ignored: it can close either way, a dispute won asks for nothing, and a dispute
+lost has already arrived as `funds_withdrawn`. No refund is computed on
+execution — the money has already gone back at the provider, and computing a
+second one against the cancellation window would send it twice.

@@ -100,3 +100,83 @@ ALTER TABLE "CultureSourceSnapshot" ADD CONSTRAINT "culture_snapshot_ok_has_hash
 ALTER TABLE "CultureSourceChange" DROP CONSTRAINT IF EXISTS "culture_change_verified_has_reviewer";
 ALTER TABLE "CultureSourceChange" ADD CONSTRAINT "culture_change_verified_has_reviewer"
   CHECK ("verification" <> 'VERIFIED' OR ("reviewedById" IS NOT NULL AND "reviewedAt" IS NOT NULL));
+
+-- A payout's total is the sum of the lines it claimed. Asserted in the
+-- transaction that writes it too; here it is also true of any other writer,
+-- which for a table about money leaving the business is the point.
+--
+-- Written as a trigger rather than a CHECK because a CHECK cannot read another
+-- table. The alternative — trusting the service — is the thing ADR-020 exists
+-- to stop doing with invariants that matter.
+CREATE OR REPLACE FUNCTION arc_assert_payout_balances() RETURNS trigger AS $$
+DECLARE
+  line_total integer;
+  declared integer;
+  payout_status text;
+BEGIN
+  SELECT "netMinor", "status"::text INTO declared, payout_status
+    FROM "Payout" WHERE "id" = COALESCE(NEW."payoutId", OLD."payoutId");
+
+  -- A cancelled payout has had its lines deleted on purpose, to release the
+  -- ledger entries. Holding it to its original total would make cancelling
+  -- impossible.
+  IF payout_status = 'CANCELLED' THEN
+    RETURN COALESCE(NEW, OLD);
+  END IF;
+
+  SELECT COALESCE(SUM("amountMinor"), 0) INTO line_total
+    FROM "PayoutLine" WHERE "payoutId" = COALESCE(NEW."payoutId", OLD."payoutId");
+
+  IF line_total <> declared THEN
+    RAISE EXCEPTION
+      'Payout % declares % but its lines sum to %',
+      COALESCE(NEW."payoutId", OLD."payoutId"), declared, line_total;
+  END IF;
+
+  RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "payout_balances" ON "PayoutLine";
+CREATE CONSTRAINT TRIGGER "payout_balances"
+  AFTER INSERT OR UPDATE OR DELETE ON "PayoutLine"
+  DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION arc_assert_payout_balances();
+
+-- A payout that says it was paid says how, by whom and when. "Settled" with no
+-- reference is the claim this product refuses to make about money.
+ALTER TABLE "Payout" DROP CONSTRAINT IF EXISTS "payout_settled_is_evidenced";
+ALTER TABLE "Payout" ADD CONSTRAINT "payout_settled_is_evidenced"
+  CHECK (
+    "status" <> 'SETTLED'
+    OR (
+      "settlementReference" IS NOT NULL
+      AND "settlementMethod" IS NOT NULL
+      AND "settledAt" IS NOT NULL
+      AND "settledById" IS NOT NULL
+    )
+  );
+
+-- A payout is for a positive amount over a period that does not run backwards.
+-- A zero or negative net carries to the next run instead (ADR-032); creating
+-- one here would mean either a remittance for no money or ARC invoicing a
+-- partner, and the product does neither.
+ALTER TABLE "Payout" DROP CONSTRAINT IF EXISTS "payout_sane";
+ALTER TABLE "Payout" ADD CONSTRAINT "payout_sane"
+  CHECK ("netMinor" > 0 AND "periodEnd" >= "periodStart");
+
+-- Anything past DRAFT was authorised by an approved proposal. The service
+-- checks the proposal itself; this stops a status being advanced without one.
+ALTER TABLE "Payout" DROP CONSTRAINT IF EXISTS "payout_approved_has_proposal";
+ALTER TABLE "Payout" ADD CONSTRAINT "payout_approved_has_proposal"
+  CHECK ("status" IN ('DRAFT', 'CANCELLED') OR "proposalId" IS NOT NULL);
+
+-- A reported reversal names its cause and the provider event that reported it.
+-- A reversal flag with no provenance cannot be reconciled against the
+-- provider, which is the only thing it is for.
+ALTER TABLE "Order" DROP CONSTRAINT IF EXISTS "order_reversal_has_provenance";
+ALTER TABLE "Order" ADD CONSTRAINT "order_reversal_has_provenance"
+  CHECK (
+    "reversalReportedAt" IS NULL
+    OR ("reversalCause" IS NOT NULL AND "reversalEventId" IS NOT NULL AND "reversedMinor" >= 0)
+  );

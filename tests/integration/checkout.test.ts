@@ -444,7 +444,10 @@ describe('cancellation and refunds', () => {
     const untouched = await prisma.orderItem.findUniqueOrThrow({ where: { id: item.id } })
     expect(untouched.status).toBe(OrderItemStatus.CONFIRMED)
     expect((await slotState(tenant.slotId)).booked).toBe(1)
-    expect(await prisma.ledgerEntry.count({ where: { account: 'refund' } })).toBe(0)
+    // No reversal entries either: a refusal must leave the ledger untouched.
+    expect(
+      await prisma.ledgerEntry.count({ where: { amountMinor: { lt: 0 } } }),
+    ).toBe(0)
   })
 
   it('refuses an operator from another tenant', async () => {
@@ -526,12 +529,21 @@ describe('cancellation and refunds', () => {
     // Capacity returned once, not twice.
     expect((await slotState(tenant.slotId)).booked).toBe(0)
 
-    // And exactly one refund entry.
+    /*
+     * And exactly one set of reversal entries.
+     *
+     * Three rows, one per account, summing to the refunded total. They used
+     * to be a single `refund` row; per-account is what makes each account sum
+     * to what is actually owed, which is what a supplier payout reads.
+     */
     const refunds = await prisma.ledgerEntry.findMany({
-      where: { orderItemId: item.id, account: 'refund' },
+      where: { orderItemId: item.id, amountMinor: { lt: 0 } },
     })
-    expect(refunds).toHaveLength(1)
-    expect(refunds[0]?.amountMinor).toBe(-190_000)
+    expect(refunds).toHaveLength(3)
+    expect(refunds.reduce((n, entry) => n + entry.amountMinor, 0)).toBe(-190_000)
+    expect(new Set(refunds.map((entry) => entry.account))).toEqual(
+      new Set(['hotel_earnings', 'platform_commission', 'supplier_payable']),
+    )
 
     const refreshed = await prisma.order.findUniqueOrThrow({ where: { id: order.orderId } })
     expect(refreshed.refundedMinor).toBe(190_000)

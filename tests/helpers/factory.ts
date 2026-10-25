@@ -33,7 +33,11 @@ import {
 export const TABLES_IN_DELETE_ORDER = [
   'CultureSourceChange', 'CultureSourceSnapshot',
   'AnalyticsEvent', 'AuditEvent', 'Approval', 'Proposal', 'Recommendation', 'AgentRun',
-  'ItineraryItem', 'Itinerary', 'LedgerEntry', 'OrderItem', 'Order', 'CartItem', 'Cart',
+  'ItineraryItem', 'Itinerary',
+  // Before LedgerEntry: a PayoutLine restricts the entry it claimed, so the
+  // truncate order has to release the claim first.
+  'PayoutLine', 'Payout',
+  'LedgerEntry', 'OrderItem', 'Order', 'CartItem', 'Cart',
   'InventoryHold', 'AvailabilitySlot', 'Price', 'Amenity', 'Experience', 'Activity',
   'IdempotencyKey', 'CommissionRule', 'SupplierAgreement', 'Supplier', 'Consent', 'Stay',
   'Guest', 'RoomType', 'Membership', 'Property', 'User', 'Organization',

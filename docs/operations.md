@@ -85,7 +85,90 @@ dependency.
 | "That departure filled up" on an empty boat | `AvailabilitySlot.booked` vs. `OrderItem` rows; run the sweep |
 | An order stuck `PENDING` | There should be none — `checkout()` only writes an order once its payment succeeded (ADR-026) |
 | An order `FAILED` | A payment that stopped standing. `commerce.payment.failed` audit row names the provider event |
+| An order `CONFIRMED` with `reversalReportedAt` set | A refund or chargeback at Stripe, awaiting a decision on `/owner/approvals` (ADR-033). Excluded from payouts meanwhile |
+| A partner says they have not been paid | `/owner/payouts` — is it computed, approved, or waiting on a confirmation? The page itemises what is held back and why |
 | Guests cannot open their portal | `Stay.portalExpiresOn` and `PORTAL_GRACE_DAYS`; the token expires |
+
+---
+
+## Paying partners
+
+ARC works out what each partner is owed and keeps the record. **It does not send
+any money.** Automating that means every supplier is a connected account at a
+payment provider, with KYC done before they can be paid at all — a commercial
+process, not a deployment step. See ADR-032.
+
+The loop, on `/owner/payouts`:
+
+1. **Compute a run** for a period. Each partner with a positive balance gets a
+   `Payout` and an approval; a partner whose refunds exceed their sales gets
+   neither, and that balance carries into the next run rather than being
+   written off.
+2. **Approve it** on `/owner/approvals`. This is the `Approval` row
+   non-negotiable 6 requires. Nothing is payable without it, and `settlePayout`
+   reads the proposal's approval rather than the payout's own status — so
+   advancing the status by any other route still cannot pay.
+3. **Pay it**, by transfer or in cash.
+4. **Record it**, with the method and the bank's reference, on the payout page.
+
+### What is held back, and why
+
+A ledger entry is not paid while any of these is true:
+
+| Held because | What to do |
+| --- | --- |
+| The partner has not confirmed the booking | Chase them on `/partner/bookings`; it clears itself |
+| The order's payment was reported refunded or disputed | Decide the reversal on `/owner/approvals` (ADR-033) |
+| The order is cancelled, failed or refunded | Nothing. Its reversal entry nets it off |
+
+The owner page itemises these rather than summarising them. "We owe you 40,000
+and are paying 31,000" needs the other 9,000 accounted for, or the partner
+assumes it has been lost.
+
+### If a payout looks wrong
+
+- **It does not add up.** The payout page says so in red and tells you not to
+  pay it. A deferred constraint trigger should make this impossible; if you see
+  it, it is a bug, not a rounding quirk.
+- **A partner says they were paid twice.** They were not paid twice by ARC: a
+  ledger entry can be claimed by exactly one payout, enforced by a unique
+  index. Check for two transfers against one `settlementReference`.
+- **A partner was overpaid before a cancellation.** Expected, and handled: the
+  cancellation writes a negative entry on their account and the next run nets
+  it off. The remittance advice shows it as a negative line.
+- **The wrong period.** Cancel the payout. Its entries are released and the
+  next run picks them up. A `SETTLED` payout cannot be cancelled — releasing
+  entries that were genuinely paid would make the next run pay them again.
+
+---
+
+## A refund or chargeback raised at Stripe
+
+The webhook acts on these (`charge.refunded`, `charge.dispute.created`,
+`charge.dispute.funds_withdrawn`) and **cancels nothing**. It stamps the order
+and puts a decision on `/owner/approvals`. See ADR-033.
+
+What that means on call:
+
+- The guest still has their booking and the partner still has the slot
+  committed. That is deliberate: a refund can be a goodwill gesture the hotel
+  meant to honour the booking through, and a dispute can be resolved in ARC's
+  favour.
+- The order is excluded from a supplier payout from the moment the report
+  arrives, so ARC cannot pay a partner out of money that has gone back.
+- **Approving** cancels the live lines, puts the places back on sale and
+  reverses the earnings. No refund is sent — the money already went back at
+  Stripe, and sending another would send it twice.
+- **Rejecting** keeps the bookings. The report stays on the order, so it stays
+  out of payouts until somebody resolves it — a dispute you won, settled your
+  way, is worth clearing by hand.
+- A second event on the same order updates the amount and leaves the one open
+  decision alone. `charge.dispute.closed` is ignored, because it can close
+  either way.
+
+Find an order from a Stripe dashboard reference with
+`select reference, status, "reversalCause", "reversedMinor" from "Order" where
+"paymentReference" = 'pi_…';`
 
 ---
 
@@ -204,15 +287,6 @@ than none:
   platform admin and so cannot be polled by a checker.
 - **No log retention policy.** Logs go wherever the host puts them.
 - **No restore drill on a schedule.** See above; it is a manual step.
-- **No handling of a refund or a dispute raised at the provider.** The Stripe
-  webhook acts on `payment_intent.payment_failed` and
-  `payment_intent.canceled`, which covers a payment that stops standing after
-  ARC booked against it — a delayed-notification method that fails late. It
-  deliberately ignores `charge.refunded` and `charge.dispute.*`. Reversing a
-  confirmed booking is a consequential action and needs an `Approval` row
-  naming who decided (non-negotiable 6), so the alternative to ignoring those
-  events is ARC cancelling a guest's booking on its own, which this build does
-  not do. Until there is an approval queue for it, a refund or chargeback
-  raised at Stripe is reconciled by hand: find the order by its
-  `paymentReference`, and cancel through `/owner` so the audit trail names the
-  person who decided.
+- **No automated supplier payment.** ARC computes what each partner is owed,
+  takes an owner's approval and records the transfer reference; it does not move
+  the money. See "Paying partners" below, and ADR-032.
