@@ -85,7 +85,7 @@ export default async function AvailabilityPage() {
                         {slot.priceOverrideMinor !== null ? (
                           <>
                             {' · '}
-                            <Money amountMinor={slot.priceOverrideMinor} currency={slot.currency} />{' '}
+                            <Money amountMinor={slot.priceOverrideMinor} currency={slot.currency} intent="neutral" />{' '}
                             override
                           </>
                         ) : null}

@@ -87,12 +87,13 @@ export default async function BasketPage({ params }: { params: Promise<{ token: 
               </div>
               <div className="text-right">
                 <Money
+                  intent="neutral"
                   amountMinor={item.lineTotalMinor}
                   currency={item.currency}
                   className="font-semibold"
                 />
                 <p className="text-sand-500 text-xs">
-                  {item.quantity} × <Money amountMinor={item.unitPriceMinor} currency={item.currency} />
+                  {item.quantity} × <Money amountMinor={item.unitPriceMinor} currency={item.currency} intent="neutral" />
                 </p>
               </div>
             </div>
@@ -127,17 +128,17 @@ export default async function BasketPage({ params }: { params: Promise<{ token: 
         <CardContent className="space-y-2 text-sm">
           <div className="flex justify-between">
             <span className="text-sand-600">{t('common.subtotal')}</span>
-            <Money amountMinor={cart.subtotalMinor} currency={cart.currency} />
+            <Money amountMinor={cart.subtotalMinor} currency={cart.currency} intent="neutral" />
           </div>
           {cart.feesMinor > 0 ? (
             <div className="flex justify-between">
               <span className="text-sand-600">{t('common.fees')}</span>
-              <Money amountMinor={cart.feesMinor} currency={cart.currency} />
+              <Money amountMinor={cart.feesMinor} currency={cart.currency} intent="neutral" />
             </div>
           ) : null}
           <div className="border-sand-200 flex justify-between border-t pt-2 text-base font-semibold">
             <span>{t('common.total')}</span>
-            <Money amountMinor={cart.totalMinor} currency={cart.currency} />
+            <Money amountMinor={cart.totalMinor} currency={cart.currency} intent="neutral" />
           </div>
 
           <CheckoutForm

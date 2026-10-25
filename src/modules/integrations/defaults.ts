@@ -315,7 +315,19 @@ export class FixtureTravelAdviceProvider implements TravelAdviceProvider {
  * to their offline defaults. Each further live provider is a new class plus
  * one case here — the point of the interfaces being real types rather than env
  * reads scattered through the domain.
+ *
+ * The `satisfies never` lines below are what stops this function and
+ * `src/lib/env.ts` drifting apart. Adding a name to one of those enums without
+ * an implementation here is now a type error rather than a setting that is read
+ * and ignored — which is exactly how `CONDITIONS_PROVIDER=stormglass` came to
+ * mean "the safety gate reads a seeded table" while reporting itself as live.
  */
+const unimplemented = (key: string, value: never): never => {
+  throw new Error(
+    `${key}=${String(value)} has no implementation in getIntegrations(). ` +
+      'Build the provider, or remove the value from the enum in src/lib/env.ts.',
+  )
+}
 let cached: {
   payments: PaymentsProvider
   maps: MapsProvider
@@ -344,10 +356,22 @@ export function getIntegrations() {
       env.PAYMENTS_PROVIDER === 'stripe'
         ? new StripePaymentsProvider({ secretKey: env.STRIPE_SECRET_KEY ?? '' })
         : new SimulatedPaymentsProvider(),
-    maps: new FixtureMapsProvider(),
-    conditions: new FixtureConditionsProvider(),
-    messaging: new NoopMessagingProvider(),
-    analytics: new InternalAnalyticsSink(),
+    maps:
+      env.MAPS_PROVIDER === 'fixture'
+        ? new FixtureMapsProvider()
+        : unimplemented('MAPS_PROVIDER', env.MAPS_PROVIDER),
+    conditions:
+      env.CONDITIONS_PROVIDER === 'fixture'
+        ? new FixtureConditionsProvider()
+        : unimplemented('CONDITIONS_PROVIDER', env.CONDITIONS_PROVIDER),
+    messaging:
+      env.MESSAGING_PROVIDER === 'noop'
+        ? new NoopMessagingProvider()
+        : unimplemented('MESSAGING_PROVIDER', env.MESSAGING_PROVIDER),
+    analytics:
+      env.ANALYTICS_PROVIDER === 'internal'
+        ? new InternalAnalyticsSink()
+        : unimplemented('ANALYTICS_PROVIDER', env.ANALYTICS_PROVIDER),
     // `getEnv()` refuses `govuk` in demo mode, so the demo never leaves the box.
     travelAdvice:
       env.TRAVEL_ADVICE_PROVIDER === 'govuk'

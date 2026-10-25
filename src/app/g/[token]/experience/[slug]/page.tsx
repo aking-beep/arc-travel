@@ -115,6 +115,7 @@ export default async function ExperienceDetailPage({
           {basePrice ? (
             <p>
               <Money
+                intent="neutral"
                 amountMinor={basePrice.amountMinor}
                 currency={basePrice.currency}
                 className="text-lg font-semibold"
@@ -124,13 +125,13 @@ export default async function ExperienceDetailPage({
           ) : null}
           {basePrice && basePrice.bookingFeeMinor > 0 ? (
             <p className="text-sand-600">
-              Plus a <Money amountMinor={basePrice.bookingFeeMinor} currency={basePrice.currency} />{' '}
+              Plus a <Money amountMinor={basePrice.bookingFeeMinor} currency={basePrice.currency} intent="neutral" />{' '}
               booking fee, charged once.
             </p>
           ) : null}
           {groupPrice ? (
             <p className="text-sand-600">
-              <Money amountMinor={groupPrice.amountMinor} currency={groupPrice.currency} />{' '}
+              <Money amountMinor={groupPrice.amountMinor} currency={groupPrice.currency} intent="neutral" />{' '}
               {t('common.perPerson')} for {groupPrice.minParty} or more.
             </p>
           ) : null}

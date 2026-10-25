@@ -174,9 +174,15 @@ export default async function HealthPage() {
                 { label: 'Data mode', value: env.ARC_DATA_MODE },
                 { label: 'Payments', value: env.PAYMENTS_PROVIDER },
                 { label: 'AI provider', value: `${env.AI_PROVIDER} (${env.AI_MODEL})` },
-                { label: 'Maps', value: env.MAPS_PROVIDER },
-                { label: 'Conditions', value: env.CONDITIONS_PROVIDER },
-                { label: 'Messaging', value: env.MESSAGING_PROVIDER },
+                /*
+                 * Each of these has one possible value, which is the point.
+                 * They are still shown: an operator checking whether live
+                 * marine data is gating recommendations needs to see the answer
+                 * here, and "fixture" is the answer.
+                 */
+                { label: 'Maps', value: `${env.MAPS_PROVIDER} (seeded matrix, ADR-011)` },
+                { label: 'Conditions', value: `${env.CONDITIONS_PROVIDER} (seeded reports)` },
+                { label: 'Messaging', value: `${env.MESSAGING_PROVIDER} (refuses to deliver)` },
                 { label: 'Travel advice', value: env.TRAVEL_ADVICE_PROVIDER },
                 {
                   label: 'Outbound guest messaging',

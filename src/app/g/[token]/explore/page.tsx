@@ -120,6 +120,7 @@ export default async function ExplorePage({
                           <>
                             <span className="text-sand-500 text-xs">{t('common.from')} </span>
                             <Money
+                              intent="neutral"
                               amountMinor={basePrice.amountMinor}
                               currency={basePrice.currency}
                               className="font-semibold"

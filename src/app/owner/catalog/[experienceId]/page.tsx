@@ -142,7 +142,7 @@ export default async function EditExperiencePage({
                         <span className="text-sand-500 ml-2 text-xs">{price.minParty}+ people</span>
                       ) : null}
                     </span>
-                    <Money amountMinor={price.amountMinor} currency={price.currency} />
+                    <Money amountMinor={price.amountMinor} currency={price.currency} intent="neutral" />
                   </li>
                 ))}
               </ul>

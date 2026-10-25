@@ -68,6 +68,7 @@ export default async function BookingsPage() {
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-2">
                       <Money
+                        intent="earned"
                         amountMinor={booking.supplierPayableMinor}
                         currency={booking.currency}
                         className="font-semibold"
@@ -98,6 +99,7 @@ export default async function BookingsPage() {
                     </div>
                     <div className="flex items-center gap-3">
                       <Money
+                        intent="earned"
                         amountMinor={booking.supplierPayableMinor}
                         currency={booking.currency}
                       />

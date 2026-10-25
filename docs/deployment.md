@@ -58,8 +58,20 @@ because the app is unusable without them.
 | `ARC_DEMO_PASSPHRASE` | optional | See the front door below |
 
 `MAPS_PROVIDER`, `CONDITIONS_PROVIDER`, `MESSAGING_PROVIDER` and
-`ANALYTICS_PROVIDER` all default to their offline implementations, so a hosted
-demo needs no third-party keys at all.
+`ANALYTICS_PROVIDER` have exactly one value each — the offline implementation —
+so a hosted demo needs no third-party keys at all.
+
+They used to accept seven names between them (`mapbox`, `google`, `stormglass`,
+`openweather`, `twilio`, `resend`, `posthog`) with nothing behind any of them.
+Setting one changed the value `/admin/health` displayed and changed no
+behaviour. `CONDITIONS_PROVIDER=stormglass` was the one that mattered: it told
+an operator that live marine data was feeding the conditions gate, while the
+gate carried on reading seeded `ConditionReport` rows. A name from that list is
+now refused at boot with a message saying it is unbuilt and what answers
+instead, and `MAPBOX_ACCESS_TOKEN`, `GOOGLE_MAPS_API_KEY`, `STORMGLASS_API_KEY`
+and `POSTHOG_KEY` warn on startup rather than sitting there looking connected.
+Adding a name back to one of those enums without an implementation is a type
+error in `getIntegrations()`, not a setting that is read and ignored.
 
 ## Connection pooling
 

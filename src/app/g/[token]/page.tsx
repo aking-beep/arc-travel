@@ -134,7 +134,7 @@ export default async function GuestItineraryPage({
           <h2 className="font-display text-xl font-semibold">{itinerary.title}</h2>
           <p className="text-sand-600 mt-1 text-sm">
             {t(`pace.${itinerary.pace}`)} · {itinerary.partySize} {t('common.people')} ·{' '}
-            <Money amountMinor={itinerary.estimatedTotalMinor} currency={itinerary.currency} />{' '}
+            <Money amountMinor={itinerary.estimatedTotalMinor} currency={itinerary.currency} intent="potential" />{' '}
             {t('common.total').toLowerCase()}
           </p>
         </div>
@@ -171,7 +171,7 @@ export default async function GuestItineraryPage({
                 {dayCost > 0 ? (
                   <p className="text-sand-500 text-xs">
                     {t('guest.estimatedDayCost')}{' '}
-                    <Money amountMinor={dayCost} currency={itinerary.currency} />
+                    <Money amountMinor={dayCost} currency={itinerary.currency} intent="potential" />
                   </p>
                 ) : null}
               </div>
@@ -218,6 +218,7 @@ export default async function GuestItineraryPage({
                           )}
                           {item.estimatedCostMinor > 0 ? (
                             <Money
+                              intent="potential"
                               amountMinor={item.estimatedCostMinor}
                               currency={item.currency}
                               className="text-sm font-medium"

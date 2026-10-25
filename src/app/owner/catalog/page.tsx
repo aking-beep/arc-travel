@@ -93,7 +93,7 @@ export default async function CatalogPage() {
                       <dt className="text-sand-500 text-xs">Price</dt>
                       <dd className="font-medium">
                         {basePrice ? (
-                          <Money amountMinor={basePrice.amountMinor} currency={basePrice.currency} />
+                          <Money amountMinor={basePrice.amountMinor} currency={basePrice.currency} intent="neutral" />
                         ) : (
                           <span className="text-red-700">Not set</span>
                         )}

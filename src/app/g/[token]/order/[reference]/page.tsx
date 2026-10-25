@@ -68,6 +68,7 @@ export default async function OrderPage({
               </div>
               <div className="text-right">
                 <Money
+                  intent="neutral"
                   amountMinor={item.lineTotalMinor}
                   currency={item.currency}
                   className="font-semibold"
@@ -115,7 +116,7 @@ export default async function OrderPage({
                   <span className="text-sand-500 text-xs">
                     {item.refundedMinor > 0 ? (
                       <>
-                        Refunded <Money amountMinor={item.refundedMinor} currency={item.currency} />
+                        Refunded <Money amountMinor={item.refundedMinor} currency={item.currency} intent="neutral" />
                       </>
                     ) : (
                       'No refund — outside the window'
@@ -135,25 +136,25 @@ export default async function OrderPage({
         <CardContent className="space-y-1.5 text-sm">
           <div className="flex justify-between">
             <span className="text-sand-600">{t('common.subtotal')}</span>
-            <Money amountMinor={order.subtotalMinor} currency={order.currency} />
+            <Money amountMinor={order.subtotalMinor} currency={order.currency} intent="neutral" />
           </div>
           {order.feesMinor > 0 ? (
             <div className="flex justify-between">
               <span className="text-sand-600">{t('common.fees')}</span>
-              <Money amountMinor={order.feesMinor} currency={order.currency} />
+              <Money amountMinor={order.feesMinor} currency={order.currency} intent="neutral" />
             </div>
           ) : null}
           {order.refundedMinor > 0 ? (
             <div className="flex justify-between">
               <span className="text-sand-600">Refunded</span>
               <span>
-                −<Money amountMinor={order.refundedMinor} currency={order.currency} />
+                −<Money amountMinor={order.refundedMinor} currency={order.currency} intent="neutral" />
               </span>
             </div>
           ) : null}
           <div className="border-sand-200 flex justify-between border-t pt-2 font-semibold">
             <span>{t('common.total')}</span>
-            <Money amountMinor={order.totalMinor} currency={order.currency} />
+            <Money amountMinor={order.totalMinor} currency={order.currency} intent="neutral" />
           </div>
         </CardContent>
       </Card>

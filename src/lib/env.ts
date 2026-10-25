@@ -41,20 +41,31 @@ const envSchema = z.object({
   /** Signs the webhook payloads. Without it no event can be trusted, so a live provider requires it. */
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
 
-  MAPS_PROVIDER: z.enum(['fixture', 'mapbox', 'google']).default('fixture'),
-  MAPBOX_ACCESS_TOKEN: z.string().optional(),
-  GOOGLE_MAPS_API_KEY: z.string().optional(),
+  /*
+   * Only the values that have an implementation.
+   *
+   * These enums used to list every provider the product might one day use —
+   * `mapbox`, `google`, `stormglass`, `openweather`, `twilio`, `resend`,
+   * `posthog` — and accept all of them, while `getIntegrations()` returned the
+   * fixture regardless. The sharp edge was `CONDITIONS_PROVIDER=stormglass`:
+   * an operator who set it believed live marine data was feeding the safety
+   * gate, and the gate was reading a seeded table from the demo.
+   *
+   * A setting that is read but does nothing is worse than a missing setting,
+   * so the vocabulary is now exactly what is built. A name from the old list
+   * is refused by `assertProvidersAreImplemented` with a message that says it
+   * is unbuilt rather than mistyped; anything else gets Zod's enum error.
+   */
+  MAPS_PROVIDER: z.enum(['fixture']).default('fixture'),
 
-  CONDITIONS_PROVIDER: z.enum(['fixture', 'stormglass', 'openweather']).default('fixture'),
-  STORMGLASS_API_KEY: z.string().optional(),
+  CONDITIONS_PROVIDER: z.enum(['fixture']).default('fixture'),
 
-  MESSAGING_PROVIDER: z.enum(['noop', 'twilio', 'resend']).default('noop'),
+  MESSAGING_PROVIDER: z.enum(['noop']).default('noop'),
 
   /** Culture-context travel advice. `fixture` is offline; `govuk` reads the live Content API. */
   TRAVEL_ADVICE_PROVIDER: z.enum(['fixture', 'govuk']).default('fixture'),
 
-  ANALYTICS_PROVIDER: z.enum(['internal', 'posthog']).default('internal'),
-  POSTHOG_KEY: z.string().optional(),
+  ANALYTICS_PROVIDER: z.enum(['internal']).default('internal'),
   SENTRY_DSN: z.string().optional(),
 
   /**
@@ -68,6 +79,80 @@ const envSchema = z.object({
 
 export type Env = z.infer<typeof envSchema>
 
+/**
+ * Provider names this build once accepted and never implemented.
+ *
+ * Each maps to the message an operator needs: not "invalid value", which reads
+ * as a typo, but "this is not built, and here is what you have instead".
+ * Checked against the raw environment before Zod parses, so the refusal wins
+ * over the enum error.
+ */
+const UNBUILT_PROVIDERS: Record<string, Record<string, string>> = {
+  MAPS_PROVIDER: {
+    mapbox: 'Routing is the seeded TravelEdge matrix (ADR-011). There is no Mapbox client.',
+    google: 'Routing is the seeded TravelEdge matrix (ADR-011). There is no Google Maps client.',
+  },
+  CONDITIONS_PROVIDER: {
+    stormglass:
+      'There is no Stormglass client. Conditions are read from seeded ConditionReport rows, ' +
+      'and those rows are what the safety gate in modules/destination/conditions reads. ' +
+      'Setting this would have left you believing live marine data was gating recommendations.',
+    openweather:
+      'There is no OpenWeather client. Conditions are read from seeded ConditionReport rows, ' +
+      'which are what the safety gate reads.',
+  },
+  MESSAGING_PROVIDER: {
+    twilio:
+      'Outbound guest messaging is a kill switch, not a provider choice. The messaging provider ' +
+      'refuses to deliver while ARC_ENABLE_OUTBOUND_MESSAGING is false (non-negotiable 6).',
+    resend:
+      'Outbound guest messaging is a kill switch, not a provider choice. The messaging provider ' +
+      'refuses to deliver while ARC_ENABLE_OUTBOUND_MESSAGING is false (non-negotiable 6).',
+  },
+  ANALYTICS_PROVIDER: {
+    posthog:
+      'There is no PostHog sink. Analytics events are persisted to AnalyticsEvent and forwarded ' +
+      'nowhere. POSTHOG_KEY is no longer read.',
+  },
+}
+
+/**
+ * Keys that configured a provider that was never built.
+ *
+ * Setting one of these is not an error — an operator who has a Mapbox token
+ * has done nothing wrong — but it must not look like it took effect. These
+ * warn; the provider *names* above refuse.
+ */
+const IGNORED_KEYS: Record<string, string> = {
+  MAPBOX_ACCESS_TOKEN: 'MAPS_PROVIDER has no Mapbox implementation; this token is not read.',
+  GOOGLE_MAPS_API_KEY: 'MAPS_PROVIDER has no Google implementation; this key is not read.',
+  STORMGLASS_API_KEY:
+    'CONDITIONS_PROVIDER has no Stormglass implementation; this key is not read. ' +
+    'The safety gate reads seeded ConditionReport rows.',
+  POSTHOG_KEY: 'ANALYTICS_PROVIDER has no PostHog sink; this key is not read.',
+}
+
+function assertProvidersAreImplemented(source: NodeJS.ProcessEnv): void {
+  const refusals: string[] = []
+  for (const [key, unbuilt] of Object.entries(UNBUILT_PROVIDERS)) {
+    const value = source[key]
+    if (!value) continue
+    const why = unbuilt[value]
+    if (why) refusals.push(`  - ${key}=${value} is not implemented. ${why}`)
+  }
+  if (refusals.length > 0) {
+    throw new Error(
+      `Unimplemented integration provider requested:\n${refusals.join('\n')}\n` +
+        'Remove the variable, or build the provider and add it to the enum in src/lib/env.ts.',
+    )
+  }
+
+  for (const [key, why] of Object.entries(IGNORED_KEYS)) {
+    if (source[key]) console.warn('[env] %s is set but ignored. %s', key, why)
+  }
+}
+
+
 let cached: Env | null = null
 
 /** Development-only fallbacks so `npm run dev` works with a bare .env. */
@@ -78,6 +163,7 @@ export function getEnv(): Env {
   if (cached) return cached
 
   applyDatabaseUrl()
+  assertProvidersAreImplemented(process.env)
 
   const parsed = envSchema.safeParse(process.env)
   if (!parsed.success) {

@@ -192,7 +192,10 @@ workflow. All three matter at ten locales and none at two.
 ## ADR-011 — A seeded travel matrix, not a routing API
 
 **Decision.** `TravelEdge` rows seeded with times a local would quote.
-`MAPS_PROVIDER` can switch to Mapbox or Google later.
+A routing provider would be a new `MapsProvider` implementation plus a value in
+the `MAPS_PROVIDER` enum. That enum now holds only `fixture`: it listed `mapbox`
+and `google` for a long time with nothing behind either, which made a decision
+recorded here look like a configuration flag.
 
 **Why.** Itinerary feasibility must be reproducible in tests, and for a town
 this size a resident's estimate is more honest than a routing engine's

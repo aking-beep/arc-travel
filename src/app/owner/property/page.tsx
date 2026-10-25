@@ -73,7 +73,7 @@ export default async function PropertyPage() {
                       {rt.roomCount} rooms · sleeps {rt.maxOccupancy}
                     </p>
                   </div>
-                  <Money amountMinor={rt.baseRateMinor} currency={rt.currency} />
+                  <Money amountMinor={rt.baseRateMinor} currency={rt.currency} intent="neutral" />
                 </li>
               ))}
             </ul>
