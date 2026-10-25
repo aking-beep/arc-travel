@@ -664,6 +664,7 @@ describe('a payment that no longer matches its basket', () => {
         // One peso short of whatever was asked for.
         amount: money(input.amount.amountMinor - 100, input.amount.currency),
         isSimulated: true,
+        clientSecret: null,
       })
     }
 
@@ -740,6 +741,7 @@ describe('a payment reused across checkouts', () => {
         status: 'succeeded' as const,
         amount: money(input.amount.amountMinor - this.shortfallMinor, input.amount.currency),
         isSimulated: true,
+        clientSecret: null,
       })
     }
 

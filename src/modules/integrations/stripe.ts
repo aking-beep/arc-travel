@@ -30,6 +30,11 @@ import {
  *   * **It never captures.** `confirm` is not sent. The intent comes back for
  *     the client to confirm, and the webhook is what tells ARC the money
  *     arrived. See `src/app/api/webhooks/stripe/route.ts`.
+ *   * **It never collects card data.** `createIntent` returns Stripe's
+ *     `client_secret` and nothing else the browser needs. The card is typed
+ *     into an iframe Stripe serves, so no card number reaches an ARC origin, an
+ *     ARC server or an ARC log. That is the whole reason the client half of
+ *     checkout is Stripe's Payment Element rather than a form of our own.
  *
  * It is unreachable while `ARC_DATA_MODE=demo`: `getEnv()` refuses the
  * combination, `getIntegrations()` refuses it again, and `checkout()` refuses a
@@ -92,7 +97,7 @@ export class StripePaymentsProvider implements PaymentsProvider {
     const result = await this.post('/payment_intents', body, input.idempotencyKey)
     if (!result.ok || !result.data) return providerFailed(this.name, result.reason ?? 'unknown')
 
-    return this.readIntent(result.data)
+    return this.readIntent(result.data, { withClientSecret: true })
   }
 
   async retrieveIntent(input: { reference: string }): Promise<ProviderResult<PaymentIntent>> {
@@ -104,7 +109,7 @@ export class StripePaymentsProvider implements PaymentsProvider {
     const result = await this.get(`/payment_intents/${input.reference}`)
     if (!result.ok || !result.data) return providerFailed(this.name, result.reason ?? 'unknown')
 
-    return this.readIntent(result.data)
+    return this.readIntent(result.data, { withClientSecret: false })
   }
 
   async refund(input: {
@@ -156,7 +161,10 @@ export class StripePaymentsProvider implements PaymentsProvider {
    * caller compares the two and refuses the checkout when they differ, which
    * is only a real check if this does not quietly substitute our own number.
    */
-  private readIntent(object: Record<string, unknown>): ProviderResult<PaymentIntent> {
+  private readIntent(
+    object: Record<string, unknown>,
+    options: { withClientSecret: boolean },
+  ): ProviderResult<PaymentIntent> {
     const reference = typeof object.id === 'string' ? object.id : null
     const status = typeof object.status === 'string' ? STATUS[object.status] : undefined
     const amountMinor = typeof object.amount === 'number' ? object.amount : null
@@ -166,11 +174,32 @@ export class StripePaymentsProvider implements PaymentsProvider {
       return providerFailed(this.name, 'unexpected_payload')
     }
 
+    /*
+     * The client secret is surfaced only by `createIntent`.
+     *
+     * Stripe returns it on a retrieve as well, and carrying it through there
+     * would put a live payment credential into the one code path that runs
+     * *after* the guest has paid, where nothing needs it. `retrieveIntent`
+     * answers "did this payment stand"; it has no business also handing out
+     * the means to confirm one.
+     */
+    const clientSecret =
+      options.withClientSecret && typeof object.client_secret === 'string'
+        ? object.client_secret
+        : null
+    if (options.withClientSecret && !clientSecret) {
+      // An intent the browser cannot confirm is not a usable intent, and
+      // without this the failure mode is a payment form that renders and then
+      // does nothing when the guest presses Pay.
+      return providerFailed(this.name, 'missing_client_secret')
+    }
+
     return providerOk(this.name, {
       reference,
       status,
       amount: money(amountMinor, currency),
       isSimulated: false,
+      clientSecret,
     })
   }
 

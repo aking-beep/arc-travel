@@ -2,7 +2,7 @@
   "name": "arc-stay",
   "version": "0.1.0",
   "private": true,
-  "description": "ARC Stay \u2014 AI-powered destination commerce for independent boutique hotels. POC: Puerto Escondido, Oaxaca.",
+  "description": "ARC Stay — AI-powered destination commerce for independent boutique hotels. POC: Puerto Escondido, Oaxaca.",
   "type": "module",
   "engines": {
     "node": ">=20.11"
@@ -34,6 +34,7 @@
   },
   "dependencies": {
     "@prisma/client": "6.19.3",
+    "@stripe/stripe-js": "10.1.0",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "dotenv": "^18.0.8",

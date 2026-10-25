@@ -40,6 +40,17 @@ const envSchema = z.object({
   STRIPE_SECRET_KEY: z.string().optional(),
   /** Signs the webhook payloads. Without it no event can be trusted, so a live provider requires it. */
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  /**
+   * The key the *browser* initialises Stripe.js with (starts `pk_`).
+   *
+   * Publishable by design — it identifies the account and can do nothing but
+   * confirm an intent whose client secret the holder already has. It is read
+   * here, server-side, and passed to the payment form as a prop rather than
+   * inlined through `NEXT_PUBLIC_`, so there is one place that decides whether
+   * a live key is present and it is the same place that refuses a
+   * half-configured provider.
+   */
+  STRIPE_PUBLISHABLE_KEY: z.string().optional(),
 
   /*
    * Only the values that have an implementation.
@@ -216,6 +227,24 @@ export function getEnv(): Env {
         'PAYMENTS_PROVIDER=stripe requires STRIPE_WEBHOOK_SECRET. Without it the webhook ' +
           'cannot verify an event, and a payment that later fails would never release its capacity.',
       )
+    }
+    if (!env.STRIPE_PUBLISHABLE_KEY) {
+      throw new Error(
+        'PAYMENTS_PROVIDER=stripe requires STRIPE_PUBLISHABLE_KEY. Without it the guest has no ' +
+          'way to pay: the Payment Element cannot initialise, and checkout refuses every order ' +
+          'for want of a confirmed payment.',
+      )
+    }
+    if (!env.STRIPE_PUBLISHABLE_KEY.startsWith('pk_')) {
+      // A secret key pasted into the publishable slot would be rendered into
+      // a page. Cheap to check, and the consequence of not checking is total.
+      throw new Error(
+        'STRIPE_PUBLISHABLE_KEY must be a publishable key (it starts "pk_"). This value is sent ' +
+          'to the browser; a secret key here would be published.',
+      )
+    }
+    if (env.STRIPE_SECRET_KEY.startsWith('pk_')) {
+      throw new Error('STRIPE_SECRET_KEY looks like a publishable key. The two are swapped.')
     }
   }
 

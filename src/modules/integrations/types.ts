@@ -57,6 +57,20 @@ export interface PaymentIntent {
   amount: Money
   /** False only for a genuinely live provider. */
   isSimulated: boolean
+  /**
+   * The credential the *browser* needs to confirm this intent, when the
+   * provider has one.
+   *
+   * It is scoped to a single intent and cannot be used to read the account, so
+   * it is safe to put in a page — which is the only way a card can be
+   * collected without card data touching ARC's servers. Null from
+   * `retrieveIntent`, where nothing is being confirmed, and null from the
+   * simulated provider, which has nothing to confirm.
+   *
+   * Treat it as a bearer credential for that one payment: never log it, never
+   * put it in an audit row, never send it anywhere but the guest who is paying.
+   */
+  clientSecret: string | null
 }
 
 export interface RefundResult {

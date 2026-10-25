@@ -37,6 +37,9 @@ const INTENT = {
   status: 'succeeded',
   amount: 285_000,
   currency: 'mxn',
+  // Stripe returns this on both create and retrieve. `createIntent` surfaces
+  // it (the browser cannot confirm without it) and `retrieveIntent` drops it.
+  client_secret: 'pi_3MtwBwLkdIwHu7ix28a3tqPa_secret_9KzEr',
 }
 
 function provider(responses: Array<{ status: number; body: unknown }>) {
@@ -228,5 +231,56 @@ describe('StripePaymentsProvider', () => {
       }),
     ).toMatchObject({ ok: false, reason: 'non_positive_amount' })
     expect(calls).toHaveLength(0)
+  })
+})
+
+describe('the client secret', () => {
+  it('comes back from createIntent, because the browser cannot confirm without it', async () => {
+    const { fetchImpl } = stub([{ status: 200, body: INTENT }])
+    const provider = new StripePaymentsProvider({ secretKey: 'sk_test_x', fetch: fetchImpl })
+
+    const result = await provider.createIntent({
+      idempotencyKey: 'arc-cart-deadbeef',
+      amount: money(285_000, 'MXN'),
+      orderReference: 'cart:abc',
+      description: 'ARC Stay basket abc',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.data?.clientSecret).toBe(INTENT.client_secret)
+  })
+
+  it('fails rather than return an intent the browser cannot confirm', async () => {
+    // A payment form that renders and then does nothing when the guest presses
+    // Pay is a worse outcome than a page that says it cannot take a payment.
+    const { client_secret: _omitted, ...withoutSecret } = INTENT
+    const { fetchImpl } = stub([{ status: 200, body: withoutSecret }])
+    const provider = new StripePaymentsProvider({ secretKey: 'sk_test_x', fetch: fetchImpl })
+
+    const result = await provider.createIntent({
+      idempotencyKey: 'arc-cart-deadbeef',
+      amount: money(285_000, 'MXN'),
+      orderReference: 'cart:abc',
+      description: 'ARC Stay basket abc',
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.reason).toBe('missing_client_secret')
+  })
+
+  it('is withheld by retrieveIntent, which has no business handing one out', async () => {
+    /*
+     * Stripe returns the secret on a retrieve too. `retrieveIntent` runs
+     * *after* the guest has paid, answering "did this payment stand" — it
+     * needs no means of confirming one, and carrying the credential into that
+     * path only widens where it can be logged.
+     */
+    const { fetchImpl } = stub([{ status: 200, body: INTENT }])
+    const provider = new StripePaymentsProvider({ secretKey: 'sk_test_x', fetch: fetchImpl })
+
+    const result = await provider.retrieveIntent({ reference: INTENT.id })
+
+    expect(result.ok).toBe(true)
+    expect(result.data?.clientSecret).toBeNull()
   })
 })

@@ -55,6 +55,17 @@ because the app is unusable without them.
 | `ARC_DATA_MODE` | `demo` | Labels every figure as synthetic and refuses a live payment provider |
 | `AI_PROVIDER` | `mock` | Deterministic explanations, no network, no cost |
 | `PAYMENTS_PROVIDER` | `simulated` | Redundant with `ARC_DATA_MODE=demo`, which already refuses anything else; set explicitly so the intent is visible |
+
+Taking a real payment needs `ARC_DATA_MODE=pilot` (or `live`) plus all three
+Stripe variables: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and
+`STRIPE_PUBLISHABLE_KEY`. The app refuses to start without any one of them —
+half-configured payments is the condition where a guest can be charged and not
+booked, or booked and never un-booked. The publishable key is checked for its
+`pk_` prefix because it is rendered into a page, and the secret key is checked
+for *not* having one, because swapping the two is the mistake that happens.
+With a live provider configured, the Content-Security-Policy widens to allow
+`https://js.stripe.com` as a script and frame source; without one it does not.
+See ADR-031.
 | `ARC_DEMO_PASSPHRASE` | optional | See the front door below |
 
 `MAPS_PROVIDER`, `CONDITIONS_PROVIDER`, `MESSAGING_PROVIDER` and

@@ -803,3 +803,66 @@ argument rather than reading one from the row and hard-coding the other.
 **Consequences.** The seed states both defaults explicitly. A unit test asserts
 the zero case still works, so the fix cannot be read as "the platform share may
 never be zero".
+
+---
+
+## ADR-031 — The card is collected by Stripe's Payment Element, not by ARC
+
+**Status.** Accepted, 2026-10-25.
+
+**Context.** ARC had a Stripe adapter, a signature-verified webhook, a `FAILED`
+order state that returns capacity, a unique index enforcing one order per
+payment — and no way for a guest to pay. `checkout()` requires a confirmed
+payment intent when the provider is live (ADR-026) and nothing produced one.
+The build could take an order and could not take money. Every green test about
+payments was a test about simulated payments.
+
+**Decision.** Three parts.
+
+1. **`createIntent` returns Stripe's `client_secret`; `retrieveIntent` does
+   not.** The secret is a bearer credential for one payment. `createIntent` is
+   where a payment is being opened and the browser genuinely needs it;
+   `retrieveIntent` runs after the guest has paid, answering "did this stand",
+   and carrying the credential into that path only widens where it can be
+   logged.
+
+2. **The card is typed into an iframe Stripe serves,** through
+   `@stripe/stripe-js` and the imperative Elements API. No card number reaches
+   an ARC origin, server or log. The React wrapper is not taken — the
+   imperative API is two calls, and the loader is taken only because the script
+   *must* come from `js.stripe.com` for PCI scope to stay where it is.
+
+3. **The payment is opened server-side, at render, with a derived idempotency
+   key.** `modules/commerce/payment-session` computes the basket total from the
+   rows it just read and asks the provider for exactly that. The key is a hash
+   of `(cartId, totalMinor, currency)`, so re-rendering an unchanged basket
+   returns the same intent and the same secret, and changing the basket asks
+   for a different payment.
+
+**Why the derived key.** The basket page is a Server Component that re-renders
+on every `revalidatePath`. A random key per render would leave abandoned
+intents at Stripe and, worse, let one guest hold two confirmable secrets for
+the same basket at once.
+
+**Why the CSP widens conditionally.** Collecting a card needs
+`script-src https://js.stripe.com` and `frame-src https://js.stripe.com`. The
+hosted demo takes no payments and renders no payment form, so it keeps
+`frame-src 'none'` and no third-party script origin. Allowing Stripe's hosts
+everywhere "because the pilot will need them" is the kind of default nobody
+revisits.
+
+**Consequences.**
+
+- `STRIPE_PUBLISHABLE_KEY` joins the two secrets a live provider already
+  required, and is refused unless it starts `pk_` — this value is rendered into
+  a page, and a secret key pasted into the slot would be published. The secret
+  key is refused if it starts `pk_`, because the usual mistake is swapping them.
+- The window ADR-026 accepted is now reachable by a real guest: between Stripe
+  confirming and `checkout()` committing, a closed tab means a payment with no
+  order. It is still the right trade — the alternative needs an automatic
+  refund, which needs an `Approval` row naming a person (non-negotiable 6) —
+  and the guest is now told so, with the payment reference, rather than shown a
+  generic failure. `docs/operations.md` says how to reconcile it.
+- A payment is not opened for a basket with a blocking problem. Handing a guest
+  a chargeable credential for an order `checkout()` is going to refuse is the
+  one failure that takes money and gives nothing back.

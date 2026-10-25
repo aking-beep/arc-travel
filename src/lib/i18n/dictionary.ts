@@ -83,6 +83,18 @@ export const dictionary = {
     'guest.inBasket': 'In basket',
     'guest.checkout': 'Checkout',
     'guest.checkoutSimulated': 'Complete simulated checkout',
+    'guest.payNow': 'Pay',
+    'guest.paymentLoading': 'Loading the secure card form…',
+    'guest.paymentConfirming': 'Confirming your payment…',
+    'guest.paymentCardNote':
+      'Card details are entered directly with Stripe and never reach ARC Stay.',
+    'guest.paymentUnavailable':
+      'The card form could not load, so we cannot take a payment right now. Nothing has been charged. Try again, or ask the front desk.',
+    'guest.paymentDeclined': 'That payment did not go through. Nothing has been charged or booked.',
+    'guest.paymentPending':
+      'Your payment has not completed yet. Nothing has been booked. Check back shortly rather than paying again.',
+    'guest.paymentTakenNoBooking':
+      'Your payment went through but the booking did not. Nothing is lost — show the front desk this payment reference:',
     'guest.orderConfirmed': 'Your experiences are reserved',
     'guest.orderSimulatedNote':
       'This is a simulated confirmation. No card was charged and no partner was contacted.',
@@ -511,6 +523,18 @@ export const dictionary = {
     'guest.inBasket': 'En la canasta',
     'guest.checkout': 'Pagar',
     'guest.checkoutSimulated': 'Completar pago simulado',
+    'guest.payNow': 'Pagar',
+    'guest.paymentLoading': 'Cargando el formulario seguro de tarjeta…',
+    'guest.paymentConfirming': 'Confirmando tu pago…',
+    'guest.paymentCardNote':
+      'Los datos de tu tarjeta se capturan directamente con Stripe y nunca llegan a ARC Stay.',
+    'guest.paymentUnavailable':
+      'No se pudo cargar el formulario de tarjeta, así que no podemos recibir un pago ahora. No se cobró nada. Inténtalo de nuevo o pregunta en recepción.',
+    'guest.paymentDeclined': 'Ese pago no se completó. No se cobró nada ni se reservó nada.',
+    'guest.paymentPending':
+      'Tu pago aún no se ha completado. No se ha reservado nada. Vuelve a revisar en un momento en vez de pagar otra vez.',
+    'guest.paymentTakenNoBooking':
+      'Tu pago se realizó pero la reserva no. No se pierde nada: muestra esta referencia de pago en recepción:',
     'guest.orderConfirmed': 'Tus experiencias están reservadas',
     'guest.orderSimulatedNote':
       'Esta es una confirmación simulada. No se cobró ninguna tarjeta ni se contactó a ningún socio.',

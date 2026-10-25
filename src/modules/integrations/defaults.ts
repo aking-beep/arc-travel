@@ -52,6 +52,9 @@ export class SimulatedPaymentsProvider implements PaymentsProvider {
       status: 'succeeded' as const,
       amount: input.amount,
       isSimulated: true,
+      // Nothing to confirm, so nothing to confirm it with. A plausible-looking
+      // secret here would get as far as the browser before failing.
+      clientSecret: null,
     })
   }
 

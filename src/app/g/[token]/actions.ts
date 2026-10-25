@@ -183,7 +183,22 @@ export async function checkoutAction(_prev: FormState, formData: FormData): Prom
     // replays rather than duplicating. A fresh basket gets a fresh key.
     const idempotencyKey = String(formData.get('idempotencyKey') ?? '') || randomUUID()
 
-    const result = await checkout({ cartId, guestId: context.guestId, idempotencyKey })
+    /*
+     * The provider's reference for a payment the *browser* already confirmed.
+     *
+     * Client-supplied, and trusted for nothing: `checkout()` reads the amount
+     * and status back from the provider and refuses anything that does not
+     * match the basket (ADR-026). Absent in demo mode, where a reference is
+     * refused rather than ignored.
+     */
+    const paymentIntentId = String(formData.get('paymentIntentId') ?? '') || null
+
+    const result = await checkout({
+      cartId,
+      guestId: context.guestId,
+      idempotencyKey,
+      paymentIntentId,
+    })
     reference = result.reference
   } catch (error) {
     return toFormState(error)
