@@ -30,6 +30,29 @@ const envSchema = z.object({
   ARC_DATA_MODE: z.enum(['demo', 'pilot', 'live']).default('demo'),
   ARC_ENABLE_OUTBOUND_MESSAGING: booleanish.default(false),
 
+  /**
+   * Keys the seeded guests' portal tokens. See `src/lib/demo-portals.ts`.
+   *
+   * A portal token is a bearer credential, and the seed's used to be literals
+   * in the repository. Optional here because local development and the test
+   * suites use the documented non-secret fallback; required in production by
+   * the check in `getEnv()`.
+   */
+  ARC_SEED_TOKEN_SECRET: z.string().optional(),
+
+  /**
+   * Deliberately open the hosted demo to anyone with the URL.
+   *
+   * `ARC_DEMO_PASSPHRASE` is the front-door lock, and it is opt-in, so a
+   * production deployment that simply never set it was wide open and said
+   * nothing. The sign-in page hands out an owner session with no credential
+   * while `ARC_DATA_MODE=demo`, so "wide open" means a stranger can act as the
+   * hotel. That is a reasonable thing to want for a conference URL, and an
+   * unreasonable thing to arrive at by forgetting a variable, so it now has to
+   * be said out loud.
+   */
+  ARC_ALLOW_OPEN_DEMO: booleanish.default(false),
+
   AI_PROVIDER: z.enum(['mock', 'anthropic']).default('mock'),
   ANTHROPIC_API_KEY: z.string().optional(),
   AI_MODEL: z.string().default('claude-sonnet-5-5'),
@@ -166,6 +189,19 @@ function assertProvidersAreImplemented(source: NodeJS.ProcessEnv): void {
 
 let cached: Env | null = null
 
+/**
+ * The non-secret that keys portal tokens on a developer machine.
+ *
+ * Declared here rather than imported from `src/lib/demo-portals.ts`, which is
+ * where it is used. That module needs `node:crypto` for the HMAC, this module
+ * is reached from `src/middleware.ts`, and middleware runs on the edge runtime
+ * where `node:crypto` does not exist — so importing the one into the other
+ * takes the whole site down with "Native module not found: node:crypto" on
+ * every request. `src/lib/demo-gate.ts` uses WebCrypto for the same reason.
+ * The dependency therefore points the other way: `demo-portals` imports this.
+ */
+export const LOCAL_SEED_TOKEN_SECRET = 'arc-stay-local-demo-tokens-not-for-any-deployment'
+
 /** Development-only fallbacks so `npm run dev` works with a bare .env. */
 const DEV_AUTH_SECRET = 'arc-stay-development-only-secret-do-not-use-in-production'
 const DEV_ANALYTICS_SALT = 'arc-stay-development-only-analytics-salt-not-for-production'
@@ -245,6 +281,55 @@ export function getEnv(): Env {
     }
     if (env.STRIPE_SECRET_KEY.startsWith('pk_')) {
       throw new Error('STRIPE_SECRET_KEY looks like a publishable key. The two are swapped.')
+    }
+  }
+
+  /*
+   * A production demo is either locked or explicitly open. Never open by
+   * omission.
+   *
+   * The two things behind this door, while `ARC_DATA_MODE=demo`: the sign-in
+   * page's account switcher, which issues an owner, partner or admin session
+   * with no credential (ADR-028), and the seeded guest portals, whose tokens
+   * are bearer credentials. A stranger with the URL can change a guest's
+   * preferences, empty their basket, cancel their bookings, verify a partner
+   * or publish an experience.
+   *
+   * Not enforced outside production, because `npm run dev`, the test suites and
+   * the E2E runner all want the door open and none of them is on the internet.
+   */
+  if (env.NODE_ENV === 'production' && env.ARC_DATA_MODE === 'demo') {
+    const locked = (process.env.ARC_DEMO_PASSPHRASE ?? '').length > 0
+    if (!locked && !env.ARC_ALLOW_OPEN_DEMO) {
+      throw new Error(
+        'A production demo must be locked or explicitly open. While ARC_DATA_MODE=demo the ' +
+          'sign-in page issues an owner session with no credential and the seeded guest portals ' +
+          'are reachable by token, so anyone with the URL can act as the hotel or as a guest. ' +
+          'Set ARC_DEMO_PASSPHRASE to lock the front door, or ARC_ALLOW_OPEN_DEMO=1 to say you ' +
+          'meant it.',
+      )
+    }
+
+    /*
+     * And the tokens must not be the ones in the repository.
+     *
+     * Refused even when the demo is deliberately open, because the two are
+     * different decisions: "anyone may walk in" is a choice about this
+     * deployment, while leaving the fallback secret in place means every reader
+     * of the repository can compute a guest's portal token for every
+     * deployment that ever did it.
+     */
+    if (
+      !env.ARC_SEED_TOKEN_SECRET ||
+      env.ARC_SEED_TOKEN_SECRET === LOCAL_SEED_TOKEN_SECRET ||
+      env.ARC_SEED_TOKEN_SECRET.length < 32
+    ) {
+      throw new Error(
+        'ARC_SEED_TOKEN_SECRET must be set to at least 32 random characters in production, and ' +
+          'must not be the local fallback. It keys the seeded guests\' portal tokens, which are ' +
+          'bearer credentials — without it they are computable by anyone who has read the ' +
+          'repository. See src/lib/demo-portals.ts.',
+      )
     }
   }
 

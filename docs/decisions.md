@@ -1039,3 +1039,73 @@ name does not contain "test" before it drops anything.
 a Rust engine each reading `process.env` with their own rules — which is the
 disagreement that cost this project a week of red deployments. It also cleared
 three high-severity advisories in `deepmerge-ts`; `npm audit` reports none.
+
+## ADR-035 — Portal tokens are derived from a secret, and an open demo must say so
+
+**Status:** accepted · 2026-10-26
+
+**Context.** Item 11 of the launch-readiness list: "anyone can currently open
+the demo guest portals and change things." True, for two unrelated reasons.
+
+The seeded stays' portal tokens were `demo-portal-01` through `demo-portal-06`,
+literals in `prisma/seed.ts`. A portal token is a bearer credential —
+`resolvePortalContext` takes one and returns a guest, and the holder can then
+change that guest's preferences, add to their basket and cancel their bookings.
+So the credential for six guests on every ARC Stay deployment was readable by
+anyone who had opened the repository. The remaining seeded stays were no better:
+their tokens came from `seededToken(rng)`, and the PRNG's seed, `20_251_020`, is
+a literal in the same file.
+
+Separately, the front-door lock was opt-in. `ARC_DEMO_PASSPHRASE` unset meant no
+gate at all, which is right for `npm run dev` and wrong for a public URL — and
+nothing anywhere said which state a deployment was in. While
+`ARC_DATA_MODE=demo` the sign-in page also issues an owner, partner or admin
+session with no credential (ADR-028), so "no gate" means a stranger with the URL
+can verify a partner, publish an experience or read every guest's dietary notes.
+
+**Decision.** Two changes, one for each cause.
+
+Portal tokens are an HMAC of `ARC_SEED_TOKEN_SECRET` over a per-stay label
+(`src/lib/demo-portals.ts`). Deterministic and unguessable are not in conflict:
+the fixtures have to reproduce byte-for-byte, because Playwright asserts on them
+and demo screenshots have to keep working, and an HMAC is as deterministic as a
+PRNG while not being computable without the key. A documented non-secret
+fallback keeps a clean checkout working; production refuses to start on that
+fallback, on a secret under 32 characters, or on none at all.
+
+And a production demo is either locked or explicitly open. Setting
+`ARC_DEMO_PASSPHRASE` locks it; setting `ARC_ALLOW_OPEN_DEMO=1` says the
+openness was intended. Setting neither is now a startup error. `/admin/health`
+shows which state the deployment is in, because the previous arrangement's real
+failure was not that the door was open but that nothing said so.
+
+**Consequences.**
+
+Changing the secret changes every seeded token, so a printed QR code or a shared
+link stops working. Reseed after changing it.
+
+`playwright.config.ts` mints a random secret per run rather than carrying a
+fixed one. A fixed secret in the repository would have exactly the property the
+production check exists to reject, and the check is keyed on `NODE_ENV` — which
+means it fires for a local `next start` too, and the E2E runner is an open demo,
+so it declares `ARC_ALLOW_OPEN_DEMO=1`. Declaring it is the honest answer:
+keying the check on something narrower would mean it never ran anywhere it could
+be tested.
+
+The seed prints the portal links on a developer machine and withholds them in
+production. `db:ensure-seed` runs inside the hosted build, and there is no point
+deriving a credential from a secret and then printing it, next to the guest's
+name, into a build log that outlives the deployment.
+
+`LOCAL_SEED_TOKEN_SECRET` is declared in `src/lib/env.ts` rather than in
+`demo-portals.ts`, where it is used. `demo-portals` needs `node:crypto`, `env`
+is reached from `src/middleware.ts`, and middleware runs on the edge runtime
+where `node:crypto` does not exist — importing the one into the other took every
+request down with "Native module not found: node:crypto". `src/lib/demo-gate.ts`
+uses WebCrypto for the same reason. The dependency points the other way.
+
+**What this does not fix.** Everyone who gets through the front door still
+shares one set of seeded guests, and can still change their data. A per-visitor
+sandbox is a different feature, and ADR-028's credential-free switcher is still
+the thing that makes a demo demonstrable. This ADR makes the door closable and
+the credentials unguessable; it does not make a shared demo private.

@@ -1,4 +1,5 @@
 import { expect, type Page } from '@playwright/test'
+import { demoPortalToken } from '../../src/lib/demo-portals'
 
 /**
  * Shared E2E helpers.
@@ -11,14 +12,23 @@ export const OWNER_EMAIL = 'elena@casaolas.demo'
 export const PARTNER_EMAIL = 'mariana@olasverdes.demo'
 export const ADMIN_EMAIL = 'admin@arctravel.demo'
 
-/** Guest portal tokens the seed pins so E2E links never move. */
+/**
+ * Guest portal tokens the seed pins so E2E links never move.
+ *
+ * Derived rather than written, by the same function the seed uses, so the specs
+ * keep working while the tokens stop being public. They were the literals
+ * `demo-portal-01`/`03`/`05`, and a portal token is a bearer credential — see
+ * `src/lib/demo-portals.ts`. These resolve against whatever
+ * `ARC_SEED_TOKEN_SECRET` the run has, which for a local run is the documented
+ * non-secret fallback.
+ */
 export const GUEST_PORTAL_TOKENS = {
   /** Harriet Okonjo — intake complete, beginner surfer, in house. */
-  completedIntake: 'demo-portal-01',
+  completedIntake: demoPortalToken(1),
   /** Mateo Ferrer — advanced surfer, packed pace. */
-  advancedSurfer: 'demo-portal-03',
+  advancedSurfer: demoPortalToken(3),
   /** Yuki Tanaka — arriving today, no transport. */
-  arrivingToday: 'demo-portal-05',
+  arrivingToday: demoPortalToken(5),
 } as const
 
 export async function signInAs(page: Page, email: string, next = '/'): Promise<void> {

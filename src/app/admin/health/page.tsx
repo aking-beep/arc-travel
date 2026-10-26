@@ -30,6 +30,19 @@ export default async function HealthPage() {
   const actor = await requireActor()
   const env = getEnv()
 
+  /*
+   * Three states, and the difference matters to whoever is reading this
+   * page. While ARC_DATA_MODE=demo the sign-in switcher issues an owner
+   * session with no credential (ADR-028) and the seeded guest portals are
+   * reachable by token, so "open" means a stranger with the URL can act as
+   * the hotel.
+   */
+  const frontDoor = (process.env.ARC_DEMO_PASSPHRASE ?? '').length > 0
+    ? 'passphrase required'
+    : env.ARC_ALLOW_OPEN_DEMO
+      ? 'OPEN — deliberately (ARC_ALLOW_OPEN_DEMO)'
+      : 'open — no passphrase set'
+
   const organization = await prisma.organization.findFirst({
     orderBy: { createdAt: 'asc' },
     select: { id: true, name: true },
@@ -189,6 +202,17 @@ export default async function HealthPage() {
                   value: env.ARC_ENABLE_OUTBOUND_MESSAGING ? 'ENABLED' : 'disabled',
                 },
                 { label: 'AI rate limit', value: `${env.AI_RATE_LIMIT_PER_MINUTE}/min per user` },
+                /*
+                 * Who can get in. Shown because the answer used to be
+                 * unknowable from inside the product: the passphrase gate is
+                 * opt-in, so a deployment that never set one was open and said
+                 * nothing anywhere. In production that is now a startup
+                 * refusal unless it was asked for; here it is simply visible.
+                 */
+                {
+                  label: 'Front door',
+                  value: frontDoor,
+                },
               ].map((row) => (
                 <div key={row.label} className="flex items-center justify-between gap-3 py-2">
                   <dt className="text-sand-600">{row.label}</dt>

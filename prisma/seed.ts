@@ -48,6 +48,11 @@ import { generateConditions } from './seed/conditions'
 import { PLACES, TRAVEL_EDGES } from './seed/destination'
 import { AMENITIES, GUESTS, ROOM_TYPES, STAFF } from './seed/people'
 import { createRng, seededReference, seededToken, type Rng } from './seed/rng'
+import {
+  DEMO_PORTAL_COUNT,
+  demoPortalToken,
+  seededPortalToken,
+} from '../src/lib/demo-portals'
 import { addDays, dateRange, fromDateKey, localInstant, toDateKey, type DateKey } from '../src/lib/dates'
 import { money } from '../src/lib/money'
 import { resolveCommission, splitEarnings, type CommissionRuleInput } from '../src/modules/commerce/commission'
@@ -698,7 +703,7 @@ async function seedGuestsAndStays(
         status: rng.bool(0.04) ? StayStatus.CANCELLED : StayStatus.CHECKED_OUT,
         roomRevenueMinor: (roomType?.baseRateMinor ?? 300000) * nights,
         currency: CURRENCY,
-        portalToken: seededToken(rng),
+        portalToken: seededPortalToken(`history-${String(i)}`),
       },
     })
     stays.push({ id: stay.id, guestId, checkIn, checkOut, status: stay.status })
@@ -746,9 +751,17 @@ async function seedGuestsAndStays(
         status: plan.status,
         roomRevenueMinor: (roomType?.baseRateMinor ?? 300000) * plan.nights,
         currency: CURRENCY,
-        // Stable tokens for the first few so demo QR links do not move between
-        // seeds; the rest are seeded-random.
-        portalToken: i < 6 ? `demo-portal-${String(i + 1).padStart(2, '0')}` : seededToken(rng),
+        /*
+         * Stable tokens so demo QR links do not move between seeds — but
+         * derived from ARC_SEED_TOKEN_SECRET, not written here. These used to
+         * be the literals `demo-portal-01`..`06`, which meant anyone who had
+         * read this file could open a hosted demo's guest portals and act as
+         * those guests. See src/lib/demo-portals.ts.
+         */
+        portalToken:
+          i < DEMO_PORTAL_COUNT
+            ? demoPortalToken(i + 1)
+            : seededPortalToken(`current-${String(i)}`),
         arrivalNotes:
           plan.offsetIn === 0 ? 'Arriving today. No transport booked yet.' : null,
       },
@@ -1134,9 +1147,31 @@ async function main(): Promise<void> {
   console.log('  orders            %d simulated (%d line items)', orderCount, itemCount)
   console.log('')
   console.log('  Sign in at /sign-in — owner: elena@casaolas.demo')
-  console.log('  Guest portal links (QR targets):')
-  for (const t of portalTokens) {
-    console.log('    /g/%s  → %s %s', t.portalToken, t.guest.firstName, t.guest.lastName)
+
+  /*
+   * The portal links are printed on a developer machine and withheld in
+   * production.
+   *
+   * `npm run db:ensure-seed` runs this script in the hosted build, so anything
+   * printed here lands in a build log that outlives the deployment and is
+   * visible to anyone who can see the project. A portal token is a bearer
+   * credential; there is no point deriving it from a secret and then printing
+   * it next to the guest's name.
+   *
+   * An operator who needs one can read it from the database, or from the stay's
+   * page in the product, both of which require being someone.
+   */
+  if (process.env.NODE_ENV === 'production') {
+    console.log(
+      '  Guest portal links: %d minted, not printed. A build log is not the place for a ' +
+        'bearer credential — read them from the stay pages in /owner/arrivals.',
+      portalTokens.length,
+    )
+  } else {
+    console.log('  Guest portal links (QR targets):')
+    for (const t of portalTokens) {
+      console.log('    /g/%s  → %s %s', t.portalToken, t.guest.firstName, t.guest.lastName)
+    }
   }
   console.log('')
   console.log('  All money and metrics above are DEMO DATA. No real bookings exist.')

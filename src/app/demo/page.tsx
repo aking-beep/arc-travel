@@ -6,6 +6,7 @@ import { DemoBanner } from '@/components/demo-banner'
 import { LocaleSwitcher } from '@/components/locale-switcher'
 import { getTranslator } from '@/lib/i18n/server'
 import { prisma } from '@/lib/db'
+import { demoPortalToken } from '@/lib/demo-portals'
 
 /**
  * The door into the four operational surfaces, so a demo can start from any of
@@ -25,9 +26,14 @@ export default async function HomePage() {
     select: { id: true, name: true, tagline: true, roomCount: true },
   })
 
+  /*
+   * Looked up by the derived token rather than by a `demo-portal-` prefix,
+   * which was the only reason that prefix existed. See
+   * `src/lib/demo-portals.ts`: a portal token is a bearer credential, and the
+   * literal ones were in the repository.
+   */
   const demoStay = await prisma.stay.findFirst({
-    where: { portalToken: { startsWith: 'demo-portal-' } },
-    orderBy: { portalToken: 'asc' },
+    where: { portalToken: demoPortalToken(1) },
     select: { portalToken: true, guest: { select: { firstName: true } } },
   })
 

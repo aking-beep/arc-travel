@@ -138,7 +138,9 @@ for *not* having one, because swapping the two is the mistake that happens.
 With a live provider configured, the Content-Security-Policy widens to allow
 `https://js.stripe.com` as a script and frame source; without one it does not.
 See ADR-031.
-| `ARC_DEMO_PASSPHRASE` | optional | See the front door below |
+| `ARC_DEMO_PASSPHRASE` | one of these two | See the front door below |
+| `ARC_ALLOW_OPEN_DEMO` | one of these two | Says you meant the demo to be open to anyone with the URL |
+| `ARC_SEED_TOKEN_SECRET` | 32+ random chars | Keys the seeded guests' portal tokens, which are bearer credentials |
 
 `MAPS_PROVIDER`, `CONDITIONS_PROVIDER`, `MESSAGING_PROVIDER` and
 `ANALYTICS_PROVIDER` have exactly one value each — the offline implementation —
@@ -192,6 +194,46 @@ that matters to you.
 It is a lock on the front door, not an authorisation mechanism. Every role and
 tenant check behind it still re-derives from the database, and the guest portal
 token is still the only guest credential.
+
+### Open by decision, never by omission
+
+The gate is opt-in, which meant a production deployment that simply never set a
+passphrase was wide open and said so nowhere. That is now a startup refusal: in
+production, with `ARC_DATA_MODE=demo`, ARC will not start unless either
+`ARC_DEMO_PASSPHRASE` is set or `ARC_ALLOW_OPEN_DEMO=1` says the openness was
+intended. Both are fine answers. Neither is.
+
+`/admin/health` shows which of the three states a deployment is in — passphrase
+required, deliberately open, or open with no passphrase set (the last reachable
+only outside production).
+
+### The seeded guests' portal tokens
+
+A portal token is a bearer credential. `resolvePortalContext` takes one and
+returns a guest, after which the holder can change that guest's preferences,
+add to their basket and cancel their bookings.
+
+The seed's tokens were `demo-portal-01` through `demo-portal-06`, written into
+`prisma/seed.ts` — so anyone who had read the repository could open a hosted
+demo's guest portals and act as those guests. The rest of the seeded stays were
+no better: their tokens came from a PRNG whose seed was a literal in the same
+directory.
+
+They are an HMAC of `ARC_SEED_TOKEN_SECRET` now (`src/lib/demo-portals.ts`):
+deterministic, so the Playwright specs and demo screenshots still work, and not
+derivable without the secret. Production refuses to start without one, refuses
+the documented local fallback, and refuses anything under 32 characters.
+
+```bash
+openssl rand -hex 32
+```
+
+Changing the secret changes every seeded token, so any QR code already printed
+or link already shared stops working. Reseed after changing it.
+
+The seed prints the links on a developer machine and withholds them in
+production — `db:ensure-seed` runs inside the hosted build, and a build log
+outlives the deployment.
 
 Platform-level protection is the better option where it is available: on Vercel,
 Deployment Protection with a password is a Pro feature, and the Hobby plan offers
