@@ -31,10 +31,11 @@
     "lint:fix": "eslint . --fix",
     "db:constraints": "prisma db execute --file prisma/constraints.sql",
     "db:ensure-seed": "tsx prisma/ensure-seed.ts",
+    "db:rebuild": "tsx prisma/rebuild.ts",
     "restore-drill": "./scripts/restore-drill.sh",
     "restore-smoke": "tsx scripts/restore-smoke.ts",
     "load-test": "node scripts/load-test.mjs",
-    "vercel-build": "prisma generate && prisma migrate deploy && npm run db:ensure-seed && next build"
+    "vercel-build": "prisma generate && npm run db:rebuild && prisma migrate deploy && npm run db:ensure-seed && next build"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.1",

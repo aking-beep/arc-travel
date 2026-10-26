@@ -124,6 +124,7 @@ The seed prints the full list each time it runs.
 | `npm run restore-drill` | Rehearse the backup restore end to end (`docs/operations.md`) |
 | `npm run db:constraints` | Re-apply `prisma/constraints.sql` after a `pg_restore` (ADR-020); normally arrives with the migrations |
 | `npm run db:seed` | Reseed (truncates first; idempotent and deterministic) |
+| `npm run db:rebuild` | Reset a **demo** schema so migrations can rebuild it — needs `ARC_DB_REBUILD=1`, refuses outside demo mode ([`docs/deployment.md`](docs/deployment.md)) |
 | `npm run db:ensure-seed` | Seed only if the database is empty — for a hosted demo, where a redeploy must not wipe data |
 | `npm run db:studio` | Prisma Studio |
 | `npm run typecheck` | `tsc --noEmit` |
@@ -134,7 +135,7 @@ The seed prints the full list each time it runs.
 | `npm run load-test` | Read-only load test against a running server (`docs/operations.md`) |
 | `npm run build` | Production build |
 | `npm run verify` | typecheck → lint → test → build |
-| `npm run vercel-build` | Hosted build: generate → `migrate deploy` → seed-if-empty → build. See [`docs/deployment.md`](docs/deployment.md) |
+| `npm run vercel-build` | Hosted build: generate → rebuild-if-asked → `migrate deploy` → seed-if-empty → build. See [`docs/deployment.md`](docs/deployment.md) |
 
 ## Testing
 

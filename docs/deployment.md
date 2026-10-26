@@ -61,7 +61,28 @@ there, refuses to touch it, and fails the build. That is the right behaviour: it
 cannot know whether the existing schema matches the first migration or is three
 months divergent, and guessing is how data gets dropped.
 
-The fix is to tell it, once, that both migrations are already applied:
+There are two fixes, and which one is right depends entirely on whether the
+data in front of you is worth keeping.
+
+### If it is a demo database, reset it
+
+A demo's whole content is the deterministic seed, so there is nothing to
+preserve and nothing to claim. Set `ARC_DB_REBUILD=1` on the project and
+redeploy. `prisma/rebuild.ts` runs ahead of `migrate deploy`, resets the
+`public` schema, and the migrations then build it from scratch with
+`db:ensure-seed` refilling it. **Remove the flag afterwards** — left set, every
+future deploy resets the database.
+
+It refuses unless `ARC_DATA_MODE=demo`, and refuses again if the database is
+named like a production one, because the mode variable and the database
+somebody actually pointed at have disagreed before. The same script is how you
+reset a demo whose seeded availability horizon has run out.
+
+Locally that is `ARC_DB_REBUILD=1 npm run db:rebuild && npm run setup`.
+
+### If the data matters, baseline it
+
+Tell Prisma, once, that both migrations are already applied:
 
 ```bash
 # Check first. This should list both migrations as "not yet applied" against a
