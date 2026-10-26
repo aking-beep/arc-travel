@@ -1205,15 +1205,27 @@ selected `verification` alone. `VERIFICATION_STANDING_SELECT` exists so a query
 that feeds a verification claim loads what the claim needs; selecting the column
 by itself is what made `verification !== 'VERIFIED'` the easy wrong answer.
 
-**The two Supplier constraints are re-declared `NOT VALID`.** Added validating,
+**The two Supplier constraints are declared `NOT VALID`.** Added validating,
 they check every existing row, and the rows they reject are precisely the
 pre-ADR ones this amendment is about — so a deployment carrying a single
 verified partner would have stopped mid-migration. Demoting those rows is not
 the answer either: this ADR keeps the stored decision, which was correct on the
 evidence available, and changes only what ARC derives from it. `NOT VALID` says
 exactly that — every write from here on carries its evidence, and history keeps
-its own. A third constraints migration, for the reason the paragraph above
-gives.
+its own.
+
+This was first written as a *third* constraints migration re-declaring the two
+`NOT VALID` — which does not work, and review caught it. `migrate deploy`
+applies migrations in order and stops at the first failure, so the validating
+version in `20261026000001_verification_constraints` failed before anything
+could replace it; the same went for `constraints.sql`, where the validating
+block came first. Reproduced against a database holding one pre-ADR verified
+row: `P3018`, `check constraint "supplier_verified_is_evidenced" of relation
+"Supplier" is violated by some row`. The declaration is now `NOT VALID` where it
+is first added, and there is no third migration. Editing an applied migration
+is still the rule's exception rather than the rule: this one had been applied
+only to the hosted demo, which took the `NOT VALID` re-declaration in the same
+`migrate deploy` run and so already holds the corrected form.
 
 ## ADR-037 — Monitoring watches the data, not only the requests
 
