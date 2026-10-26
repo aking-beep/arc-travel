@@ -76,7 +76,9 @@ Domain modules import Prisma enums and types from `@/lib/prisma-types`, not from
 ### Authorisation
 
 Every tenant-scoped operation starts with a call into
-`src/modules/tenancy/context.ts`. Never trust a client-supplied
+`src/modules/tenancy/context.ts`. On the partner surface, a *read* goes through
+`assertSupplierAccess` and a *write* through `assertActingAsSupplier`, which
+also requires the `SUPPLIER` membership for that supplier — see ADR-041. Never trust a client-supplied
 `organizationId`; never infer ownership from a URL. On the guest surface, start
 with `resolvePortalContext(token)` — no guest-surface action accepts a guest id
 from the client.
@@ -212,6 +214,22 @@ Two E2E habits, learned the hard way and recorded in the specs:
 | A password reset answers identically for an address with no account | ADR-040. The accounts are a named list of boutique hotels; "is this hotel on ARC" is not information a public form should confirm |
 | Completing a password reset does not sign you in | ADR-040. A link in a mailbox is weaker proof than a password, and a session would make a readable inbox equivalent to a credential |
 | A guest's portal link is emailed only when an owner presses a button | ADR-040. The token is a bearer credential (ADR-035); mailing it automatically would send one to whatever address a front desk mistyped |
+| `Supplier` carries `claimedInsurer` *and* `insuranceOnFile` | ADR-041. The first is what the partner says; the second is ARC having seen a certificate. A partner may write the claim and never the check, and `supplier_insurance_on_file_is_checked` refuses the shortcut |
+| A partner's experience form has no status field and no supplier field | ADR-041. A partner drafts and the hotel publishes, and the supplier is whoever is signed in. A field that named either would eventually be set to the wrong one |
+| `updateOwnExperience` refuses while PUBLISHED but `setOwnPrice` does not | ADR-041. A basket holds the duration and meeting point a guest agreed to; it also holds the price it captured, and a new price is a new row for the next guest |
+| `assertActingAsSupplier` is stricter than `assertSupplierAccess` | ADR-041. An owner may *read* their partner's view. An owner writing a business's own description in that business's name is the problem the ADR starts from |
+| `acceptJoinRequest` reaches `invitePartner` through a dynamic import | ADR-041. That path already has ADR-021's refusal, the one transaction and the ADR-040 email. A second implementation would drift, and the refusal would drift first |
+| Declining a join request emails nobody | ADR-041. ARC writing to a business in the hotel's name, in wording the hotel never saw, is not ARC's to send. The note is the owner's own record |
+| A duplicate join request gets the same answer as the first | ADR-041. "You already asked" would let an unauthenticated form answer "is this address already working with this hotel" |
+| `supplier_insurance_on_file_is_checked` is added `NOT VALID` | ADR-041, for the ADR-036 reason: the rows it rejects are the pre-ADR verified ones that ADR deliberately keeps, and `migrate deploy` stops at the first failure |
+| The seed's fixture partners have no insurance on file, so every demo listing warns about it | ADR-041. They carried `insuranceOnFile: true` while unverified with no recorded check — the exact shortcut ADR-036 exists about. The warning is true, and it was true before |
+| `/sign-up/partner` takes no password and creates no account | ADR-041. It writes one `SupplierJoinRequest` and nothing else. The hotel accepting is what creates the supplier, the agreement and the login |
+| A direct customer's trip is a `Stay` | ADR-042. The guest surface reasons about days — the planner, the gate, travel times, dated departures — so a stay-less order meant a second code path through all of it, and the gate would have diverged first |
+| `Stay.kind` exists and four surfaces filter on it | ADR-042. A direct trip must never read as a room booking: not in arrivals, not in the briefing, not in occupancy, and not in the per-stay revenue figure |
+| A direct trip has no check-in control and no room type | ADR-042, and `direct_stay_has_no_room` enforces the second one in the database. "Checked in" is about a room |
+| The revenue headline excludes direct bookings from the numerator as well as the denominator | ADR-042. Otherwise a good month of direct business reads as the hotel's own guests spending more — ADR-007's instinct applied to a new pair of numbers |
+| A direct booking still pays the hotel its commission | ADR-042. The listing, the price and the agreement are the hotel's, and the storefront is what the person chose. A different share is a commission rule, not a code change |
+| `/sign-up/direct` hands over to `establishAccount` rather than creating a user | ADR-042. That path already takes over a front desk's placeholder, refuses an address somebody holds, and handles both races |
 
 ## Review
 

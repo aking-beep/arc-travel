@@ -11,11 +11,13 @@ import { Money } from '@/components/money'
 import { signOutAction } from '@/app/actions'
 import { getTranslator } from '@/lib/i18n/server'
 import type { AppLocale } from '@/lib/i18n'
-import { toLocalTimeString } from '@/lib/dates'
-import { OrderStatus, StayStatus } from '@/lib/prisma-types'
+import { addDays, toDateKey, toLocalTimeString } from '@/lib/dates'
+import { OrderStatus, StayKind, StayStatus } from '@/lib/prisma-types'
 import { getActor } from '@/modules/auth/service'
 import { experienceTitle, getGuestAccount, type AccountStay } from '@/modules/guest/account'
+import { listDirectStorefronts } from '@/modules/guest/direct'
 import { ClaimForm } from './claim-form'
+import { TripForm } from './trip-form'
 
 export const metadata = { title: 'Your bookings · ARC Stay' }
 
@@ -37,7 +39,13 @@ export default async function AccountPage() {
   if (!actor) redirect('/sign-in?next=%2Fme')
 
   const { locale, t } = await getTranslator()
-  const account = await getGuestAccount(actor.userId)
+  const [account, storefronts] = await Promise.all([
+    getGuestAccount(actor.userId),
+    listDirectStorefronts(),
+  ])
+
+  // Server-computed: a client component must not read the clock during render.
+  const today = toDateKey(new Date())
 
   // A signed-in user whose account row vanished between the session and this
   // read. Sending them to sign in again is the honest answer.
@@ -103,6 +111,29 @@ export default async function AccountPage() {
             />
           </CardContent>
         </Card>
+        {storefronts.length > 0 ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">{t('account.tripTitle')}</CardTitle>
+              <p className="text-sand-600 text-sm">{t('account.tripSub')}</p>
+            </CardHeader>
+            <CardContent>
+              <TripForm
+                labels={{
+                  property: t('account.tripProperty'),
+                  from: t('account.tripFrom'),
+                  to: t('account.tripTo'),
+                  party: t('account.tripParty'),
+                  submit: t('account.tripSubmit'),
+                  pending: t('account.tripPending'),
+                }}
+                storefronts={storefronts}
+                defaultFromDate={today}
+                defaultToDate={addDays(today, 2)}
+              />
+            </CardContent>
+          </Card>
+        ) : null}
       </main>
     </div>
   )
@@ -136,7 +167,12 @@ function StayCard({
               </p>
             ) : null}
           </div>
-          <Badge tone={timingTone(stay)}>{timingLabel(stay, t)}</Badge>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {stay.kind === StayKind.DIRECT ? (
+              <Badge tone="accent">{t('account.tripBadge')}</Badge>
+            ) : null}
+            <Badge tone={timingTone(stay)}>{timingLabel(stay, t)}</Badge>
+          </div>
         </div>
       </CardHeader>
 
@@ -144,20 +180,24 @@ function StayCard({
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-4">
           <div>
             <dt className="text-sand-500 text-xs tracking-wide uppercase">
-              {t('account.checkIn')}
+              {stay.kind === StayKind.DIRECT ? t('account.tripFrom') : t('account.checkIn')}
             </dt>
             <dd className="mt-0.5 font-medium">
               {stay.checkIn}
-              <span className="text-sand-500 font-normal"> · {stay.checkInTime}</span>
+              {stay.kind === StayKind.DIRECT ? null : (
+                <span className="text-sand-500 font-normal"> · {stay.checkInTime}</span>
+              )}
             </dd>
           </div>
           <div>
             <dt className="text-sand-500 text-xs tracking-wide uppercase">
-              {t('account.checkOut')}
+              {stay.kind === StayKind.DIRECT ? t('account.tripTo') : t('account.checkOut')}
             </dt>
             <dd className="mt-0.5 font-medium">
               {stay.checkOut}
-              <span className="text-sand-500 font-normal"> · {stay.checkOutTime}</span>
+              {stay.kind === StayKind.DIRECT ? null : (
+                <span className="text-sand-500 font-normal"> · {stay.checkOutTime}</span>
+              )}
             </dd>
           </div>
           <div>

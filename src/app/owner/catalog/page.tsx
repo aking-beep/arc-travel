@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { AlertTriangle, Plus, ShieldQuestion } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { LinkButton } from '@/components/ui/button'
@@ -28,6 +29,14 @@ export default async function CatalogPage() {
   ])
 
   const published = experiences.filter((e) => e.status === ExperienceStatus.PUBLISHED)
+  /*
+   * Listings a partner wrote and handed over (ADR-041).
+   *
+   * Called out at the top rather than left to be noticed among thirty cards:
+   * a partner who has submitted one is waiting on this page, and a submission
+   * nobody sees is worse than no submission at all.
+   */
+  const awaitingYou = experiences.filter((e) => e.status === ExperienceStatus.PENDING_REVIEW)
 
   return (
     <div className="space-y-8">
@@ -44,6 +53,36 @@ export default async function CatalogPage() {
           New experience
         </LinkButton>
       </div>
+
+      {awaitingYou.length > 0 ? (
+        <section
+          aria-label="Listings a partner has sent you"
+          className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4"
+        >
+          <h2 className="text-sm font-medium text-amber-900">
+            {awaitingYou.length === 1
+              ? 'A partner has sent you a listing to publish'
+              : `${String(awaitingYou.length)} listings a partner has sent you to publish`}
+          </h2>
+          <p className="mt-1 max-w-prose text-xs leading-relaxed text-amber-900">
+            They wrote it; publishing it is yours. It goes on your storefront, under your
+            agreement, in front of your guests.
+          </p>
+          <ul className="mt-2 space-y-1 text-sm">
+            {awaitingYou.map((experience) => (
+              <li key={experience.id}>
+                <Link
+                  href={`/owner/catalog/${experience.id}`}
+                  className="text-jade-900 underline underline-offset-4"
+                >
+                  {experience.titleEn}
+                </Link>
+                <span className="text-amber-900"> — {experience.supplier.name}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {experiences.length === 0 ? (
         <EmptyState

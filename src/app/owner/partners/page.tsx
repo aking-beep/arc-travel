@@ -1,21 +1,27 @@
-import { ShieldAlert, ShieldCheck } from 'lucide-react'
+import { Inbox, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { EmptyState } from '@/components/ui/states'
 import { requireActor } from '@/modules/auth/service'
 import { getCatalogFormOptions } from '@/modules/catalog/service'
 import { listPartners, resolveOperatingProperty } from '@/modules/hotels/service'
 import { verificationStanding } from '@/modules/admin/verification'
-import { PartnerInviteForm } from './forms'
+import { listJoinRequests } from '@/modules/suppliers/self-service'
+import { JoinDecisionForms, PartnerInviteForm } from './forms'
 
 export const metadata = { title: 'Partners' }
 
 export default async function PartnersPage() {
   const actor = await requireActor()
   const { propertyId } = await resolveOperatingProperty(actor)
-  const [partners, { places }] = await Promise.all([
+  const [partners, { places }, joinRequests] = await Promise.all([
     listPartners(actor, propertyId),
     getCatalogFormOptions(actor, propertyId),
+    listJoinRequests(actor, propertyId),
   ])
+
+  const pending = joinRequests.filter((r) => r.status === 'PENDING')
+  const decided = joinRequests.filter((r) => r.status !== 'PENDING')
 
   /*
    * One instant for the whole page, and the live answer rather than the stored
@@ -134,6 +140,98 @@ export default async function PartnersPage() {
           )
         })}
       </div>
+
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Inbox className="text-jade-700 size-5" aria-hidden />
+          <h2 className="font-display text-xl font-semibold">Businesses asking to work with you</h2>
+          {pending.length > 0 ? <Badge tone="warning">{pending.length} waiting</Badge> : null}
+        </div>
+        <p className="text-sand-600 max-w-prose text-sm leading-relaxed">
+          Anyone can send one of these from the ARC Stay site. Nothing has been agreed and nothing
+          is published until you accept — and ARC has checked none of what they say about
+          themselves. Accepting creates the partner, your agreement and their login, and emails
+          them an invitation.
+        </p>
+
+        {pending.length === 0 ? (
+          <EmptyState
+            title="Nothing waiting"
+            description="A business that wants to work with you can ask from /sign-up/partner, and it will appear here."
+          />
+        ) : (
+          <ul className="space-y-4">
+            {pending.map((request) => (
+              <li key={request.id}>
+                <Card>
+                  <CardHeader>
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <CardTitle className="text-base">{request.businessName}</CardTitle>
+                      <div className="flex flex-wrap gap-2">
+                        {request.categories.map((c) => (
+                          <Badge key={c} tone="brand">
+                            {c}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                    <p className="text-sand-600 text-sm">
+                      {request.contactName} · {request.contactEmail}
+                      {request.contactPhone ? ` · ${request.contactPhone}` : ''}
+                    </p>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {request.pitch ? (
+                      <p className="text-sand-700 max-w-prose text-sm leading-relaxed whitespace-pre-line">
+                        {request.pitch}
+                      </p>
+                    ) : (
+                      <p className="text-sand-500 text-sm">They wrote nothing about themselves.</p>
+                    )}
+
+                    {request.claimedCertifications.length > 0 ? (
+                      <div className="bg-sand-100 border-sand-300 rounded-xl border px-4 py-3">
+                        <p className="text-sand-800 text-sm font-medium">
+                          Certifications they say they hold
+                        </p>
+                        <p className="text-sand-600 mt-1 text-xs leading-relaxed">
+                          Their claims. ARC has seen no documents, so do not repeat these to a
+                          guest as facts.
+                        </p>
+                        <ul className="text-sand-600 mt-2 space-y-0.5 text-xs">
+                          {request.claimedCertifications.map((cert) => (
+                            <li key={cert}>· {cert}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+
+                    <JoinDecisionForms requestId={request.id} />
+                  </CardContent>
+                </Card>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {decided.length > 0 ? (
+          <details className="border-sand-200 rounded-xl border px-4 py-3">
+            <summary className="text-sand-700 cursor-pointer text-sm font-medium">
+              {decided.length} you have already decided on
+            </summary>
+            <ul className="mt-3 space-y-2">
+              {decided.map((request) => (
+                <li key={request.id} className="text-sand-600 text-sm">
+                  <span className="text-sand-800 font-medium">{request.businessName}</span> ·{' '}
+                  {request.status === 'ACCEPTED' ? 'accepted' : 'declined'}
+                  {request.decidedAt ? ` on ${request.decidedAt.toISOString().slice(0, 10)}` : ''}
+                  {request.decisionNote ? ` — ${request.decisionNote}` : ''}
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
+      </section>
 
       <Card>
         <CardHeader>

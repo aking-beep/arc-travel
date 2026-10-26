@@ -96,6 +96,47 @@ export default async function RevenuePage() {
         </CardContent>
       </Card>
 
+      {report.direct.tripCount > 0 ? (
+        /*
+         * Direct bookings, beside the headline and never inside it (ADR-042).
+         *
+         * The money is earned and is in the totals below; the per-stay figure
+         * above is about a room guest, and these people booked no room. Shown
+         * as its own card so neither number has to carry the other's caveat.
+         */
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Direct bookings</CardTitle>
+            <p className="text-sand-600 text-sm">
+              People who bought through your storefront without booking a room. Your share of
+              these is in the totals below and is deliberately not in the per-stay figure above.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <dl className="grid gap-4 sm:grid-cols-3">
+              <div>
+                <dt className="text-sand-500 text-xs">Trips</dt>
+                <dd className="text-xl font-semibold tabular-nums">{report.direct.tripCount}</dd>
+              </div>
+              <div>
+                <dt className="text-sand-500 text-xs">Orders</dt>
+                <dd className="text-xl font-semibold tabular-nums">{report.direct.orderCount}</dd>
+              </div>
+              <div>
+                <dt className="text-sand-500 text-xs">Your share</dt>
+                <dd className="text-xl font-semibold">
+                  <Money
+                    amountMinor={report.direct.hotelMinor}
+                    currency={report.currency}
+                    intent="earned"
+                  />
+                </dd>
+              </div>
+            </dl>
+          </CardContent>
+        </Card>
+      ) : null}
+
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
@@ -106,8 +147,8 @@ export default async function RevenuePage() {
           <CardContent>
             <p className="text-2xl font-semibold tabular-nums">{report.headline.attachRatePct}%</p>
             <p className="text-sand-500 mt-1 text-xs">
-              {report.headline.staysWithOrders} of {report.headline.totalStays} stays bought
-              something.
+              {report.headline.staysWithOrders} of {report.headline.totalStays} room bookings
+              bought something.
             </p>
           </CardContent>
         </Card>

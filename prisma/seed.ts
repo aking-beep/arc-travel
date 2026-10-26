@@ -338,7 +338,19 @@ async function seedSuppliers(organizationId: string, propertyId: string, placeId
         status: EntityStatus.ACTIVE,
         verification: VerificationStatus.UNVERIFIED,
         claimedCertifications: fixture.claimedCertifications,
-        insuranceOnFile: fixture.insuranceOnFile,
+        /*
+         * The claim, not the check.
+         *
+         * `insuranceOnFile` means ARC has seen a certificate, and nobody has:
+         * these are fictional, unverified partners. Writing what they say into
+         * the claim columns keeps the demo honest and keeps the row on the
+         * right side of `supplier_insurance_on_file_is_checked` (ADR-041).
+         */
+        insuranceOnFile: false,
+        claimedInsurer: fixture.claimsInsurance ? 'Seguros del Pacífico (fictional)' : null,
+        claimedInsuranceExpiresOn: fixture.claimsInsurance
+          ? fromDateKey(toDateKey(new Date(Date.now() + 280 * 86_400_000)))
+          : null,
         payoutsEnabled: false,
       },
     })

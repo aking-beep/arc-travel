@@ -1611,3 +1611,205 @@ is in the service's `where` clause.
 - Nothing about the transactional path licenses a marketing one. A second
   recipient, a schedule, or a drafted body is the other switch, and that
   conversation is non-negotiable 6's.
+
+## ADR-041 — A partner edits their claims; they never edit their standing
+
+**Status:** accepted · 2026-10-26
+
+**Context.** A local operator on ARC Stay could do three things: schedule
+departures, confirm bookings, and read what they were owed. Everything that
+makes them a business on the platform was the hotel's to type: their name, their
+description, the categories guests filter by, the certifications shown next to
+their listings, and every listing itself.
+
+That is wrong in two different ways, and the second one is the expensive one.
+
+The first is practical. The hotel's partners page was the only way in, so a
+hotel could only work with businesses it already knew well enough to type an
+email address for. The operator with the best boat in town and no relationship
+with the hotel had no route in at all, and the hotel had no way to find them.
+
+The second is about who is speaking. A hotel writing a business's own
+description, in that business's name, to guests, is the hotel making claims on
+behalf of somebody who never saw them. When the description says "certified
+instructors", the person who will be standing in the water is not the person who
+wrote it. A business should be able to say what it is — and should have to.
+
+**Decision.** Partners run themselves, within one line: **a partner edits their
+claims, and never their standing.**
+
+Their claims are theirs: name, registered name, description, categories,
+contact details, where they are based, the experiences they offer, what those
+cost, and what certifications and insurance they say they hold. Their standing
+is ARC's: `verification`, `verifiedChecks`, `verifiedAt`, `insuranceOnFile`,
+`insuranceExpiresOn`, `status`, `payoutsEnabled`. `/admin` remains the only
+route to a `VERIFIED` status (non-negotiable 2), and nothing on the partner
+surface changes any of those columns.
+
+The line is drawn in four places, deliberately redundantly, because a line held
+in one place is a line held by whoever remembers it:
+
+1. **Separate columns.** What a partner says about insurance goes to
+   `claimedInsurer`, `claimedInsurancePolicyRef` and
+   `claimedInsuranceExpiresOn`. `insuranceOnFile` keeps its meaning — ARC has
+   seen a certificate — and the claim can never be mistaken for it in a query.
+2. **`.strict()` schemas that cannot name a standing column.** The schemas in
+   `modules/suppliers/schemas.ts` have no field for `verification`,
+   `insuranceOnFile`, `status` or `payoutsEnabled`, so an extra form field is
+   *rejected* rather than ignored. "The service does not read it today" is not
+   a boundary.
+3. **A database CHECK.** `supplier_insurance_on_file_is_checked` forbids a row
+   with `insuranceOnFile` true and no recorded check. Declared `NOT VALID` for
+   the ADR-036 reason: the rows it would reject are pre-ADR verified ones that
+   ADR-036 deliberately keeps, and `migrate deploy` stops at the first failure,
+   so the declaration has to be `NOT VALID` where it is added.
+4. **Writes need the partner's own membership.** `assertActingAsSupplier`
+   requires the `SUPPLIER` role for that supplier, or platform admin.
+   `assertSupplierAccess` — which lets a hotel owner *read* their partner's
+   view — is not enough to write it, because an owner editing a business's own
+   copy in that business's name is the problem this ADR starts from.
+
+**A partner drafts; the hotel publishes.** `createOwnExperience` always writes
+`DRAFT` whatever is asked for, `submitOwnExperienceForReview` can reach
+`PENDING_REVIEW` and no further, and `setExperienceStatus` stays OWNER/ADMIN.
+A published listing sits on the hotel's storefront, under the hotel's agreement,
+in front of the hotel's guests; publishing is the hotel's decision and so is
+un-publishing.
+
+`updateOwnExperience` **refuses while the listing is `PUBLISHED`**. Somebody may
+have it in their basket at the duration, meeting point and party size shown when
+they added it, and rewriting those silently changes what a guest agreed to buy
+after they agreed. The partner pauses it first, which is a conversation the
+hotel should be in anyway. A **price** is the exception and has its own
+function: a new price is a new row, the old row is deactivated rather than
+edited so an existing order still says what was charged, and a basket
+re-validates its captured price at checkout.
+
+The ability range is **not** on the partner's form. It comes from the activity,
+because ADR-018 and ADR-017 both rest on that: inferring the safety envelope
+from something a form offers let one wrong dropdown choice turn the conditions
+gate off for the heaviest wave in Mexico.
+
+**The cold route in.** `/sign-up/partner` lets a business ask a hotel to take
+them on, with no account and no session. `requestToJoinProperty` creates
+**one row** — a `SupplierJoinRequest` — and nothing else: no `Supplier`, no
+`SupplierAgreement`, no `Membership`, no `User`, no credential. Inventing the
+commercial relationship from the asking side is precisely what non-negotiable 2
+forbids, and a form that did it would let anybody put their business in a real
+hotel's partner list.
+
+`acceptJoinRequest` is where the relationship is created, and it delegates to
+`invitePartner` rather than reimplementing it. That function already refuses an
+email that already has an account (ADR-021), creates the supplier, membership
+and agreement in one transaction, mints the invitation and emails it (ADR-040).
+A second implementation would drift, and the first thing to drift would be the
+refusal. The owner sets the commission at the point of accepting, because that
+is the term being agreed and the request did not propose one — nothing the
+business typed sets it.
+
+A duplicate request is swallowed rather than reported. Telling the sender "you
+already asked" would let an unauthenticated form answer "is this address already
+working with this hotel", and somebody who sends it twice is usually somebody
+who was not sure it went through. It is bounded at five per caller per hour and
+forty per hotel per hour.
+
+`declineJoinRequest` **sends nothing**. A hotel choosing not to work with a
+business is a commercial decision, and ARC writing to say so in the hotel's
+name, in wording the hotel never saw, is not ARC's to send. The note is the
+owner's own record; an owner who wants to reply has the address.
+
+**Consequence for the seed.** The fixture suppliers carried
+`insuranceOnFile: true` while being `UNVERIFIED` with no recorded checks — the
+exact shortcut the new CHECK forbids, and the exact thing ADR-036 was written
+about. They now carry the claim (`claimedInsurer`,
+`claimedInsuranceExpiresOn`) and `insuranceOnFile: false`, so
+`checkPublishReadiness` warns "no insurance document on file" for every demo
+partner. That warning is true, and it was true before.
+
+**What this does not do.** It does not let a partner publish, verify themselves,
+set ARC's booking fee, change their commission, cancel a guest's booking, or
+reach another partner's anything. Each of those has a test asserting the
+refusal, and the tenancy suite's second organization is there so isolation is
+proven rather than assumed.
+
+## ADR-042 — A direct customer's trip is a `Stay` with a kind, not a stay-less order
+
+**Status:** accepted · 2026-10-26
+
+**Context.** Every route into the guest surface started at a front desk. A
+`Stay` was the only row carrying a `portalToken`, and a `Stay` was created by a
+hotel for a room it had sold. So the product could sell nothing at all to:
+
+- somebody who lives in Puerto Escondido,
+- somebody off a bus for the day,
+- somebody staying in an apartment or with friends,
+- and somebody staying at a hotel that is not on ARC Stay.
+
+That is most of the people in the town on any given day, and all of them want
+the same thing a hotel's guest wants: to find something to do, see whether it is
+running, and pay for it.
+
+**The alternative we rejected.** `Cart.propertyId` and `Order.propertyId` are
+non-null, and `stayId` is nullable, so the obvious move is "a direct order has
+no stay". It is the wrong one. The guest surface reasons about *days*: the
+itinerary generator plans a window, the conditions gate reads a report for a
+date, travel times join two places on a day, the basket holds places on dated
+departures, and the portal is scoped to one stay's window. A null stay means a
+second code path through every one of those — and the first one to diverge would
+have been the conditions gate, which is the one place in this product where
+diverging is dangerous.
+
+**Decision.** A direct customer's trip **is** a `Stay`, with
+`kind = DIRECT` (`StayKind`, default `HOTEL_RESERVATION`). It carries the same
+dates, the same party size and the same portal token, so the planner, the gate,
+the holds, checkout, the ledger, the payouts and the account surface are the
+ones that already exist and are already tested. One column and a filter, rather
+than a second commerce engine.
+
+**The whole of the risk is that it must never read as a room booking**, because
+a front desk acting on a room nobody booked is worse than not having the feature.
+So:
+
+1. **`direct_stay_has_no_room`** — a CHECK forbidding a room type or any room
+   revenue on a `DIRECT` row. Not application-only: this is the invariant whose
+   violation produces the bad outcome.
+2. **Arrivals and the morning briefing filter on `kind`.** `listArrivals` is
+   what the desk works from at 7am; today's arrivals, the in-house count and
+   occupancy are room bookings only.
+3. **No check-in control.** A direct trip gets no "checked in" or "no show"
+   button on the guest list: both are about a room.
+4. **The guest's own account says "trip", not "stay"** — "first day" and
+   "last day" rather than check-in and check-out, and a badge saying no room
+   was booked. EN and ES together.
+5. **The revenue headline divides like by like.** The per-stay figure and the
+   attach rate count room bookings in the denominator *and* the hotel's share of
+   room-guest orders in the numerator. Direct trips get their own card beside
+   it. A good month of direct bookings must not read as the hotel's own guests
+   spending more — the ADR-007 instinct, applied to a new pair of numbers.
+
+**The hotel still earns its share.** The listing, the price and the agreement
+are the hotel's, and the storefront is what the person chose, so commission
+flows exactly as it does for a room guest and no money code changes. A flat zero
+for the hotel was the other option; it was rejected because the hotel's curation
+is the thing being sold, and because ARC Stay's whole pitch is destination
+commerce *for* the hotel. If a hotel wants a different share on direct business
+that is a commission rule, not a code change.
+
+**What the form may say.** `directTripSchema` is `.strict()` and reachable by
+anybody, so it names no `kind` — a caller cannot ask for a `HOTEL_RESERVATION`
+— no `propertyId`, no `organizationId`, no reference, no token and no status.
+The trip window is bounded at `MAX_DIRECT_TRIP_DAYS` (30) and a year ahead, for
+the planner's sake rather than for commerce's: a three-hundred-day "trip" asks
+the generator to plan weather nobody has a reading for.
+
+**Account handling is the ADR-039 path, not a new one.** Sign-up hands over to
+`establishAccount`, so the placeholder a front desk once created for this person
+at this address is taken over rather than refused, an address somebody already
+holds is refused, and both races — a password set between the read and the
+write, a guest row a concurrent claim won — are handled by the code that
+already handled them. `addDirectTripToAccount` is the signed-in form of the same
+thing, and it is why `Guest.userId` is not unique: a person who books through
+two hotels has two guest records.
+
+**Bounded, because it is open.** Five sign-ups per caller per hour and sixty per
+property per hour. A sign-up writes rows into a real hotel's guest list.

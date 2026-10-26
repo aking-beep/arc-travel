@@ -8,6 +8,7 @@ import {
   ProposalStatus,
   Role,
   SlotStatus,
+  StayKind,
   StayStatus,
   VerificationStatus,
 } from '@/lib/prisma-types'
@@ -144,12 +145,24 @@ export async function buildMorningBriefing(
       _sum: { hotelEarningsMinor: true },
       _count: true,
     }),
+    /*
+     * Room bookings only, everywhere in this briefing (ADR-042).
+     *
+     * A direct trip has no room, so it is not an arrival, it is not in the
+     * house, and it is not a stay to divide money by. The front desk reading
+     * this at 7am must not be told to expect somebody who booked no room.
+     */
     prisma.stay.count({
-      where: { propertyId, status: { in: [StayStatus.CHECKED_OUT, StayStatus.IN_HOUSE] } },
+      where: {
+        propertyId,
+        kind: StayKind.HOTEL_RESERVATION,
+        status: { in: [StayStatus.CHECKED_OUT, StayStatus.IN_HOUSE] },
+      },
     }),
     prisma.stay.count({
       where: {
         propertyId,
+        kind: StayKind.HOTEL_RESERVATION,
         status: { in: [StayStatus.CHECKED_OUT, StayStatus.IN_HOUSE] },
         orders: { some: { status: { in: [OrderStatus.CONFIRMED, OrderStatus.PARTIALLY_CANCELLED] } } },
       },
@@ -157,6 +170,7 @@ export async function buildMorningBriefing(
     prisma.stay.findMany({
       where: {
         propertyId,
+        kind: StayKind.HOTEL_RESERVATION,
         status: StayStatus.BOOKED,
         checkIn: { gte: fromDateKey(today), lt: fromDateKey(addDays(today, 1)) },
       },
@@ -174,7 +188,9 @@ export async function buildMorningBriefing(
         },
       },
     }),
-    prisma.stay.count({ where: { propertyId, status: StayStatus.IN_HOUSE } }),
+    prisma.stay.count({
+      where: { propertyId, kind: StayKind.HOTEL_RESERVATION, status: StayStatus.IN_HOUSE },
+    }),
     prisma.amenity.findMany({
       where: { propertyId, experienceId: null },
       select: { id: true, name: true, category: true, isIncluded: true },

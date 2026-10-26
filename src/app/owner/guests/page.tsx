@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/states'
 import { addDays, toDateKey } from '@/lib/dates'
-import { StayStatus } from '@/lib/prisma-types'
+import { StayKind, StayStatus } from '@/lib/prisma-types'
 import { requireActor } from '@/modules/auth/service'
 import { getPropertyOverview, resolveOperatingProperty } from '@/modules/hotels/service'
 import { listStays } from '@/modules/stays/service'
@@ -91,9 +91,18 @@ export default async function GuestsPage() {
                       {stay.adults + stay.children === 1 ? 'guest' : 'guests'}
                       {stay.roomType ? ` · ${stay.roomType.code}` : ''}
                     </p>
+                    {stay.kind === StayKind.DIRECT ? (
+                      <p className="text-sand-500 mt-1 text-xs leading-relaxed">
+                        Booked experiences through your storefront without booking a room. Not an
+                        arrival — nobody is coming to the desk for a key.
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge tone={TONE[stay.status]}>{stay.status.replace('_', ' ')}</Badge>
+                    {stay.kind === StayKind.DIRECT ? (
+                      <Badge tone="accent">Direct — no room</Badge>
+                    ) : null}
                     {stay.guest.intakeCompletedAt ? (
                       <Badge tone="neutral">Intake done</Badge>
                     ) : (
@@ -144,7 +153,14 @@ export default async function GuestsPage() {
                 </div>
 
                 <div className="flex flex-wrap items-end justify-between gap-4">
-                  <StayStatusForm stayId={stay.id} options={NEXT_STATUSES[stay.status]} />
+                  {/*
+                   * No check-in control on a direct trip: "checked in" and
+                   * "no show" are about a room, and marking one would put a
+                   * person in the house who booked no bed (ADR-042).
+                   */}
+                  {stay.kind === StayKind.DIRECT ? null : (
+                    <StayStatusForm stayId={stay.id} options={NEXT_STATUSES[stay.status]} />
+                  )}
                   {stay.portalLive ? <SendPortalLinkForm stayId={stay.id} /> : null}
                   {stay.portalLive ? <ReissueTokenForm stayId={stay.id} /> : null}
                 </div>

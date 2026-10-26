@@ -112,6 +112,30 @@ throws rather than clamping, which is deliberate.
 - Privilege escalation: can a `STAFF` user do an `OWNER` action, a `SUPPLIER`
   anything outside their own supplier, or anyone reach `/admin`?
 
+### 6b. The two unauthenticated write forms
+
+Both create rows in a real hotel's data with no session at all. They are the
+newest attack surface in the product and the one we would most like broken.
+
+- `POST /sign-up/partner` (`requestToJoinProperty`) records a business asking a
+  hotel to take them on. It is supposed to create **nothing else**: no
+  `Supplier`, no `SupplierAgreement`, no `Membership`, no `User`, no credential.
+  Try to make it create any of those, to write a field the schema does not name
+  (the schemas are `.strict()` and cannot name a verification column — see
+  ADR-041), or to use its response to answer "is this address already working
+  with this hotel". Bounded at 5 per caller and 40 per property per hour; try to
+  get around either.
+- `POST /sign-up/direct` (`registerDirectTrip`) creates an account, a `Guest`
+  and a `Stay` marked `DIRECT` (ADR-042). The interesting targets: making one
+  that reads as a room booking (a room type or room revenue — there is a CHECK
+  constraint, try to get past it), taking over an account or a guest record that
+  belongs to somebody else at the same address, reaching another property's
+  guest record through the slug, and the trip-window bounds. Bounded at 5 per
+  caller and 60 per property per hour.
+
+For both: what the response discloses about whether an address or a booking
+already exists is as much the subject as what gets written.
+
 ### 7. The demo front door
 
 While `ARC_DATA_MODE=demo` the sign-in page issues an owner, partner or admin

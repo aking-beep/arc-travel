@@ -317,6 +317,10 @@ export async function listStays(
       adults: true,
       children: true,
       status: true,
+      // Direct trips are listed here — the hotel should see who is buying
+      // through their storefront — and the page labels them as not a room
+      // booking (ADR-042).
+      kind: true,
       portalToken: true,
       roomType: { select: { code: true, name: true } },
       guest: {

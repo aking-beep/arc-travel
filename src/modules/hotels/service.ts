@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/db'
 import { conflict, forbidden, notFound } from '@/lib/errors'
 import { reportError } from '@/lib/observability'
-import { EmailKind, EntityStatus, InvitationKind, Role, VerificationStatus } from '@/lib/prisma-types'
+import { EmailKind, EntityStatus, InvitationKind, Role, StayKind, VerificationStatus } from '@/lib/prisma-types'
 import { createInvitation } from '@/modules/auth/invitations'
 import {
   canComposeEmail,
@@ -593,6 +593,9 @@ export async function listArrivals(
   return prisma.stay.findMany({
     where: {
       propertyId,
+      // Arrivals are people arriving at the hotel. A direct trip books no room
+      // and nobody is coming to the desk for a key (ADR-042).
+      kind: StayKind.HOTEL_RESERVATION,
       status: { in: ['BOOKED', 'IN_HOUSE'] },
       checkIn: { gte: options.fromDate, lt: to },
     },

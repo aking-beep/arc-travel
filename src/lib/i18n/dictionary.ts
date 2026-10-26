@@ -94,6 +94,17 @@ export const dictionary = {
       'Add a booking with its reference and the email the property has for you.',
     'account.errorTitle': 'We could not load your bookings',
     'account.errorBody': 'Nothing has been lost. Try again in a moment.',
+    'account.tripBadge': 'Trip — no room booked',
+    'account.tripFrom': 'First day',
+    'account.tripTo': 'Last day',
+    'account.tripTitle': 'Plan another trip',
+    'account.tripSub':
+      'For days you are around without booking a room. You pick a hotel’s storefront, not a room.',
+    'account.tripProperty': 'Book through',
+    'account.tripParty': 'How many of you',
+    'account.tripSubmit': 'Add the trip',
+    'account.tripPending': 'Adding…',
+    'account.tripAdded': 'Added. Open it above to start planning.',
     'account.nothingChanged': 'Claiming a booking does not change anything the property holds.',
 
     'guest.accountOffer':
@@ -494,6 +505,7 @@ export const dictionary = {
   'explore.footer.disclaimer':
     '© {year} ARC Transformation Group. A demonstration build: the hotel, the hosts, the prices and the conditions are synthetic, nothing is bookable and no payment is taken.',
   'explore.footer.demoSurfaces': 'The four product surfaces',
+  'explore.footer.bookDirect': 'Book without a room',
   'explore.notFound.title': 'There is nothing at this address',
   'explore.notFound.body': 'The link may be stale, or it may never have pointed anywhere.',
   'explore.notFound.cta': 'Back to Puerto Escondido',
@@ -625,6 +637,17 @@ export const dictionary = {
       'Añade una reserva con su referencia y el correo que el alojamiento tiene de ti.',
     'account.errorTitle': 'No pudimos cargar tus reservas',
     'account.errorBody': 'No se ha perdido nada. Inténtalo de nuevo en un momento.',
+    'account.tripBadge': 'Viaje — sin habitación',
+    'account.tripFrom': 'Primer día',
+    'account.tripTo': 'Último día',
+    'account.tripTitle': 'Planea otro viaje',
+    'account.tripSub':
+      'Para los días que estés por aquí sin reservar habitación. Eliges la tienda de un hotel, no una habitación.',
+    'account.tripProperty': 'Reservar a través de',
+    'account.tripParty': 'Cuántos son',
+    'account.tripSubmit': 'Agregar el viaje',
+    'account.tripPending': 'Agregando…',
+    'account.tripAdded': 'Agregado. Ábrelo arriba para empezar a planear.',
     'account.nothingChanged': 'Vincular una reserva no cambia nada de lo que el alojamiento tiene.',
 
     'guest.accountOffer':
@@ -1025,6 +1048,7 @@ export const dictionary = {
   'explore.footer.disclaimer':
     '© {year} ARC Transformation Group. Build de demostración: el hotel, los anfitriones, los precios y las condiciones son sintéticos, no se puede reservar nada y no se cobra ningún pago.',
   'explore.footer.demoSurfaces': 'Las cuatro superficies del producto',
+  'explore.footer.bookDirect': 'Reservar sin hospedaje',
   'explore.notFound.title': 'No hay nada en esta dirección',
   'explore.notFound.body': 'El enlace puede estar caducado, o puede que nunca llevara a nada.',
   'explore.notFound.cta': 'Volver a Puerto Escondido',

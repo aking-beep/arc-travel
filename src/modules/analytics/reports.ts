@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db'
-import { OrderItemStatus, OrderStatus, Role, StayStatus } from '@/lib/prisma-types'
+import { OrderItemStatus, OrderStatus, Role, StayKind, StayStatus } from '@/lib/prisma-types'
 import { assertPropertyAccess, type ActorContext } from '@/modules/tenancy/context'
 
 /**
@@ -24,6 +24,19 @@ export interface RevenueReport {
     totalStays: number
     averageOrderMinor: number
     effectiveTakeRatePct: number
+  }
+  /**
+   * Direct bookings: people who bought experiences without booking a room.
+   *
+   * Beside the headline and never inside it (ADR-042). The money is in
+   * `totals`, because the hotel earned it; the per-stay figure is about a room
+   * guest, and these people did not book a room.
+   */
+  direct: {
+    tripCount: number
+    orderCount: number
+    grossMinor: number
+    hotelMinor: number
   }
   totals: {
     grossMinor: number
@@ -69,8 +82,17 @@ export async function getRevenueAnalytics(
     select: { currency: true },
   })
 
-  const [orders, liveItems, refunded, totalStays, staysWithOrders, ledgerGroups, allOrders] =
-    await Promise.all([
+  const [
+    orders,
+    liveItems,
+    refunded,
+    totalStays,
+    staysWithOrders,
+    ledgerGroups,
+    allOrders,
+    directTrips,
+    directOrders,
+  ] = await Promise.all([
     prisma.order.aggregate({
       where: { propertyId, status: { in: EARNED_STATUSES } },
       _sum: {
@@ -103,12 +125,26 @@ export async function getRevenueAnalytics(
       _sum: { refundedMinor: true },
       _count: true,
     }),
+    /*
+     * Room bookings only, in both the numerator and the denominator.
+     *
+     * A direct trip is not a stay (ADR-042): nobody booked a room, so counting
+     * one would understate the attach rate on the hotel's own guests, which is
+     * the number this report exists to produce. Their orders are real money and
+     * appear in `totals` and in `direct` below — never blended into a per-stay
+     * figure.
+     */
     prisma.stay.count({
-      where: { propertyId, status: { in: [StayStatus.CHECKED_OUT, StayStatus.IN_HOUSE] } },
+      where: {
+        propertyId,
+        kind: StayKind.HOTEL_RESERVATION,
+        status: { in: [StayStatus.CHECKED_OUT, StayStatus.IN_HOUSE] },
+      },
     }),
     prisma.stay.count({
       where: {
         propertyId,
+        kind: StayKind.HOTEL_RESERVATION,
         status: { in: [StayStatus.CHECKED_OUT, StayStatus.IN_HOUSE] },
         orders: { some: { status: { in: EARNED_STATUSES } } },
       },
@@ -126,6 +162,17 @@ export async function getRevenueAnalytics(
     prisma.order.aggregate({
       where: { organizationId, propertyId },
       _sum: { totalMinor: true, refundedMinor: true },
+    }),
+    // Direct trips, reported beside the headline rather than inside it.
+    prisma.stay.count({ where: { propertyId, kind: StayKind.DIRECT } }),
+    prisma.order.aggregate({
+      where: {
+        propertyId,
+        status: { in: EARNED_STATUSES },
+        stay: { kind: StayKind.DIRECT },
+      },
+      _sum: { totalMinor: true, hotelEarningsMinor: true },
+      _count: true,
     }),
   ])
 
@@ -185,7 +232,17 @@ export async function getRevenueAnalytics(
   const netOrderPositionMinor =
     (allOrders._sum.totalMinor ?? 0) - (allOrders._sum.refundedMinor ?? 0)
 
-  const perStayMinor = totalStays === 0 ? 0 : Math.round(hotelMinor / totalStays)
+  /*
+   * The headline divides like by like.
+   *
+   * `hotelMinor` is everything the hotel earned, direct trips included. The
+   * per-stay figure is about a room guest, so the direct share comes out of the
+   * numerator as well as the denominator (ADR-042) — otherwise a good month of
+   * direct bookings reads as the hotel's guests spending more.
+   */
+  const directHotelMinor = directOrders._sum.hotelEarningsMinor ?? 0
+  const hotelFromStaysMinor = hotelMinor - directHotelMinor
+  const perStayMinor = totalStays === 0 ? 0 : Math.round(hotelFromStaysMinor / totalStays)
   const averageOrderMinor = orders._count === 0 ? 0 : Math.round(grossMinor / orders._count)
 
   return {
@@ -195,7 +252,11 @@ export async function getRevenueAnalytics(
       derivation:
         totalStays === 0
           ? 'No completed or in-house stays yet, so there is nothing to divide by.'
-          : `Your share of confirmed orders (net of refunded lines) divided by all ${totalStays} completed or in-house stays — including the ${totalStays - staysWithOrders} that bought nothing.`,
+          : `Your share of confirmed orders from room guests (net of refunded lines) divided by all ${totalStays} completed or in-house stays — including the ${totalStays - staysWithOrders} that bought nothing.${
+              directTrips > 0
+                ? ` Direct trips are counted separately and are not in this figure.`
+                : ''
+            }`,
       attachRatePct:
         totalStays === 0 ? 0 : Math.round((staysWithOrders / totalStays) * 1000) / 10,
       staysWithOrders,
@@ -203,6 +264,12 @@ export async function getRevenueAnalytics(
       averageOrderMinor,
       effectiveTakeRatePct:
         grossMinor === 0 ? 0 : Math.round((hotelMinor / grossMinor) * 1000) / 10,
+    },
+    direct: {
+      tripCount: directTrips,
+      orderCount: directOrders._count,
+      grossMinor: directOrders._sum.totalMinor ?? 0,
+      hotelMinor: directHotelMinor,
     },
     totals: {
       grossMinor,

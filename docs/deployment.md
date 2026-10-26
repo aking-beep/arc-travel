@@ -323,6 +323,13 @@ Deployment Protection with a password is a Pro feature, and the Hobby plan offer
 only Vercel Authentication, which restricts viewing to people with an account on
 the team and so cannot be handed to a hotel owner.
 
+## Going live with a real hotel
+
+`docs/going-live.md` is the ordered checklist: a second Vercel project and a
+separate Neon database, the hotel's own data, then the four things only a person
+with the accounts can do — Stripe, the sending domain, verifying real suppliers,
+and booking the security review.
+
 ## What is still missing for a pilot
 
 A real hotel's data needs what `docs/pilot-plan.md` specifies, and at minimum:
