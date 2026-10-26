@@ -180,3 +180,20 @@ ALTER TABLE "Order" ADD CONSTRAINT "order_reversal_has_provenance"
     "reversalReportedAt" IS NULL
     OR ("reversalCause" IS NOT NULL AND "reversalEventId" IS NOT NULL AND "reversedMinor" >= 0)
   );
+
+-- A verified partner carries the evidence for it.
+--
+-- The service enforces the full required-check list (it knows which keys are
+-- required); the database enforces the part that cannot drift: VERIFIED is not
+-- reachable with an empty checklist, and an insurance expiry is never recorded
+-- without the insurance check that it dates. ADR-036.
+ALTER TABLE "Supplier" DROP CONSTRAINT IF EXISTS "supplier_verified_is_evidenced";
+ALTER TABLE "Supplier" ADD CONSTRAINT "supplier_verified_is_evidenced" CHECK (
+  "verification" <> 'VERIFIED'
+  OR (array_length("verifiedChecks", 1) IS NOT NULL AND "verificationNotes" IS NOT NULL)
+);
+
+ALTER TABLE "Supplier" DROP CONSTRAINT IF EXISTS "supplier_insurance_expiry_is_dated";
+ALTER TABLE "Supplier" ADD CONSTRAINT "supplier_insurance_expiry_is_dated" CHECK (
+  "insuranceExpiresOn" IS NULL OR 'insurance' = ANY("verifiedChecks")
+);

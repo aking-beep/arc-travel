@@ -14,7 +14,7 @@ import {
   listPublicExperiences,
   listPublicPlaces,
 } from '@/modules/discovery/service'
-import { createTenant, resetDatabase, type TenantFixture } from '../helpers/factory'
+import { createTenant, markVerified, resetDatabase, type TenantFixture } from '../helpers/factory'
 
 /**
  * The public read model.
@@ -237,10 +237,7 @@ describe('getDestinationOverview', () => {
   })
 
   it('stops saying so the moment one supplier is verified', async () => {
-    await prisma.supplier.update({
-      where: { id: alpha.supplierId },
-      data: { verification: VerificationStatus.VERIFIED },
-    })
+    await markVerified(alpha.supplierId)
     const overview = await getDestinationOverview()
     expect(overview.allUnverified).toBe(false)
   })

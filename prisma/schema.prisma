@@ -593,7 +593,18 @@ model Supplier {
   /// Certifications the supplier CLAIMS. Unverified until an admin records a
   /// check — the UI must never render these as confirmed.
   claimedCertifications String[] @default([])
+  /// Which verification checks an admin has actually recorded, from
+  /// `VERIFICATION_CHECKS` in src/modules/admin/verification.ts. VERIFIED
+  /// requires every required one; the list is kept so a later reviewer can see
+  /// what was and was not looked at, rather than inferring it from a note.
+  verifiedChecks String[]   @default([])
   insuranceOnFile Boolean     @default(false)
+  /// When the insurance certificate on file expires.
+  ///
+  /// A boolean cannot expire, and liability insurance does. Without this,
+  /// `insuranceOnFile = true` meant "somebody saw a certificate once", which is
+  /// not the same claim and gets less true every month.
+  insuranceExpiresOn DateTime? @db.Date
   payoutsEnabled  Boolean     @default(false)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt

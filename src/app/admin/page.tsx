@@ -104,9 +104,31 @@ export default async function AdminVerificationPage() {
                 </p>
               ) : null}
 
+              {supplier.standing.standing === 'lapsed' ? (
+                /*
+                 * The case this whole change exists for: a decision that was
+                 * correct when it was made and is not current now. Not shown as
+                 * a failure of the admin who made it, and not quietly treated
+                 * as still true either.
+                 */
+                <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-900" role="alert">
+                  Verification has lapsed. {supplier.standing.reason} Guests are no longer shown a
+                  verified badge for this partner.
+                </p>
+              ) : supplier.daysUntilInsuranceExpiry !== null &&
+                supplier.daysUntilInsuranceExpiry <= 30 ? (
+                <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  The insurance on file expires in {supplier.daysUntilInsuranceExpiry}{' '}
+                  {supplier.daysUntilInsuranceExpiry === 1 ? 'day' : 'days'} (
+                  {supplier.insuranceExpiresOn}). Ask for the renewal now; the verification lapses
+                  on that date.
+                </p>
+              ) : null}
+
               <VerifySupplierForm
                 supplierId={supplier.id}
-                insuranceOnFile={supplier.insuranceOnFile}
+                verifiedChecks={supplier.verifiedChecks}
+                insuranceExpiresOn={supplier.insuranceExpiresOn}
               />
             </CardContent>
           </Card>

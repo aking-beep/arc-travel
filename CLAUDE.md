@@ -190,6 +190,8 @@ Two E2E habits, learned the hard way and recorded in the specs:
 | An organization has a platform commission default as well as a hotel one | ADR-030. The platform share fell back to zero, so ARC earned nothing unless somebody wrote a rule |
 | The seeded portal tokens are an HMAC, not literals, and `playwright.config.ts` mints a secret per run | ADR-035. A portal token is a bearer credential and `demo-portal-01` was readable in the repo. Deterministic fixtures and unguessable tokens are not in conflict |
 | `LOCAL_SEED_TOKEN_SECRET` lives in `src/lib/env.ts`, not in `demo-portals.ts` where it is used | ADR-035. `demo-portals` needs `node:crypto`; `env` is reached from middleware, which runs on the edge runtime where that module does not exist |
+| A VERIFIED partner can read as `lapsed`, and the guest surfaces ask `isCurrentlyVerified` rather than the column | ADR-036. `insuranceOnFile` was a boolean and liability insurance expires. The stored decision was right when it was made; it is not current now |
+| New CHECK constraints go in a NEW `*_constraints` migration, never appended to an applied one | ADR-036. `migrate deploy` never re-runs a recorded migration, so an edit lands on fresh databases and misses every running deployment |
 
 ## Review
 

@@ -18,6 +18,7 @@ import {
   TransportMode,
   VerificationStatus,
 } from '@/lib/prisma-types'
+import { REQUIRED_CHECK_KEYS } from '@/modules/admin/verification'
 
 /**
  * Integration-test fixtures.
@@ -375,6 +376,41 @@ export async function createTenant(options: TenantOptions = {}): Promise<TenantF
     experienceId: experience.id,
     slotId: slot.id,
   }
+}
+
+/**
+ * Marks a supplier verified, with the evidence a real verification carries.
+ *
+ * Tests used to do `prisma.supplier.update({ data: { verification: 'VERIFIED' } })`,
+ * which a CHECK constraint now rejects: ADR-036 made VERIFIED unreachable
+ * without a recorded checklist. Two tests failed on it, which is the constraint
+ * doing exactly its job — a verified row with no evidence behind it is the
+ * thing it exists to prevent, and a fixture is not an exception.
+ *
+ * Writes directly rather than calling `verifySupplier`, because most callers
+ * want a verified partner as a precondition and not a platform admin, an actor
+ * context and an audit row. Tests of the verification *rules* go through the
+ * service: see `tests/integration/supplier-verification.test.ts`.
+ */
+export async function markVerified(
+  supplierId: string,
+  options: { insuranceExpiresOn?: Date } = {},
+): Promise<void> {
+  const expires =
+    options.insuranceExpiresOn ?? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
+
+  await prisma.supplier.update({
+    where: { id: supplierId },
+    data: {
+      verification: VerificationStatus.VERIFIED,
+      verifiedAt: new Date(),
+      verificationNotes: 'Fixture verification. Every required check recorded.',
+      verifiedChecks: [...REQUIRED_CHECK_KEYS],
+      insuranceOnFile: true,
+      insuranceExpiresOn: expires,
+      status: EntityStatus.ACTIVE,
+    },
+  })
 }
 
 /** Loads an actor context the way modules/auth would, without the cookie. */

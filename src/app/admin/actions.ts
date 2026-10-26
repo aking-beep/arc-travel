@@ -5,6 +5,7 @@ import { toFormState, type FormState } from '@/lib/form-state'
 import { VerificationStatus } from '@/lib/prisma-types'
 import { requireActor } from '@/modules/auth/service'
 import { verifyProperty, verifySupplier } from '@/modules/admin/service'
+import { CHECK_KEYS } from '@/modules/admin/verification'
 import { refreshTravelAdvice, reviewSourceChange } from '@/modules/culture-context/snapshots'
 
 /** Verification decisions. The only path to a VERIFIED status in the product. */
@@ -16,11 +17,20 @@ export async function verifySupplierAction(
     const actor = await requireActor()
     const decision = String(formData.get('decision') ?? '') as VerificationStatus
 
+    /*
+     * One checkbox per check, named `check:<key>`. Translated here and
+     * validated by the service, which is the thing entitled to be trusted to
+     * have validated its input (`CLAUDE.md`, validation).
+     */
+    const checks = CHECK_KEYS.filter((key) => formData.get(`check:${key}`) === 'on')
+    const expiry = String(formData.get('insuranceExpiresOn') ?? '').trim()
+
     await verifySupplier(actor, {
       supplierId: String(formData.get('supplierId') ?? ''),
       decision,
       note: String(formData.get('note') ?? ''),
-      insuranceOnFile: formData.get('insuranceOnFile') === 'on',
+      checks,
+      insuranceExpiresOn: expiry.length > 0 ? expiry : null,
     })
 
     revalidatePath('/admin')
@@ -30,7 +40,8 @@ export async function verifySupplierAction(
       ok: true,
       message:
         decision === VerificationStatus.VERIFIED
-          ? 'Verified. Guests now see a verified badge on this partner.'
+          ? 'Verified. Guests now see a verified badge on this partner, until the insurance on ' +
+            'file expires.'
           : `Recorded as ${decision.toLowerCase()}.`,
     }
   } catch (error) {

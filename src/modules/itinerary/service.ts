@@ -1,4 +1,5 @@
 import { prisma, type Prisma } from '@/lib/db'
+import { isCurrentlyVerified } from '@/modules/admin/verification'
 import { invalid, notFound } from '@/lib/errors'
 import {
   addDays,
@@ -171,7 +172,7 @@ export async function collectCandidates(options: {
           maxParty: true,
           minAgeYears: true,
           guideIncluded: true,
-          supplier: { select: { verification: true } },
+          supplier: { select: { verification: true, verifiedChecks: true, insuranceExpiresOn: true } },
           place: { select: { id: true, typicalRisk: true, kind: true } },
           activity: {
             select: {
@@ -303,7 +304,7 @@ export async function collectCandidates(options: {
       activityEarliestStart: experience.activity.earliestStart,
       activityLatestStart: experience.activity.latestStart,
       experienceGuideIncluded: experience.guideIncluded,
-      supplierVerified: experience.supplier.verification === 'VERIFIED',
+      supplierVerified: isCurrentlyVerified(experience.supplier, now),
       conditionsSensitive,
       placeBaselineRisk: conditionsPlace?.typicalRisk ?? null,
       travelMinutesFromBase: travelLeg.minutes,
@@ -573,7 +574,7 @@ export async function getItineraryForGuest(guestId: string, itineraryId?: string
               guideIncluded: true,
               minAbility: true,
               maxAbility: true,
-              supplier: { select: { id: true, name: true, verification: true } },
+              supplier: { select: { id: true, name: true, verification: true, verifiedChecks: true, insuranceExpiresOn: true } },
             },
           },
           slot: { select: { id: true, startsAt: true, capacity: true, booked: true, held: true } },

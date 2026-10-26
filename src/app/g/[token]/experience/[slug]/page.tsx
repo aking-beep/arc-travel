@@ -9,6 +9,7 @@ import { createTranslator } from '@/lib/i18n'
 import { getLocale } from '@/lib/i18n/server'
 import { toLocalDateKey, toLocalTimeString } from '@/lib/dates'
 import { getGuestExperience } from '@/modules/guest/portal'
+import { isCurrentlyVerified } from '@/modules/admin/verification'
 import { resolvePortalForRequest } from '../../resolve'
 import { getConditions } from '@/modules/destination/conditions'
 import { evaluateSlotsForGuest } from '@/modules/destination/suitability'
@@ -51,7 +52,11 @@ export default async function ExperienceDetailPage({
 
   const basePrice = experience.prices.find((p) => p.kind === 'BASE') ?? experience.prices[0]
   const groupPrice = experience.prices.find((p) => p.kind === 'GROUP')
-  const verified = experience.supplier.verification === 'VERIFIED'
+  /*
+   * The standing today, not the stored column: a partner verified in January on
+   * a certificate that expired in March is not verified in December. ADR-036.
+   */
+  const verified = isCurrentlyVerified(experience.supplier)
   const partySize = preferences.partySize || context.partySize
 
   const byDate = new Map<string, typeof experience.slots>()

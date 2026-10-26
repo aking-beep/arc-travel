@@ -1109,3 +1109,78 @@ shares one set of seeded guests, and can still change their data. A per-visitor
 sandbox is a different feature, and ADR-028's credential-free switcher is still
 the thing that makes a demo demonstrable. This ADR makes the door closable and
 the credentials unguessable; it does not make a shared demo private.
+
+## ADR-036 — A verification is a recorded checklist, and it can lapse
+
+**Status:** accepted · 2026-10-26
+
+**Context.** Item 8 of the launch-readiness list was "verifying real suppliers —
+all six seeded ones are still unverified". The seeded six are fixtures and must
+stay unverified; verifying an invented business would be inventing a commercial
+relationship, which non-negotiable 2 forbids. So the actionable part was not
+"verify these partners" but "is the thing ARC does when it verifies a partner
+worth the badge it prints".
+
+It was not, for two reasons.
+
+`verifySupplier` took a free-text note with a ten-character minimum. That made
+`VERIFIED` mean "an admin typed at least ten characters", which records that
+something happened rather than what was checked. "Looks fine" cleared the bar,
+and a year later nobody could tell whether the RFC had ever been seen.
+
+And `insuranceOnFile` was a boolean. A boolean cannot expire; liability
+insurance does. A partner verified in January on a certificate that ran out in
+March was still shown to guests as verified in December, on the strength of a
+document nobody had looked at since. The badge was not wrong when it was
+granted — it simply went on being displayed long after it stopped being true.
+
+**Decision.** Two things.
+
+The checks are enumerated in `src/modules/admin/verification.ts`, recorded
+individually on the Supplier row, and all six required ones must be present
+before `VERIFIED` is reachable. The service refuses otherwise and so does a
+CHECK constraint, which holds the part that cannot drift: `VERIFIED` is
+unreachable with an empty checklist. Each check carries the specifics of what to
+look at — the Capitanía de Puerto permit, the SAT constancia, confirming a CLABE
+by calling a number you already had — because "check the insurance" is not a
+step. `docs/supplier-verification.md` is the operator's version.
+
+Two checks are optional, because some do not apply to every partner: a
+one-person surf guide has no acta constitutiva, and refusing to verify anyone
+who lacks one would mean the status stopped being used, which is the failure
+mode where a process produces a worse outcome than no process.
+
+And a verification can lapse. `verificationStanding` derives a current answer
+from the stored decision plus the clock: verified, lapsed, unverified or
+rejected. Insurance has a mandatory expiry date, and from that date the standing
+is `lapsed`. `isCurrentlyVerified` is what the basket, the itinerary, the guest
+experience page and the publish checks ask — not the stored column.
+
+**Consequences.**
+
+A lapse changes presentation, not data. The stored decision is not rewritten:
+it was correct on the evidence available. Nothing is unpublished and no booking
+is cancelled, because ARC does not take consequential action by itself
+(non-negotiable 6) and an expired certificate is grounds for a phone call, not
+for cancelling a guest's booking. `/admin` shows it in red with the reason and
+warns at thirty days; the publish checks report it as a lapse rather than as a
+plain "not verified", because the two call for different conversations.
+
+A verified partner with the insurance check recorded and **no** expiry on file
+reads as lapsed. That is every row predating this ADR, deliberately: the honest
+statement is "nobody knows when that certificate expires", and the migration
+does not backfill because a checklist invented on a partner's behalf is exactly
+the thing non-negotiable 2 is about. The documentation says to re-check them.
+
+The expiry is compared as a calendar day (`DateKey`, `@db.Date`), not as an
+instant. A certificate expiring today is cover today, and comparing a midnight
+timestamp against `now` would expire it a day early everywhere west of UTC —
+which is all of Mexico.
+
+The constraints arrive as a *second* constraints migration rather than an edit
+to `20261025000001_constraints`. A deployment that has applied that file will
+never apply it again, so editing it would mean the constraint existed on a fresh
+database and was missing from the hosted demo: the schema and the repository
+would agree and the live database would disagree with both.
+`tests/unit/migrations.test.ts` now checks `prisma/constraints.sql` against every
+`*_constraints` migration, so the convention is enforced rather than noted.

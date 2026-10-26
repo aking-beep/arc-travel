@@ -273,6 +273,8 @@ export async function getGuestExperience(propertyId: string, slug: string) {
           name: true,
           description: true,
           verification: true,
+          verifiedChecks: true,
+          insuranceExpiresOn: true,
           claimedCertifications: true,
           insuranceOnFile: true,
         },
