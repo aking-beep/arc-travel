@@ -31,6 +31,45 @@ const envSchema = z.object({
   ARC_ENABLE_OUTBOUND_MESSAGING: booleanish.default(false),
 
   /**
+   * Transactional email: a separate switch from outbound guest messaging, and
+   * deliberately so. See ADR-040.
+   *
+   * `ARC_ENABLE_OUTBOUND_MESSAGING` governs ARC *initiating* contact with a
+   * guest on a hotel's behalf — a nudge, a campaign, anything an agent drafted.
+   * That stays off and `send_guest_message` keeps throwing. This governs the
+   * reply to something a named person just did: the invitation they clicked
+   * "invite" to send, the confirmation for the booking they just paid for, the
+   * reset for the password they just asked to reset. Those are not outreach,
+   * they are the second half of an action the person took, and a product that
+   * cannot send them cannot be used by a real hotel.
+   *
+   * Off by default, so a deployment that says nothing sends nothing.
+   */
+  ARC_ENABLE_TRANSACTIONAL_EMAIL: booleanish.default(false),
+
+  /**
+   * The public origin this deployment is reached at, e.g.
+   * `https://stay.example.com`. No trailing slash.
+   *
+   * Required once transactional email is on: every message carries a link, and
+   * a link is the whole point of an invitation or a password reset. Guessing it
+   * from a request header would mean whoever sent the request chose where the
+   * recipient's credential-bearing link pointed.
+   */
+  ARC_PUBLIC_URL: z.string().url().optional(),
+
+  /**
+   * Who transactional mail is from, e.g. `ARC Stay <stay@example.com>`.
+   *
+   * Required with a live mail provider. The domain has to be one the provider
+   * has verified, which is why this is configuration and not a constant.
+   */
+  ARC_MAIL_FROM: z.string().optional(),
+
+  /** Where a recipient's reply goes. Optional; unset means replies go to `ARC_MAIL_FROM`. */
+  ARC_MAIL_REPLY_TO: z.string().optional(),
+
+  /**
    * Keys the seeded guests' portal tokens. See `src/lib/demo-portals.ts`.
    *
    * A portal token is a bearer credential, and the seed's used to be literals
@@ -105,6 +144,19 @@ const envSchema = z.object({
 
   MESSAGING_PROVIDER: z.enum(['noop']).default('noop'),
 
+  /**
+   * Transactional mail delivery. `log` records the message and delivers
+   * nothing; `resend` posts it to the Resend API.
+   *
+   * `log` is not a stub that pretends: the message is written to `EmailMessage`
+   * with status `LOGGED`, and `/owner/messages` shows exactly what would have
+   * gone out, to whom, with the real link in it. That is what makes a demo
+   * honest about its own mail and what lets a hotel read the copy before any
+   * of it reaches a guest.
+   */
+  MAIL_PROVIDER: z.enum(['log', 'resend']).default('log'),
+  RESEND_API_KEY: z.string().optional(),
+
   /** Culture-context travel advice. `fixture` is offline; `govuk` reads the live Content API. */
   TRAVEL_ADVICE_PROVIDER: z.enum(['fixture', 'govuk']).default('fixture'),
 
@@ -149,8 +201,10 @@ const UNBUILT_PROVIDERS: Record<string, Record<string, string>> = {
       'Outbound guest messaging is a kill switch, not a provider choice. The messaging provider ' +
       'refuses to deliver while ARC_ENABLE_OUTBOUND_MESSAGING is false (non-negotiable 6).',
     resend:
-      'Outbound guest messaging is a kill switch, not a provider choice. The messaging provider ' +
-      'refuses to deliver while ARC_ENABLE_OUTBOUND_MESSAGING is false (non-negotiable 6).',
+      'Outbound guest messaging is a kill switch, not a provider choice, and this is the wrong ' +
+      'setting for it. If you want confirmations, invitations and password resets, those are ' +
+      'transactional mail: set MAIL_PROVIDER=resend and ARC_ENABLE_TRANSACTIONAL_EMAIL=1 ' +
+      '(ADR-040). MESSAGING_PROVIDER governs ARC messaging a guest unprompted, which stays off.',
   },
   ANALYTICS_PROVIDER: {
     posthog:
@@ -338,6 +392,72 @@ export function getEnv(): Env {
           'must not be the local fallback. It keys the seeded guests\' portal tokens, which are ' +
           'bearer credentials — without it they are computable by anyone who has read the ' +
           'repository. See src/lib/demo-portals.ts.',
+      )
+    }
+  }
+
+  /*
+   * Transactional mail: configured completely, or off.
+   *
+   * Every one of these messages carries a link that is the credential or the
+   * record — an invitation token, a portal token, a reset token. A half-set
+   * mail configuration is therefore not "mail is a bit broken", it is a
+   * password reset nobody receives and a partner who can never get in.
+   */
+  if (env.ARC_ENABLE_TRANSACTIONAL_EMAIL) {
+    if (!env.ARC_PUBLIC_URL) {
+      throw new Error(
+        'ARC_ENABLE_TRANSACTIONAL_EMAIL=1 requires ARC_PUBLIC_URL, e.g. ' +
+          'https://stay.example.com. Every message carries a link and ARC will not take the ' +
+          'origin from a request header: whoever sent the request would then choose where the ' +
+          "recipient's invitation or password-reset link pointed.",
+      )
+    }
+    if (env.ARC_PUBLIC_URL.endsWith('/')) {
+      throw new Error('ARC_PUBLIC_URL must not end in a slash.')
+    }
+  }
+
+  if (env.MAIL_PROVIDER === 'resend') {
+    if (!env.ARC_ENABLE_TRANSACTIONAL_EMAIL) {
+      throw new Error(
+        'MAIL_PROVIDER=resend with ARC_ENABLE_TRANSACTIONAL_EMAIL unset would configure a live ' +
+          'mail path and then not use it. Set ARC_ENABLE_TRANSACTIONAL_EMAIL=1 to send, or ' +
+          'MAIL_PROVIDER=log to record messages without delivering them.',
+      )
+    }
+    if (!env.RESEND_API_KEY) {
+      throw new Error('MAIL_PROVIDER=resend requires RESEND_API_KEY.')
+    }
+    if (!env.ARC_MAIL_FROM) {
+      throw new Error(
+        'MAIL_PROVIDER=resend requires ARC_MAIL_FROM, on a domain verified with Resend. ' +
+          'Mail from an unverified domain is accepted by the API and then not delivered, which ' +
+          'is the one failure mode nobody notices.',
+      )
+    }
+  }
+
+  /*
+   * An open demo may not send mail.
+   *
+   * While `ARC_DATA_MODE=demo` and the front door is open, the sign-in page
+   * hands a stranger an owner session with no credential (ADR-028). An owner
+   * can invite a partner, and an invitation is an email to an address of the
+   * sender's choosing, from ARC's verified domain, containing a working link
+   * into this deployment. That is an open relay with ARC's reputation on it.
+   * Lock the demo, or keep MAIL_PROVIDER=log and let it record what it would
+   * have sent.
+   */
+  if (env.ARC_DATA_MODE === 'demo' && env.MAIL_PROVIDER !== 'log') {
+    const locked = (process.env.ARC_DEMO_PASSPHRASE ?? '').length > 0
+    if (!locked || env.ARC_ALLOW_OPEN_DEMO) {
+      throw new Error(
+        'MAIL_PROVIDER must be "log" while ARC_DATA_MODE=demo and the demo is open. The demo ' +
+          "sign-in issues an owner session with no credential, and an owner can send an " +
+          'invitation to any address — so a live mail provider here is an open relay sending ' +
+          "from ARC's domain. Set ARC_DEMO_PASSPHRASE and clear ARC_ALLOW_OPEN_DEMO, or run the " +
+          'real deployment at ARC_DATA_MODE=pilot.',
       )
     }
   }

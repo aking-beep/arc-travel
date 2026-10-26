@@ -91,17 +91,19 @@ export async function invitePartnerAction(_prev: FormState, formData: FormData):
       placeId: String(formData.get('placeId') ?? '') || null,
       description: String(formData.get('description') ?? '') || null,
       hotelCommissionBps: Math.round(Number(formData.get('hotelCommissionPct') ?? 15) * 100),
+      contactLocale: String(formData.get('contactLocale') ?? 'EN'),
     })
     revalidatePath('/owner/partners')
     revalidatePath('/owner')
 
     /*
-     * The invitation link is handed to the owner rather than emailed.
+     * The link is shown to the owner whether or not it was also emailed.
      *
-     * No message leaves this system without an `Approval` row naming who
-     * decided, and `ARC_ENABLE_OUTBOUND_MESSAGING` is false — so "we have
-     * emailed your partner" would be false. Showing the link is the smaller,
-     * true promise, and it keeps the credential in the owner's hands.
+     * Mail is the convenience (ADR-040); the link in the owner's hands is what
+     * works when a small operator's free mailbox silently drops it, and the
+     * owner is usually standing next to them anyway. What must not happen is
+     * the page claiming a send that did not occur, so the note is written from
+     * `emailStatus` rather than from an assumption.
      */
     const notes = [
       'They are unverified and payouts are off. ARC verification is a separate step on the admin surface.',
@@ -114,7 +116,30 @@ export async function invitePartnerAction(_prev: FormState, formData: FormData):
     } else {
       notes.push('They already have an ARC account, so they sign in with their existing password.')
     }
-    notes.push('No email was sent — outbound messaging is disabled in this build.')
+
+    switch (result.emailStatus) {
+      case 'sent':
+        notes.push('We have emailed them the invitation as well.')
+        break
+      case 'logged':
+        notes.push(
+          'The invitation email was recorded but not delivered — this deployment sends no mail. You can read it under Messages.',
+        )
+        break
+      case 'queued':
+        notes.push('The invitation email is queued and goes out within a few minutes.')
+        break
+      case 'failed':
+        notes.push(
+          'We could not deliver the invitation email. The reason is under Messages — pass the link on yourself.',
+        )
+        break
+      case 'unconfigured':
+        notes.push('No email was sent: this deployment has no email configured.')
+        break
+      case null:
+        break
+    }
 
     return { ok: true, message: 'Partner added and an agreement created.', notes }
   } catch (error) {

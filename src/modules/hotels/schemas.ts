@@ -54,4 +54,14 @@ export const partnerInviteSchema = z.object({
   description: z.string().trim().max(600).nullish(),
   /** Hotel's share of gross, in basis points. */
   hotelCommissionBps: z.coerce.number().int().min(0).max(5000),
+  /**
+   * Which language to write to this partner in.
+   *
+   * Asked rather than assumed. The invitation is the first thing ARC ever
+   * sends them, it is the only thing standing between them and an account, and
+   * in Puerto Escondido the local operator a boutique hotel works with is more
+   * likely to read Spanish than English. Defaults to EN to match
+   * `User.locale`; the form preselects Spanish, where the destination is.
+   */
+  contactLocale: z.enum(['EN', 'ES']).default('EN'),
 })

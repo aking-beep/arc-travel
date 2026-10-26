@@ -55,6 +55,16 @@ export function PartnerInviteForm({ places }: { places: Array<{ id: string; name
             defaultValue={15}
           />
         </Field>
+        <Field
+          label="Write to them in"
+          htmlFor="p-locale"
+          hint="The invitation is the first thing ARC sends them, and the only thing between them and an account."
+        >
+          <Select id="p-locale" name="contactLocale" defaultValue="ES">
+            <option value="ES">Español</option>
+            <option value="EN">English</option>
+          </Select>
+        </Field>
         <Field label="What they do" htmlFor="p-desc" className="sm:col-span-2">
           <Textarea id="p-desc" name="description" rows={3} maxLength={600} />
         </Field>

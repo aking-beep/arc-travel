@@ -497,6 +497,49 @@ export const dictionary = {
   'explore.notFound.title': 'There is nothing at this address',
   'explore.notFound.body': 'The link may be stale, or it may never have pointed anywhere.',
   'explore.notFound.cta': 'Back to Puerto Escondido',
+
+  // Mail, password reset, and the owner's log of what was sent.
+  'email.kind.partnerInvitation': 'Partner invitation',
+  'email.kind.staffInvitation': 'Staff invitation',
+  'email.kind.orderConfirmation': 'Booking confirmation',
+  'email.kind.orderCancelled': 'Cancellation',
+  'email.kind.guestPortalLink': 'Guest portal link',
+  'email.kind.passwordReset': 'Password reset',
+  'email.status.queued': 'Queued',
+  'email.status.sent': 'Sent',
+  'email.status.logged': 'Recorded, not sent',
+  'email.status.failed': 'Failed',
+  'email.log.title': 'Messages',
+  'email.log.lede':
+    'Every message ARC sent on your behalf, and every message it would have sent. Nothing here was composed by anyone but the product, and nothing reaches a guest that an action of yours did not cause.',
+  'email.log.empty': 'No messages yet',
+  'email.log.emptyHint':
+    'Inviting a partner, confirming a booking or sending a guest their portal link each produce one message here.',
+  'email.log.notConfigured':
+    'This deployment records messages and delivers none. Each message below is complete, including its link, so you can read exactly what a partner or a guest would receive.',
+  'email.log.toLabel': 'To',
+  'email.log.attempts': '{count} attempt(s)',
+  'email.log.error': 'Last error',
+  'email.log.show': 'Show the message',
+  'email.log.hide': 'Hide',
+  'auth.reset.title': 'Reset your password',
+  'auth.reset.lede':
+    'Give us the address on your account and we will send a link that lets you set a new password.',
+  'auth.reset.emailLabel': 'Email address',
+  'auth.reset.submit': 'Send the link',
+  'auth.reset.sent':
+    'If that address has an ARC Stay account with a password, a reset link is on its way. It expires in an hour.',
+  'auth.reset.notConfigured':
+    'This deployment cannot send email, so no link was sent. Ask whoever administers it to reset your password.',
+  'auth.reset.backToSignIn': 'Back to sign in',
+  'auth.reset.forgot': 'Forgotten your password?',
+  'auth.reset.setTitle': 'Choose a new password',
+  'auth.reset.setLede': 'For {email}. This link works once.',
+  'auth.reset.newPassword': 'New password',
+  'auth.reset.confirmPassword': 'Repeat it',
+  'auth.reset.setSubmit': 'Set the password',
+  'auth.reset.done': 'Your password is set. Sign in with it.',
+  'auth.reset.invalid': 'This reset link is not valid any more. Ask for a new one.',
   },
 
   es: {
@@ -985,6 +1028,49 @@ export const dictionary = {
   'explore.notFound.title': 'No hay nada en esta dirección',
   'explore.notFound.body': 'El enlace puede estar caducado, o puede que nunca llevara a nada.',
   'explore.notFound.cta': 'Volver a Puerto Escondido',
+
+  // Correo, restablecimiento de contraseña y el registro del alojamiento.
+  'email.kind.partnerInvitation': 'Invitación a socio',
+  'email.kind.staffInvitation': 'Invitación a personal',
+  'email.kind.orderConfirmation': 'Confirmación de reserva',
+  'email.kind.orderCancelled': 'Cancelación',
+  'email.kind.guestPortalLink': 'Enlace al portal del huésped',
+  'email.kind.passwordReset': 'Restablecer contraseña',
+  'email.status.queued': 'En cola',
+  'email.status.sent': 'Enviado',
+  'email.status.logged': 'Registrado, no enviado',
+  'email.status.failed': 'Falló',
+  'email.log.title': 'Mensajes',
+  'email.log.lede':
+    'Todos los mensajes que ARC envió en tu nombre, y todos los que habría enviado. Nada de esto lo redactó alguien distinto del producto, y no llega nada a un huésped que no haya causado una acción tuya.',
+  'email.log.empty': 'Aún no hay mensajes',
+  'email.log.emptyHint':
+    'Invitar a un socio, confirmar una reserva o enviar a un huésped su enlace al portal genera un mensaje aquí.',
+  'email.log.notConfigured':
+    'Este despliegue registra los mensajes y no entrega ninguno. Cada mensaje de abajo está completo, incluido su enlace, para que puedas leer exactamente lo que recibiría un socio o un huésped.',
+  'email.log.toLabel': 'Para',
+  'email.log.attempts': '{count} intento(s)',
+  'email.log.error': 'Último error',
+  'email.log.show': 'Ver el mensaje',
+  'email.log.hide': 'Ocultar',
+  'auth.reset.title': 'Restablece tu contraseña',
+  'auth.reset.lede':
+    'Dinos la dirección de tu cuenta y te enviaremos un enlace para elegir una contraseña nueva.',
+  'auth.reset.emailLabel': 'Correo electrónico',
+  'auth.reset.submit': 'Enviar el enlace',
+  'auth.reset.sent':
+    'Si esa dirección tiene una cuenta de ARC Stay con contraseña, el enlace va en camino. Caduca en una hora.',
+  'auth.reset.notConfigured':
+    'Este despliegue no puede enviar correo, así que no se envió ningún enlace. Pide a quien lo administra que restablezca tu contraseña.',
+  'auth.reset.backToSignIn': 'Volver a iniciar sesión',
+  'auth.reset.forgot': '¿Olvidaste tu contraseña?',
+  'auth.reset.setTitle': 'Elige una contraseña nueva',
+  'auth.reset.setLede': 'Para {email}. Este enlace sirve una sola vez.',
+  'auth.reset.newPassword': 'Contraseña nueva',
+  'auth.reset.confirmPassword': 'Repítela',
+  'auth.reset.setSubmit': 'Guardar la contraseña',
+  'auth.reset.done': 'Tu contraseña quedó guardada. Inicia sesión con ella.',
+  'auth.reset.invalid': 'Este enlace ya no es válido. Pide uno nuevo.',
   },
 } as const
 

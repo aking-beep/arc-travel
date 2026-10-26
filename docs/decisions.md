@@ -1499,3 +1499,115 @@ password reset: there is no outbound mail path, and
 forgets their password still has their QR code, and the account is additive to
 it rather than a replacement for it. That ordering is deliberate: the portal
 keeps working for everyone who never signs up.
+
+## ADR-040 — Transactional email is a separate permission from outbound guest messaging
+
+**Status:** accepted · 2026-10-26
+
+**Context.** ARC Stay could not send an email. Not "had no templates" — had no
+mail path at all: `MESSAGING_PROVIDER` accepted one value, `noop`, whose `send`
+throws, and `resend` was explicitly refused by `src/lib/env.ts` with the message
+that outbound messaging is a kill switch rather than a provider choice.
+
+That refusal was right about the thing it was protecting and wrong about its
+scope, and the cost of the conflation was large and concrete:
+
+- A partner invitation was a link in a flash message. An owner had to copy it
+  out of their browser and get it to a local operator by WhatsApp or down the
+  phone. `invitePartner`'s own comment said so: "that is a smaller promise than
+  'we have emailed your partner', and it is a true one."
+- A guest who paid for four experiences received nothing. The only record was a
+  page behind a bearer token they had to still have.
+- ADR-039 shipped guest accounts with **no password reset**, and said why: there
+  was nowhere to send one to. A real hotel hits that in roughly its first week,
+  when a manager forgets the password to their own dashboard and ARC's answer is
+  that it cannot help.
+
+**Decision.** Transactional mail is its own boundary with its own switch, and
+outbound guest messaging keeps the one it has.
+
+`ARC_ENABLE_OUTBOUND_MESSAGING` governs ARC **initiating** contact with a guest
+on a hotel's behalf: a nudge, a campaign, anything an agent drafted, anything on
+a schedule, anything to an audience. That stays off, `send_guest_message` keeps
+throwing, `NoopMessagingProvider` keeps refusing, and non-negotiable 6 is
+unchanged.
+
+`ARC_ENABLE_TRANSACTIONAL_EMAIL` governs the **reply to something a named person
+just did**, in the same request: the invitation they pressed "invite" to create,
+the confirmation of the booking they just paid for, the reset of the password
+they just asked to reset. These are not outreach. They are the second half of an
+action somebody took, and the message *is* the thing they asked for.
+
+The rules that keep the second from becoming the first are in the `Mailer`
+interface (`src/modules/notifications/types.ts`) and enforced in the service:
+
+1. **One recipient, loaded from the record the action touched** — the invitee's
+   own address, the payer's own address, the account holder's own address. There
+   is no audience form of `queueEmail` and there must not be one.
+2. **Every message is caused by an action and recorded with it.** `EmailMessage`
+   carries `causedByUserId` and what the message was about.
+3. **No message composed by an agent.** The templates are code
+   (`modules/notifications/templates.ts`); the AI never reaches this path. The
+   existing commitment that the AI explains and never decides (non-negotiable 5)
+   needs no exception here.
+
+**Queued in the transaction, delivered after it.** `queueEmail` takes a `tx` and
+writes one row, so an order and its confirmation commit together or not at all.
+Nothing is sent from inside: a `fetch` inside a Serializable block holds it open
+for the length of somebody else's network, and `inSerializableTransaction`
+re-runs its body on a serialization failure — which is exactly how a guest gets
+two cancellation emails for one cancellation. Delivery is the caller's own
+`dispatchQueued` after the commit, and `/api/cron/dispatch-email` every five
+minutes for whatever a caller did not reach: a crash in that gap must cost a
+delay, not a lost invitation.
+
+**`MAIL_PROVIDER=log` is a mode, not a stub.** The message is recorded in full,
+including its real link, with status `LOGGED`, and `/owner/messages` shows it.
+A hotel deciding whether to let ARC write to its guests and its partners has to
+read the actual words first, and a product that sends nothing and shows nothing
+cannot be evaluated at all. `LOGGED` is deliberately not `SENT`: the provider
+returned ok and delivered nothing, and recording that as sent is the one lie
+this whole distinction exists to prevent.
+
+**An open demo may not send.** While `ARC_DATA_MODE=demo` and the front door is
+open, `/sign-in` hands a stranger an owner session with no credential (ADR-028),
+and an owner can invite a partner at any address they type. A live provider there
+is an open relay sending from ARC's verified domain with a working link into the
+deployment, so `getEnv()` refuses the combination.
+
+**Password reset, and the three things it does not do.** It never says whether an
+address has an account — the accounts here are a named list of boutique hotels
+and their partners, so "is this hotel on ARC" is commercially interesting
+information to hand to whoever asks a form. It refuses a credential-free
+placeholder `User`, because mailing a reset to one would be a way to take over
+that account by asking, going round the invitation or the booking claim that is
+supposed to prove the link (ADR-039). And completing one does **not** sign the
+person in: a reset link in a mailbox is weaker proof than a password, and
+treating it as a session would make a readable inbox equivalent to a credential
+for as long as that session lasted. One hour, one use, and a newer request kills
+the older link.
+
+**The portal link is the one sender that is not automatic.** A portal token is a
+bearer credential for one stay (ADR-035). Mailing it on stay creation would put a
+working credential in an inbox nobody asked to receive it in, and an address a
+front desk mistyped would send it to a stranger. So it is a button an owner
+presses on a stay they can see, the press is recorded, and the tenancy predicate
+is in the service's `where` clause.
+
+**Consequences.**
+
+- Two switches where there was one, and the names have to carry the difference.
+  The refusal message on `MESSAGING_PROVIDER=resend` now points at
+  `MAIL_PROVIDER` rather than only saying no.
+- `ARC_PUBLIC_URL` becomes required once mail is on, and is never derived from a
+  request header: whoever sent the request would then choose where the
+  recipient's credential-bearing link pointed.
+- `invitePartner` still returns the invitation link, and `/owner/partners` still
+  shows it. Mail is the convenience; the link in the owner's hands is what works
+  when a small operator's free mailbox silently drops it.
+- A failed message is visible with its reason, and a permanently-failed one stops
+  being retried after five attempts. `/api/cron/dispatch-email` returns 200 when
+  messages failed, for the ADR-037 reason: the dispatcher ran and worked.
+- Nothing about the transactional path licenses a marketing one. A second
+  recipient, a schedule, or a drafted body is the other switch, and that
+  conversation is non-negotiable 6's.

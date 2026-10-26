@@ -179,6 +179,68 @@ and `POSTHOG_KEY` warn on startup rather than sitting there looking connected.
 Adding a name back to one of those enums without an implementation is a type
 error in `getIntegrations()`, not a setting that is read and ignored.
 
+## Transactional email
+
+Off by default, and a different permission from the guest-messaging kill switch.
+`ARC_ENABLE_OUTBOUND_MESSAGING` is about ARC *initiating* contact with a guest
+and stays false; this is about the reply to something a named person just did.
+See ADR-040.
+
+| Variable | Value | Why |
+| --- | --- | --- |
+| `ARC_ENABLE_TRANSACTIONAL_EMAIL` | `1` to send | Off by default: a deployment that says nothing sends nothing |
+| `ARC_PUBLIC_URL` | `https://stay.example.com`, no trailing slash | Every message carries a link, and the origin is never taken from a request header |
+| `MAIL_PROVIDER` | `log` or `resend` | `log` records the message in full and delivers nothing |
+| `RESEND_API_KEY` | from Resend | Required by `resend` |
+| `ARC_MAIL_FROM` | `ARC Stay <stay@yourdomain>` | Required by `resend`, on a domain verified with Resend |
+| `ARC_MAIL_REPLY_TO` | an address a person reads | Optional; unset means replies go to `ARC_MAIL_FROM` |
+| `CRON_SECRET` | random | `/api/cron/dispatch-email` 404s without it, so the retry queue never drains |
+
+**Set `ARC_PUBLIC_URL` even with delivery off.** With it set, `MAIL_PROVIDER=log`
+records complete messages including their real links, and `/owner/messages` shows
+them. That is how a hotel reads the exact copy a partner or a guest would
+receive before any of it is sent, and it is the difference between a demo that
+is honest about its mail and one that silently sends nothing.
+
+**An open demo cannot send.** `getEnv()` refuses `MAIL_PROVIDER=resend` while
+`ARC_DATA_MODE=demo` and the front door is open, because the demo sign-in issues
+an owner session with no credential and an owner can invite a partner at any
+address — a live provider there is an open relay sending from a domain you own.
+A deployment that should really send mail runs at `ARC_DATA_MODE=pilot`.
+
+**Turning it on later sends the backlog.** A message written while the switch was
+off is queued, not failed, and no attempt is consumed. Setting the switch and
+letting `/api/cron/dispatch-email` run delivers everything still queued — so
+"configure mail next week" costs a delay rather than a lost first week of
+invitations.
+
+### Setting up Resend
+
+1. Create a Resend account and add your sending domain.
+2. Add the DNS records Resend gives you (SPF, DKIM, and the return-path CNAME).
+   Mail from an unverified domain is accepted by the API and then not delivered,
+   which is the one failure nobody notices — wait for Resend to show the domain
+   as verified before switching over.
+3. Create an API key with send permission only.
+4. Set `MAIL_PROVIDER=resend`, `RESEND_API_KEY`, `ARC_MAIL_FROM` and
+   `ARC_ENABLE_TRANSACTIONAL_EMAIL=1`, with `ARC_DATA_MODE` not `demo`.
+5. Send one real invitation to an address you control, then check
+   `/owner/messages` says `Sent` and the message arrived. A row reading
+   `Recorded, not sent` means the provider is still `log`; a row reading
+   `Failed` carries the provider's own reason.
+
+### What is sent, and what is never sent
+
+Sent: a partner invitation, a staff invitation, a booking confirmation, a
+cancellation with what was refunded, a password reset, and a guest's portal link
+— that last one only when an owner presses the button on that stay, never
+automatically, because the token is a bearer credential (ADR-035).
+
+Never sent: anything to an audience, anything on a schedule, anything an agent
+composed, and anything to an address that is not already on the record the action
+touched. Those are outbound guest messaging, which is the other switch and
+non-negotiable 6's conversation.
+
 ## Connection pooling
 
 `inSerializableTransaction` uses Prisma **interactive** transactions, which hold

@@ -49,6 +49,12 @@ export function CredentialsForm({ next }: { next: string }) {
       </SubmitButton>
 
       <p className="text-sand-600 text-sm">
+        <Link href="/forgot-password" className="text-jade-800 underline underline-offset-4">
+          Forgotten your password?
+        </Link>
+      </p>
+
+      <p className="text-sand-600 text-sm">
         No account yet?{' '}
         <Link href="/sign-up" className="text-jade-800 underline underline-offset-4">
           Register your hotel

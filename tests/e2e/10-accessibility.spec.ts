@@ -110,6 +110,11 @@ test.describe('accessibility', () => {
     await page.goto('/owner/payouts')
     await audit(page, '/owner/payouts')
 
+    // The mail log: a list with a loading, empty and error state, and a
+    // `details` disclosure per message (ADR-040).
+    await page.goto('/owner/messages')
+    await audit(page, '/owner/messages')
+
     await signOut(page)
   })
 
@@ -131,6 +136,16 @@ test.describe('accessibility', () => {
     await audit(page, '/admin/health')
 
     await signOut(page)
+  })
+
+  test('the password reset surfaces', async ({ page }) => {
+    await page.goto('/forgot-password')
+    await audit(page, '/forgot-password')
+
+    // The refused-token state, which is what most visitors to this route see:
+    // it has to be legible as well as uninformative.
+    await page.goto('/reset-password/a-token-that-was-never-issued')
+    await audit(page, '/reset-password/[token] refused')
   })
 
   test('the guest account surfaces', async ({ page }) => {

@@ -43,7 +43,12 @@ them relaxed, that is a conversation, not a refactor.
    candidate, remove an exclusion or change a score.
 6. **No autonomous action.** A consequential action requires an `Approval` row
    naming the user who decided. `send_guest_message` throws while
-   `ARC_ENABLE_OUTBOUND_MESSAGING` is false.
+   `ARC_ENABLE_OUTBOUND_MESSAGING` is false — that switch is about ARC
+   *initiating* contact, and it stays off. Transactional mail (the invitation an
+   owner just sent, the confirmation of a booking just paid for, a password
+   reset just asked for) is a separate switch, `ARC_ENABLE_TRANSACTIONAL_EMAIL`,
+   with its own boundary: one recipient, taken from the record the action
+   touched, and never a body an agent composed. See ADR-040.
 7. **Demo mode is a guarantee.** While `ARC_DATA_MODE=demo`, a live payment
    provider is a startup error.
 8. **An advisory is never rendered as law.** A `LAW` culture rule needs a
@@ -201,6 +206,12 @@ Two E2E habits, learned the hard way and recorded in the specs:
 | `/api/health` exists as well as `/admin/health` and tells an anonymous caller almost nothing | ADR-037. The admin page cannot be polled, and an unauthenticated endpoint is reconnaissance for whoever finds it |
 | The `--color-sand-*` lightness values look arbitrary | ADR-038. Each is set by measured contrast against the worst light surface it sits on. Changing one is a contrast decision; re-run the accessibility spec |
 | The accessibility spec runs last in the E2E suite | ADR-038. One violation only existed once a guest had generated an itinerary. A clean-seed audit missed it |
+| Transactional email has its own switch, and `MESSAGING_PROVIDER` still refuses `resend` | ADR-040. Two different permissions. One is ARC initiating contact with a guest; the other is the reply to something a named person just did, which the product cannot work without |
+| `MAIL_PROVIDER=log` records a complete message, link included, rather than sending | ADR-040. A hotel has to read the real words before any of them reach a guest. `LOGGED` is deliberately not `SENT` |
+| A message is written inside the caller's transaction and sent after it commits | ADR-040. A `fetch` inside a Serializable block holds it open, and `inSerializableTransaction` re-runs its body on a retry — which is how one cancellation sends two emails |
+| A password reset answers identically for an address with no account | ADR-040. The accounts are a named list of boutique hotels; "is this hotel on ARC" is not information a public form should confirm |
+| Completing a password reset does not sign you in | ADR-040. A link in a mailbox is weaker proof than a password, and a session would make a readable inbox equivalent to a credential |
+| A guest's portal link is emailed only when an owner presses a button | ADR-040. The token is a bearer credential (ADR-035); mailing it automatically would send one to whatever address a front desk mistyped |
 
 ## Review
 

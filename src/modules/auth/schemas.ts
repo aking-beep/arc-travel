@@ -28,6 +28,23 @@ export const passwordSignInSchema = z.object({
   password: z.string().min(1, 'Enter your password.').max(PASSWORD_MAX_LENGTH),
 })
 
+/**
+ * Asking for a reset. The address only: there is nothing else to ask for, and
+ * anything else on this form would be a thing an attacker gets to vary.
+ */
+export const passwordResetRequestSchema = z.object({ email })
+
+export const passwordResetCompleteSchema = z
+  .object({
+    token: z.string().trim().min(16).max(128),
+    password,
+    confirmPassword: z.string(),
+  })
+  .refine((v) => v.password === v.confirmPassword, {
+    path: ['confirmPassword'],
+    message: 'The two passwords do not match.',
+  })
+
 export const acceptInvitationSchema = z
   .object({
     token: z.string().trim().min(16).max(128),

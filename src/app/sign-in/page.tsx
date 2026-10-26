@@ -31,9 +31,9 @@ export const metadata = { title: 'Sign in' }
 export default async function SignInPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>
+  searchParams: Promise<{ next?: string; reset?: string }>
 }) {
-  const { next } = await searchParams
+  const { next, reset } = await searchParams
   // `safeNext`, not a local `startsWith('/')` check: the weaker form admitted
   // `//evil.example.com`, which the browser treats as an absolute URL.
   const target = safeNext(next)
@@ -58,6 +58,20 @@ export default async function SignInPage({
           <KeyRound className="text-jade-700 size-5" aria-hidden />
           <h1 className="font-display text-2xl font-semibold">Sign in</h1>
         </div>
+
+        {reset === '1' ? (
+          /*
+           * The one thing a completed reset gets: a line telling the person to
+           * use the password they just set. Not a session — see the note in
+           * `reset-password/[token]/actions.ts`.
+           */
+          <p
+            role="status"
+            className="border-jade-200 bg-jade-50 text-jade-900 mt-6 max-w-md rounded-lg border px-4 py-3 text-sm"
+          >
+            Your password is set. Sign in with it.
+          </p>
+        ) : null}
 
         <Card className="mt-6 max-w-md">
           <CardHeader>

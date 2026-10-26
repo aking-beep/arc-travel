@@ -8,6 +8,10 @@
     {
       "path": "/api/cron/check-invariants",
       "schedule": "17 * * * *"
+    },
+    {
+      "path": "/api/cron/dispatch-email",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

@@ -1,7 +1,15 @@
 import { prisma } from '@/lib/db'
 import { conflict, forbidden, notFound } from '@/lib/errors'
-import { EntityStatus, InvitationKind, Role, VerificationStatus } from '@/lib/prisma-types'
+import { reportError } from '@/lib/observability'
+import { EmailKind, EntityStatus, InvitationKind, Role, VerificationStatus } from '@/lib/prisma-types'
 import { createInvitation } from '@/modules/auth/invitations'
+import {
+  canComposeEmail,
+  dispatchQueued,
+  publicUrl,
+  queueEmail,
+} from '@/modules/notifications/service'
+import { partnerInvitation as partnerInvitationEmail } from '@/modules/notifications/templates'
 import { assertOrganizationAccess, assertPropertyAccess, type ActorContext } from '@/modules/tenancy/context'
 import { VERIFICATION_STANDING_SELECT } from '@/modules/admin/verification'
 import { recordAudit } from '@/modules/workflows/audit'
@@ -297,12 +305,20 @@ export interface PartnerInviteResult {
    * The invitation the partner needs to set their own password, present only
    * when this call created the account.
    *
-   * Returned rather than emailed: `ARC_ENABLE_OUTBOUND_MESSAGING` is false and
-   * no message leaves this system without an `Approval` row, so the owner is
-   * handed the link and passes it on themselves. That is a smaller promise
-   * than "we have emailed your partner", and it is a true one.
+   * Still returned even when it was also emailed, and the owner surface still
+   * shows it. Mail is the convenience; the link in the owner's hands is the
+   * thing that works when a partner's provider silently drops it, which for a
+   * small business on a free mailbox is a real Tuesday. `emailStatus` says
+   * which of the two happened so the page can stop claiming the wrong one.
    */
   invitation: { token: string; expiresAt: Date } | null
+  /**
+   * What became of the invitation email.
+   *
+   * `unconfigured` is the honest answer on a deployment with no mail set up,
+   * and it is the one the owner surface must not render as "sent".
+   */
+  emailStatus: 'sent' | 'logged' | 'queued' | 'unconfigured' | 'failed' | null
 }
 
 export async function invitePartner(
@@ -367,6 +383,8 @@ export async function invitePartner(
           email,
           name: input.contactName,
           phone: input.contactPhone ?? null,
+          // The language the invitation and everything after it is written in.
+          locale: input.contactLocale,
           // No password. ARC never invents a credential for someone else; the
           // invitation below is how this person takes the account over.
         },
@@ -388,7 +406,7 @@ export async function invitePartner(
         verification: VerificationStatus.UNVERIFIED,
         payoutsEnabled: false,
       },
-      select: { id: true },
+      select: { id: true, name: true },
     })
 
     await tx.membership.create({
@@ -442,11 +460,84 @@ export async function invitePartner(
 
     return {
       supplierId: supplier.id,
+      supplierName: supplier.name,
+      contactEmail: email,
+      contactName: input.contactName,
       invitation: invitation ? { token: invitation.token, expiresAt: invitation.expiresAt } : null,
     }
   })
 
-  return result
+  /*
+   * The email goes out after the transaction, never inside it.
+   *
+   * A `fetch` inside a transaction holds it open for the length of somebody
+   * else's network, and a mail outage would roll back a partner record the
+   * owner can see no reason to lose. The queue row is written here too rather
+   * than inside — nothing above it needs to be undone if this fails, and the
+   * owner keeps the link either way. See ADR-040.
+   */
+  let emailStatus: PartnerInviteResult['emailStatus'] = null
+  if (result.invitation) {
+    emailStatus = canComposeEmail() ? 'logged' : 'unconfigured'
+    if (canComposeEmail()) {
+      const property = await prisma.property.findUnique({
+        where: { id: propertyId },
+        select: { name: true },
+      })
+      const locale = input.contactLocale === 'ES' ? ('es' as const) : ('en' as const)
+      try {
+        const messageId = await queueEmail({
+          kind: EmailKind.PARTNER_INVITATION,
+          organizationId,
+          to: { address: result.contactEmail, name: result.contactName },
+          locale,
+          rendered: partnerInvitationEmail(locale, {
+            partnerName: result.supplierName,
+            contactName: result.contactName,
+            propertyName: property?.name ?? 'the property',
+            inviteUrl: publicUrl(`/invite/${result.invitation.token}`),
+            expiresAt: result.invitation.expiresAt,
+            commissionPct: (input.hotelCommissionBps / 100).toFixed(
+              input.hotelCommissionBps % 100 === 0 ? 0 : 1,
+            ),
+          }),
+          about: { entityType: 'Supplier', entityId: result.supplierId },
+          causedByUserId: actor.userId,
+        })
+        const outcome = await dispatchQueued({ ids: [messageId] })
+        /*
+         * `deferred` is not `unconfigured`.
+         *
+         * A message written while `ARC_ENABLE_TRANSACTIONAL_EMAIL` is off, or
+         * while the provider was unreachable, stays queued with no attempt
+         * consumed — so it goes out when the switch is turned on or the
+         * provider recovers. Telling the owner nothing was sent would be true
+         * now and wrong in an hour.
+         */
+        emailStatus = outcome.sent > 0
+          ? 'sent'
+          : outcome.failed > 0
+            ? 'failed'
+            : outcome.logged > 0
+              ? 'logged'
+              : 'queued'
+      } catch (error) {
+        /*
+         * The partner exists and the owner has the link. Failing the whole
+         * action because mail failed would report a success as a failure and
+         * invite the owner to invite the same partner again, which now
+         * conflicts on the email address.
+         */
+        await reportError(error, {
+          where: 'hotels/invitePartner:email',
+          extra: { supplierId: result.supplierId },
+        })
+        emailStatus = 'failed'
+      }
+    }
+  }
+
+  return { supplierId: result.supplierId, invitation: result.invitation, emailStatus }
 }
 
 export async function listPartners(actor: ActorContext, propertyId: string) {

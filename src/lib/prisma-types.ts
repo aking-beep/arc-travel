@@ -12,6 +12,8 @@ export {
   CommissionBasis,
   ConditionsRisk,
   ConsentType,
+  EmailKind,
+  EmailStatus,
   EntityStatus,
   ExperienceCategory,
   ExperienceStatus,

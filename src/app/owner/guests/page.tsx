@@ -8,7 +8,7 @@ import { StayStatus } from '@/lib/prisma-types'
 import { requireActor } from '@/modules/auth/service'
 import { getPropertyOverview, resolveOperatingProperty } from '@/modules/hotels/service'
 import { listStays } from '@/modules/stays/service'
-import { CreateStayForm, ReissueTokenForm, StayStatusForm } from './forms'
+import { CreateStayForm, ReissueTokenForm, StayStatusForm, SendPortalLinkForm} from './forms'
 
 export const metadata = { title: 'Guests' }
 
@@ -145,6 +145,7 @@ export default async function GuestsPage() {
 
                 <div className="flex flex-wrap items-end justify-between gap-4">
                   <StayStatusForm stayId={stay.id} options={NEXT_STATUSES[stay.status]} />
+                  {stay.portalLive ? <SendPortalLinkForm stayId={stay.id} /> : null}
                   {stay.portalLive ? <ReissueTokenForm stayId={stay.id} /> : null}
                 </div>
               </CardContent>

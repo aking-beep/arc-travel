@@ -328,6 +328,7 @@ model Organization {
   payouts          Payout[]
 
   @@index([status])
+  emailMessages EmailMessage[]
 }
 
 /// A single boutique hotel. The unit a guest experiences and an owner manages.
@@ -408,6 +409,8 @@ model User {
   invitations      Invitation[] @relation("InvitationUser")
   invitationsSent  Invitation[] @relation("InvitationSender")
   payoutsSettled   Payout[]
+  passwordResets   PasswordResetToken[] @relation("PasswordResetUser")
+  emailsCaused     EmailMessage[]       @relation("EmailCausedBy")
 }
 
 /// Binds a user to an organization with a role. The sole source of authority.
@@ -1660,4 +1663,119 @@ enum InvitationKind {
   SUPPLIER
   /// A staff member invited to an existing property.
   STAFF
+}
+
+/// A transactional email: queued inside the transaction that caused it, then
+/// delivered after that transaction commits. See ADR-040.
+///
+/// The row exists whether or not anything was delivered. `LOGGED` is a
+/// deliberate, visible outcome rather than a failure: with `MAIL_PROVIDER=log`
+/// the message is recorded in full, including its link, and `/owner/messages`
+/// shows what would have gone out. A demo that quietly sends nothing and a
+/// demo that records what it would have sent look the same from the code and
+/// completely different to a hotel deciding whether to trust the copy.
+model EmailMessage {
+  id             String      @id @default(uuid())
+  /// Null for a message that belongs to no tenant — a password reset, which is
+  /// about an account rather than an organization.
+  organizationId String?
+  kind           EmailKind
+  status         EmailStatus @default(QUEUED)
+
+  /// The recipient address, as it was on the record this message is about.
+  ///
+  /// Stored in the clear, because this is a mail log and the question it has to
+  /// answer is "did it go to the right address". The PII rule that keeps values
+  /// out of `AuditEvent` metadata is about a trail that does not need them; a
+  /// mail log does.
+  toAddress String
+  toName    String?
+  locale    Locale  @default(EN)
+  subject   String
+  /// Plain text. Every message is readable without HTML, and the text body is
+  /// what is stored and shown; the HTML sent is generated from it.
+  body      String
+
+  /// Which entity this is about, for the log and for the owner surface.
+  /// Deliberately loose strings rather than foreign keys: the message outlives
+  /// a cancelled stay or a withdrawn invitation, and a mail log that disappears
+  /// when the thing it was about is deleted cannot answer a dispute.
+  entityType String?
+  entityId   String?
+
+  /// Who caused it. Null only for a path with no signed-in actor, which is the
+  /// password reset — nobody is signed in when they ask for one.
+  causedByUserId String?
+
+  /// Attempts made. Bounded, so a permanently-bad address stops being retried.
+  attempts   Int       @default(0)
+  provider   String?
+  /// The provider's own id for the delivered message.
+  providerReference String?
+  /// Why the last attempt failed. Provider text, kept for support.
+  lastError  String?
+  queuedAt   DateTime  @default(now())
+  sentAt     DateTime?
+  failedAt   DateTime?
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  causedBy     User?         @relation("EmailCausedBy", fields: [causedByUserId], references: [id], onDelete: SetNull)
+
+  /// The dispatcher's claim: oldest queued first, bounded attempts.
+  @@index([status, queuedAt])
+  @@index([organizationId, queuedAt])
+  @@index([entityType, entityId])
+}
+
+enum EmailKind {
+  /// A hotel invited a local partner. The link is the invitation.
+  PARTNER_INVITATION
+  /// A hotel invited a staff member to a property.
+  STAFF_INVITATION
+  /// A guest's booking was confirmed and paid for.
+  ORDER_CONFIRMATION
+  /// A booking the guest or the hotel cancelled, with what was refunded.
+  ORDER_CANCELLED
+  /// The link to a guest's own portal, sent by the property that holds the stay.
+  GUEST_PORTAL_LINK
+  /// Somebody asked to reset the password on their own account.
+  PASSWORD_RESET
+}
+
+enum EmailStatus {
+  /// Written, not yet attempted. The dispatcher's queue.
+  QUEUED
+  /// Delivered to the provider, which accepted it.
+  SENT
+  /// Recorded and deliberately not delivered (`MAIL_PROVIDER=log`).
+  LOGGED
+  /// Attempted and refused enough times to stop trying.
+  FAILED
+}
+
+/// A single-use, short-lived permission to set a new password on one account.
+///
+/// Only the hash is stored, for the same reason a password's is: a leaked
+/// database must not yield working reset links. Separate from `Invitation`,
+/// which hands over an account somebody else created and lasts fourteen days;
+/// a reset is for an account its owner already holds and lasts an hour.
+model PasswordResetToken {
+  id        String @id @default(uuid())
+  userId    String
+  /// SHA-256 of the token. The token itself exists only in the emailed link.
+  tokenHash String @unique
+
+  expiresAt DateTime
+  usedAt    DateTime?
+  /// Set when a later request superseded this one, so an old link in an inbox
+  /// stops working as soon as a newer one is asked for.
+  supersededAt DateTime?
+  /// Coarse origin of the request, for abuse investigation. Not a session.
+  requestedFromHash String?
+  createdAt DateTime @default(now())
+
+  user User @relation("PasswordResetUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
+  @@index([expiresAt])
 }
