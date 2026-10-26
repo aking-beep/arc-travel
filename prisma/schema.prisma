@@ -15,9 +15,12 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// The connection URL is no longer here. Prisma 7 takes it from
+// `prisma.config.ts` for the CLI and from a driver adapter for the client, so
+// there is now exactly one place that resolves it — see `src/lib/db.ts` and
+// `src/lib/database-url.ts`.
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 // === Enums ===================================================================

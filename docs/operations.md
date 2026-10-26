@@ -190,10 +190,10 @@ Two things are **not** in the dump and are needed to make a restore usable:
    `AnalyticsEvent.subjectKey` becomes unjoinable to anything written after —
    so the salt is part of the backup, kept where the database dump is not.
 2. `prisma/constraints.sql`. A `pg_restore` of a dump taken with
-   `--schema-only` from a database where `npm run db:constraints` had not run
+   `--schema-only` from a database whose constraints had never been applied
    produces a schema with `booked + held <= capacity` enforced only by
-   application code (ADR-020). Always re-run it after a restore and before
-   taking traffic.
+   application code (ADR-020). The restore below re-applies them and then
+   *proves* the invariant, rather than assuming the dump carried it.
 
 ### Taking a backup
 
@@ -229,7 +229,14 @@ pg_restore --dbname="$RESTORE_URL" --no-owner --no-privileges \
   --single-transaction arc-stay-20261024T120000Z.dump
 
 # 3. The constraints Prisma cannot express (ADR-020). NOT optional.
+#    Every statement in constraints.sql is `IF EXISTS`-guarded, so this is safe
+#    to run against a dump that already carried them.
 DATABASE_URL="$RESTORE_URL" npm run db:constraints
+
+# 3b. Confirm the restored schema is the one the code expects. A dump from an
+#     older deployment can be a migration or two behind; this says so rather
+#     than leaving it to be discovered by a query at runtime.
+DATABASE_URL="$RESTORE_URL" npm run db:migrate:status
 
 # 4. Prove the invariant the whole inventory model rests on.
 psql "$RESTORE_URL" -c \
@@ -278,9 +285,11 @@ to keep.
 Said plainly, because an operations document that implies otherwise is worse
 than none:
 
-- **No migrations.** `prisma db push`, no migration history (see
-  `docs/deployment.md`). A pilot with a real hotel's data needs
-  `prisma migrate` before it has data worth keeping.
+- **No rollback migrations.** There is a migration history now
+  (`migrate deploy`, see `docs/deployment.md`), but every migration is
+  forward-only. Undoing one means writing the inverse by hand, and a migration
+  that drops a column cannot be undone at all once the column is gone. Take a
+  backup before deploying a migration that drops or narrows anything.
 - **No alerting rules.** Faults reach Sentry; nothing pages anyone. Who gets
   woken, and for what, is a pilot decision.
 - **No uptime monitoring** beyond `/admin/health`, which requires a signed-in

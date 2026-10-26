@@ -119,8 +119,9 @@ The seed prints the full list each time it runs.
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Development server |
-| `npm run setup` | Generate client, push schema, apply constraints, seed |
-| `npm run db:constraints` | Apply `prisma/constraints.sql` (CHECK constraints Prisma cannot express) |
+| `npm run setup` | Generate client, apply migrations, seed |
+| `npm run db:migrate:status` | Whether this database has every migration |
+| `npm run db:constraints` | Re-apply `prisma/constraints.sql` after a `pg_restore` (ADR-020); normally arrives with the migrations |
 | `npm run db:seed` | Reseed (truncates first; idempotent and deterministic) |
 | `npm run db:ensure-seed` | Seed only if the database is empty — for a hosted demo, where a redeploy must not wipe data |
 | `npm run db:studio` | Prisma Studio |

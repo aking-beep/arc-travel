@@ -11,7 +11,7 @@ bearing.
 ## Commands
 
 ```bash
-npm run setup       # generate client, push schema, seed
+npm run setup       # generate client, apply migrations, seed
 npm run dev
 npm run verify      # typecheck → lint → test → build. Run before any commit.
 npm test            # unit + integration (needs TEST_DATABASE_URL)
@@ -179,6 +179,7 @@ Two E2E habits, learned the hard way and recorded in the specs:
 | The gate derives a demanded ability when there is no reading | ADR-017. Guarding the ability rules on a snapshot meant a guest who stated no level was offered an advanced-only break on any undated day |
 | `addToCart` re-runs the safety gate | ADR-019. The itinerary was not the only route to a booking, so gating only the recommendation left the commitment open |
 | CHECK constraints live in `prisma/constraints.sql`, not the schema | ADR-020. Prisma cannot express them, and application-only invariants fail silently |
+| `prisma/constraints.sql` is duplicated inside a migration | ADR-034. The file stays the one people edit and read; the migration is how a database gets it. `tests/unit/migrations.test.ts` fails if the two drift |
 | `returnCapacity` throws instead of clamping | ADR-020. The clamp kept the counter non-negative while hiding the double-cancellation that caused it |
 | `invitePartner` refuses an email that already has an account | ADR-021. It used to `upsert`, rewriting a stranger's profile and grafting a membership onto it |
 | `/sign-in` 404s outside demo mode and lists no guests | **Superseded by ADR-028.** The page now works in every mode and lists accounts only in demo mode, because real passwords exist |

@@ -8,31 +8,37 @@ provider and no real inventory, and nothing here changes that.
 
 1. A PostgreSQL 16 database the deployment can reach.
 2. Six environment variables (below).
-3. A build that pushes the schema, applies the CHECK constraints and seeds the
-   demo data before building the app.
+3. A build that applies the migrations and seeds the demo data before building
+   the app.
 
 ## The build
 
 ```bash
 npm run vercel-build
 # prisma generate
-#   && prisma db push --accept-data-loss
-#   && npm run db:constraints
+#   && prisma migrate deploy
 #   && npm run db:ensure-seed
 #   && next build
 ```
 
 Three things about this are deliberate.
 
-**`db push`, not `migrate deploy`.** The POC has no migration history — the
-schema is still moving and a demo database carries nothing worth migrating.
-A pilot with a real hotel's data needs migrations; see `docs/roadmap.md`.
+**`migrate deploy`, not `db push`.** It used to be `db push --accept-data-loss`,
+on the grounds that a demo database carries nothing worth migrating. That was
+true right up until the moment it stopped being true, and the moment it stops
+being true is not announced. `migrate deploy` applies a reviewed sequence of
+files, fails rather than guessing, and never drops a column to make the schema
+match — which is precisely what `--accept-data-loss` authorises it to do. See
+ADR-034.
 
-**`db:constraints` runs separately.** The CHECK constraints in
-`prisma/constraints.sql` cannot be expressed in the Prisma schema (ADR-020) and
-`db push` does not know about them. Skipping this step leaves
+**The CHECK constraints are a migration now, not a separate step.** There is no
+`db:constraints` in the build any more: `20261025000001_constraints` applies
+`prisma/constraints.sql`, so the constraints arrive with the schema rather than
+after it. A deployment can no longer come up with
 `booked + held <= capacity` enforced only by application code, which is how two
-counter-corruption bugs stayed invisible.
+counter-corruption bugs stayed invisible. `prisma/constraints.sql` is still the
+file people edit; `tests/unit/migrations.test.ts` fails if the migration's copy
+drifts from it.
 
 **`db:ensure-seed`, not `db:seed`.** `npm run db:seed` truncates the tenant
 tables first. That is right on a developer machine and wrong on a hosted demo,
@@ -41,9 +47,50 @@ every redeploy. `db:ensure-seed` counts organizations and seeds only an empty
 database.
 
 Every route in the app is server-rendered on demand, so `next build` itself does
-not read the database. The build only fails on a database problem if the schema
-push, the constraints or the seed cannot run — which is the honest outcome,
-because the app is unusable without them.
+not read the database. The build only fails on a database problem if the
+migrations or the seed cannot run — which is the honest outcome, because the app
+is unusable without them.
+
+## Baselining a database that predates the migrations
+
+**Read this before the first deployment that runs `migrate deploy`.** Every
+database that existed before 2026-10-25 — the hosted demo, and every developer's
+local `arc_stay` — was built by `db push` and has no `_prisma_migrations` table.
+`migrate deploy` sees a database with tables in it and no record of how they got
+there, refuses to touch it, and fails the build. That is the right behaviour: it
+cannot know whether the existing schema matches the first migration or is three
+months divergent, and guessing is how data gets dropped.
+
+The fix is to tell it, once, that both migrations are already applied:
+
+```bash
+# Check first. This should list both migrations as "not yet applied" against a
+# database whose tables already exist.
+npx prisma migrate status
+
+npx prisma migrate resolve --applied 20261025000000_baseline
+npx prisma migrate resolve --applied 20261025000001_constraints
+
+npx prisma migrate status   # "Database schema is up to date!"
+```
+
+`resolve --applied` writes the migration rows and runs no SQL, so it cannot
+damage anything — but it is also a claim, and an untrue claim here is worse than
+the error it silences. Before making it, confirm the schema really does match:
+
+```bash
+npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+```
+
+Exit code 0 and "No difference detected" means the claim is true. **Anything
+else means it is not**, and the database needs the difference applied by hand
+first (or, on a demo database with nothing worth keeping, dropping and letting
+`migrate deploy` build it from scratch). Do not baseline a database whose schema
+disagrees with the datamodel; the next migration will be written against a
+schema that is not the one in front of it.
+
+A fresh database needs none of this. `migrate deploy` on an empty database
+applies both migrations and records them.
 
 ## Environment variables
 
@@ -129,6 +176,7 @@ the team and so cannot be handed to a hotel owner.
 ## What is still missing for a pilot
 
 A real hotel's data needs what `docs/pilot-plan.md` specifies, and at minimum:
-a real identity provider in place of `/sign-in`, migrations in place of
-`db push`, a backup policy, and `ARC_DATA_MODE=pilot` with the demo markers
-replaced by real provenance.
+a real identity provider in place of `/sign-in`, a backup policy with a restore
+that has actually been rehearsed, and `ARC_DATA_MODE=pilot` with the demo
+markers replaced by real provenance. Migrations are no longer on this list; see
+ADR-034.

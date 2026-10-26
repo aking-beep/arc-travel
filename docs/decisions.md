@@ -985,3 +985,57 @@ ignored: it can close either way, a dispute won asks for nothing, and a dispute
 lost has already arrived as `funds_withdrawn`. No refund is computed on
 execution — the money has already gone back at the provider, and computing a
 second one against the cancellation window would send it twice.
+
+## ADR-034 — Migrations replace `db push`, and the constraints become one of them
+
+**Status:** accepted · 2026-10-26
+
+**Context.** The deployment ran `prisma db push --accept-data-loss` followed by a
+separate `db execute` of `prisma/constraints.sql`. The reasoning was recorded
+honestly at the time: the schema was still moving and a demo database carried
+nothing worth migrating. Both halves of that have now expired. The schema is
+about to hold payment references, payouts and settlement records, and
+`--accept-data-loss` is a standing authorisation to drop whatever is in the way
+of making the database match the file — which is exactly the wrong instinct to
+have running in a build that will one day point at a hotel's revenue.
+
+The two-step arrangement had a second problem that was never about data loss. A
+deployment that applied the schema and then failed on the constraints came up
+*working*, with `booked + held <= capacity` enforced only by application code.
+ADR-020 exists because application-only invariants fail silently; a deployment
+order that could silently produce exactly that state undid it.
+
+**Decision.** Two migrations, and the constraints are the second one.
+
+`20261025000000_baseline` is the whole datamodel, generated with
+`migrate diff --from-empty`. `20261025000001_constraints` is
+`prisma/constraints.sql` applied verbatim. The build is
+`prisma generate && prisma migrate deploy && npm run db:ensure-seed`.
+
+`prisma/constraints.sql` stays the file people edit — it is readable as one
+document, which a directory of migrations is not, and the integration tests and
+the restore runbook both reference it. The migration holds a copy, and
+`tests/unit/migrations.test.ts` fails if the two drift. Two copies on purpose is
+a cost; the alternative is a migration that reads a file whose contents will
+have changed by the time anyone re-runs it, which is not a migration.
+
+**Consequences.** Every database that predates this needs baselining with
+`migrate resolve --applied`, which `docs/deployment.md` sets out along with the
+`migrate diff` check that makes the claim true rather than merely quiet.
+
+The test harness builds its schema with `migrate deploy` too, not `db push`.
+Those are not the same schema in general — one applies the datamodel, the other
+applies a sequence — and a suite that only ever saw the first proves nothing
+about what deployment does. It drops and recreates the schema itself rather than
+using `migrate reset`: Prisma 7 refuses `reset` when it detects an AI agent and
+asks for a consent string, which is a good guard that it would be wrong to
+disarm by committing the consent token, and `reset` also runs the seed now that
+`--skip-seed` is gone. `tests/global-setup.ts` refuses any URL whose database
+name does not contain "test" before it drops anything.
+
+**Also here:** the Prisma 7 upgrade this forced. Prisma 7 removed `url` from the
+`datasource` block, so the connection string now resolves in exactly one place
+(`src/lib/database-url.ts`) for both the client and the CLI, instead of ARC and
+a Rust engine each reading `process.env` with their own rules — which is the
+disagreement that cost this project a week of red deployments. It also cleared
+three high-severity advisories in `deepmerge-ts`; `npm audit` reports none.
