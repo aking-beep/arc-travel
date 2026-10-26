@@ -31,7 +31,7 @@ export async function ExploreFooter() {
           <FooterColumn
             title={t('explore.footer.exploreHeading')}
             links={[
-              ['/destinations', t('explore.nav.home')],
+              ['/destinations', t('explore.nav.destinations')],
               ['/stays', t('explore.nav.stay')],
               ['/experiences', t('explore.nav.experiences')],
               ['/journal', t('explore.nav.guide')],

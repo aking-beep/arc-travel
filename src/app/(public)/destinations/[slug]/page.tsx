@@ -72,7 +72,7 @@ export default async function DestinationDetailPage({
         <Shell className="text-ivory relative flex h-full flex-col justify-end pb-10 md:pb-16">
           <p className="text-ivory/80 text-sm">
             <Link href="/destinations" className="hover:text-ivory">
-              {t('explore.nav.home')}
+              {t('explore.nav.destinations')}
             </Link>{' '}
             / {destination.country}
           </p>
