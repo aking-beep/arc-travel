@@ -6,6 +6,7 @@ import { DemoBanner } from '@/components/demo-banner'
 import { LocaleSwitcher } from '@/components/locale-switcher'
 import { getTranslator } from '@/lib/i18n/server'
 import { prisma } from '@/lib/db'
+import { demoPortalToken } from '@/lib/demo-portals'
 
 /**
  * The door into the four operational surfaces, so a demo can start from any of
@@ -25,9 +26,14 @@ export default async function HomePage() {
     select: { id: true, name: true, tagline: true, roomCount: true },
   })
 
+  /*
+   * Looked up by the derived token rather than by a `demo-portal-` prefix,
+   * which was the only reason that prefix existed. See
+   * `src/lib/demo-portals.ts`: a portal token is a bearer credential, and the
+   * literal ones were in the repository.
+   */
   const demoStay = await prisma.stay.findFirst({
-    where: { portalToken: { startsWith: 'demo-portal-' } },
-    orderBy: { portalToken: 'asc' },
+    where: { portalToken: demoPortalToken(1) },
     select: { portalToken: true, guest: { select: { firstName: true } } },
   })
 
@@ -116,7 +122,7 @@ export default async function HomePage() {
               <surface.icon className="text-jade-700 size-6" aria-hidden />
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-semibold">{surface.title}</h2>
-                <ArrowRight className="text-sand-400 group-hover:text-jade-700 size-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
+                <ArrowRight className="text-sand-500 group-hover:text-jade-700 size-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
               </div>
               <p className="text-sand-600 text-sm leading-relaxed">{surface.body}</p>
             </Link>

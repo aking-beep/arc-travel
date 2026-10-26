@@ -1,6 +1,16 @@
 import { prisma } from '@/lib/db'
 import { invalid, notFound } from '@/lib/errors'
 import { EntityStatus, VerificationStatus } from '@/lib/prisma-types'
+import { fromDateKey, toDateKey, type DateKey } from '@/lib/dates'
+import {
+  CHECK_KEYS,
+  daysUntilInsuranceExpiry,
+  INSURANCE_CHECK_KEY,
+  REQUIRED_CHECK_KEYS,
+  VERIFICATION_CHECKS,
+  verificationStanding,
+  type VerificationStanding,
+} from './verification'
 import { assertPlatformAdmin, type ActorContext } from '@/modules/tenancy/context'
 import { recordAudit } from '@/modules/workflows/audit'
 
@@ -22,6 +32,12 @@ export interface VerificationQueue {
     organizationName: string
     verification: VerificationStatus
     insuranceOnFile: boolean
+    verifiedChecks: string[]
+    /** `YYYY-MM-DD`, or null. Resolved here so no client component reads the clock. */
+    insuranceExpiresOn: DateKey | null
+    /** Whether the stored decision still holds today. See `./verification`. */
+    standing: VerificationStanding
+    daysUntilInsuranceExpiry: number | null
     claimedCertifications: string[]
     experienceCount: number
     publishedCount: number
@@ -50,6 +66,8 @@ export async function getVerificationQueue(actor: ActorContext): Promise<Verific
         name: true,
         verification: true,
         insuranceOnFile: true,
+        verifiedChecks: true,
+        insuranceExpiresOn: true,
         claimedCertifications: true,
         contactEmail: true,
         createdAt: true,
@@ -71,6 +89,12 @@ export async function getVerificationQueue(actor: ActorContext): Promise<Verific
     }),
   ])
 
+  /*
+   * One clock reading for the whole queue, so two rows cannot disagree about
+   * what "today" is, and so nothing downstream reads it again.
+   */
+  const now = new Date()
+
   return {
     suppliers: suppliers.map((supplier) => ({
       id: supplier.id,
@@ -78,6 +102,12 @@ export async function getVerificationQueue(actor: ActorContext): Promise<Verific
       organizationName: supplier.organization.name,
       verification: supplier.verification,
       insuranceOnFile: supplier.insuranceOnFile,
+      verifiedChecks: supplier.verifiedChecks,
+      insuranceExpiresOn: supplier.insuranceExpiresOn
+        ? toDateKey(supplier.insuranceExpiresOn)
+        : null,
+      standing: verificationStanding(supplier, now),
+      daysUntilInsuranceExpiry: daysUntilInsuranceExpiry(supplier, now),
       claimedCertifications: supplier.claimedCertifications,
       experienceCount: supplier.experiences.length,
       publishedCount: supplier.experiences.filter((e) => e.status === 'PUBLISHED').length,
@@ -108,7 +138,10 @@ export async function verifySupplier(
     supplierId: string
     decision: VerificationStatus
     note: string
-    insuranceOnFile?: boolean
+    /** Keys from `VERIFICATION_CHECKS`. Every required one is needed for VERIFIED. */
+    checks?: readonly string[]
+    /** `YYYY-MM-DD`. Required when the insurance check is recorded. */
+    insuranceExpiresOn?: DateKey | null
   },
 ): Promise<void> {
   assertPlatformAdmin(actor)
@@ -119,21 +152,76 @@ export async function verifySupplier(
   })
   if (!supplier) throw notFound('Partner')
 
-  if (options.decision === VerificationStatus.VERIFIED && options.note.trim().length < 10) {
-    throw invalid('Record what you actually checked before marking a partner verified.')
+  const checks = [...new Set(options.checks ?? [])]
+  const unknown = checks.filter((key) => !CHECK_KEYS.includes(key))
+  if (unknown.length > 0) {
+    throw invalid(`Unknown verification check: ${unknown.join(', ')}.`)
   }
+
+  if (options.decision === VerificationStatus.VERIFIED) {
+    if (options.note.trim().length < 10) {
+      throw invalid('Record what you actually checked before marking a partner verified.')
+    }
+
+    /*
+     * The checklist, not the note, is what makes VERIFIED mean something.
+     *
+     * The note used to be the whole evidential basis, with a ten-character
+     * minimum — so "looks fine" cleared the bar and a year later nobody could
+     * tell whether the RFC had ever been seen. See
+     * `src/modules/admin/verification.ts`.
+     */
+    const missing = REQUIRED_CHECK_KEYS.filter((key) => !checks.includes(key))
+    if (missing.length > 0) {
+      const labels = missing.map(
+        (key) => VERIFICATION_CHECKS.find((c) => c.key === key)?.label ?? key,
+      )
+      throw invalid(
+        `Cannot verify ${supplier.name} with checks outstanding: ${labels.join('; ')}. ` +
+          'Record a rejection, or leave them unverified, rather than verifying what has not ' +
+          'been checked.',
+      )
+    }
+
+    /*
+     * Insurance is the one piece of evidence that stops being true on a date
+     * known in advance, so the date is mandatory rather than nice to have.
+     * Without it the standing is permanently "lapsed", which is correct but
+     * useless; better to refuse the decision than to record one that cannot
+     * hold.
+     */
+    if (checks.includes(INSURANCE_CHECK_KEY)) {
+      if (!options.insuranceExpiresOn) {
+        throw invalid(
+          'Record the expiry date from the insurance certificate. A policy nobody has an expiry ' +
+            'for cannot be presented as in force.',
+        )
+      }
+      if (options.insuranceExpiresOn < toDateKey(new Date())) {
+        throw invalid(
+          `That insurance certificate expired on ${options.insuranceExpiresOn}. Ask for a ` +
+            'current one; an expired policy is not cover.',
+        )
+      }
+    }
+  }
+
+  const verified = options.decision === VerificationStatus.VERIFIED
 
   await prisma.$transaction(async (tx) => {
     await tx.supplier.update({
       where: { id: supplier.id },
       data: {
         verification: options.decision,
-        verifiedAt: options.decision === VerificationStatus.VERIFIED ? new Date() : null,
-        verifiedById: options.decision === VerificationStatus.VERIFIED ? actor.userId : null,
+        verifiedAt: verified ? new Date() : null,
+        verifiedById: verified ? actor.userId : null,
         verificationNotes: options.note,
-        ...(options.insuranceOnFile !== undefined
-          ? { insuranceOnFile: options.insuranceOnFile }
-          : {}),
+        verifiedChecks: checks,
+        insuranceOnFile: checks.includes(INSURANCE_CHECK_KEY),
+        insuranceExpiresOn:
+          checks.includes(INSURANCE_CHECK_KEY) && options.insuranceExpiresOn
+            ? fromDateKey(options.insuranceExpiresOn)
+            : null,
         status:
           options.decision === VerificationStatus.REJECTED
             ? EntityStatus.SUSPENDED
@@ -153,7 +241,8 @@ export async function verifySupplier(
           from: supplier.verification,
           to: options.decision,
           note: options.note,
-          insuranceOnFile: options.insuranceOnFile,
+          checks,
+          insuranceExpiresOn: options.insuranceExpiresOn ?? null,
         },
       },
       tx,

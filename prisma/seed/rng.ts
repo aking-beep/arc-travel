@@ -47,7 +47,16 @@ export function seededReference(rng: Rng, prefix: string, length = 4): string {
   return `${prefix}-${out}`
 }
 
-/** Deterministic opaque token for QR portal links in fixtures. */
+/**
+ * Deterministic opaque token for fixture identifiers that are *not*
+ * credentials — a simulated payment reference, for instance.
+ *
+ * **Not for a portal token.** It used to mint those, and it should not have:
+ * the PRNG seed is a literal in `prisma/seed.ts`, so every token it produced
+ * was reproducible by anyone who cloned the repository, and a portal token is a
+ * bearer credential. Those come from `src/lib/demo-portals.ts` now, keyed with
+ * `ARC_SEED_TOKEN_SECRET`.
+ */
 export function seededToken(rng: Rng, length = 32): string {
   const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789'
   let out = ''

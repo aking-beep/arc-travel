@@ -56,7 +56,7 @@ export default async function RevenuePage() {
             <div>
               <dt className="text-sand-500 text-xs">Gross sold</dt>
               <dd className="font-medium">
-                <Money amountMinor={report.totals.grossMinor} currency={report.currency} />
+                <Money amountMinor={report.totals.grossMinor} currency={report.currency} intent="neutral" />
               </dd>
             </div>
             <div>
@@ -68,13 +68,13 @@ export default async function RevenuePage() {
             <div>
               <dt className="text-sand-500 text-xs">To partners</dt>
               <dd className="font-medium">
-                <Money amountMinor={report.totals.supplierMinor} currency={report.currency} />
+                <Money amountMinor={report.totals.supplierMinor} currency={report.currency} intent="neutral" />
               </dd>
             </div>
             <div>
               <dt className="text-sand-500 text-xs">ARC commission</dt>
               <dd className="font-medium">
-                <Money amountMinor={report.totals.platformMinor} currency={report.currency} />
+                <Money amountMinor={report.totals.platformMinor} currency={report.currency} intent="neutral" />
               </dd>
             </div>
           </dl>
@@ -89,7 +89,7 @@ export default async function RevenuePage() {
           </p>
           {report.totals.refundedMinor > 0 ? (
             <p className="text-sand-600 mt-3 text-sm">
-              Net of <Money amountMinor={report.totals.refundedMinor} currency={report.currency} />{' '}
+              Net of <Money amountMinor={report.totals.refundedMinor} currency={report.currency} intent="neutral" />{' '}
               refunded across {report.totals.refundedCount} cancelled lines.
             </p>
           ) : null}
@@ -119,7 +119,7 @@ export default async function RevenuePage() {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-semibold">
-              <Money amountMinor={report.headline.averageOrderMinor} currency={report.currency} />
+              <Money amountMinor={report.headline.averageOrderMinor} currency={report.currency} intent="neutral" />
             </p>
             <p className="text-sand-500 mt-1 text-xs">Across {report.totals.orderCount} orders.</p>
           </CardContent>
@@ -161,7 +161,7 @@ export default async function RevenuePage() {
                   <div className="text-right">
                     <Money amountMinor={row.hotelMinor} currency={report.currency} intent="earned" className="font-semibold" />
                     <p className="text-sand-500 text-xs">
-                      of <Money amountMinor={row.grossMinor} currency={report.currency} /> gross
+                      of <Money amountMinor={row.grossMinor} currency={report.currency} intent="neutral" /> gross
                     </p>
                   </div>
                 </li>
@@ -211,13 +211,13 @@ export default async function RevenuePage() {
                 <span className="font-mono text-xs">{row.account}</span>
                 <span className="flex items-center gap-3">
                   <span className="text-sand-500 text-xs">{row.entries} entries</span>
-                  <Money amountMinor={row.amountMinor} currency={report.currency} />
+                  <Money amountMinor={row.amountMinor} currency={report.currency} intent="neutral" />
                 </span>
               </li>
             ))}
             <li className="flex items-center justify-between gap-2 py-2 font-semibold">
               <span>Balance</span>
-              <Money amountMinor={report.ledgerBalanceMinor} currency={report.currency} />
+              <Money amountMinor={report.ledgerBalanceMinor} currency={report.currency} intent="neutral" />
             </li>
           </ul>
           <p className="text-sand-500 mt-2 text-xs">

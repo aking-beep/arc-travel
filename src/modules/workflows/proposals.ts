@@ -5,12 +5,16 @@ import { addDays, fromDateKey, toDateKey } from '@/lib/dates'
 import {
   ApprovalDecision,
   ExperienceStatus,
+  OrderItemStatus,
+  OrderStatus,
+  PayoutStatus,
   ProposalKind,
   ProposalStatus,
   Role,
   StayStatus,
   VerificationStatus,
 } from '@/lib/prisma-types'
+import { returnCapacity } from '@/modules/inventory/service'
 import { assertPropertyAccess, type ActorContext } from '@/modules/tenancy/context'
 import { recordAudit } from '@/modules/workflows/audit'
 import { track } from '@/modules/analytics/track'
@@ -39,6 +43,24 @@ export type ProposalAction =
   | { type: 'publish_experience'; experienceId: string }
   | { type: 'adjust_slot_capacity'; slotId: string; capacity: number }
   | { type: 'send_guest_message'; stayIds: string[]; body: string }
+  /**
+   * Authorises a supplier payment. Executes nothing at a bank: approving
+   * records that a named owner decided to pay, and `settlePayout` is the
+   * separate step where somebody states the money actually moved (ADR-032).
+   */
+  | { type: 'settle_supplier_payout'; payoutId: string }
+  /**
+   * Reverses the bookings behind a payment the provider says it no longer
+   * holds. The one action here that takes something away from a guest, which
+   * is exactly why it is in this union rather than in the webhook (ADR-033).
+   */
+  | {
+      type: 'reverse_order_items'
+      orderId: string
+      orderItemIds: string[]
+      cause: 'REFUND' | 'DISPUTE'
+      providerEventId: string
+    }
 
 export interface ProposalDraft {
   propertyId: string
@@ -394,6 +416,192 @@ async function executeAction(
         details: {
           amenityIds: amenities.map((a) => a.id),
           nextStep: '/owner/catalog/new',
+        },
+      }
+    }
+
+    case 'settle_supplier_payout': {
+      /*
+       * Approving a payout changes a status and nothing else.
+       *
+       * ARC cannot send money (ADR-032), so an "execution" that claimed to
+       * have paid would be the plainest lie in the codebase. What this branch
+       * does is move the payout to APPROVED, which is the state
+       * `settlePayout` requires — and `settlePayout` re-reads *this*
+       * proposal's approval rather than trusting that status, so the two
+       * cannot drift apart.
+       */
+      const payout = await tx.payout.findFirst({
+        where: { id: action.payoutId, propertyId },
+        select: { id: true, reference: true, status: true, netMinor: true, currency: true },
+      })
+      if (!payout) throw notFound('Payout')
+
+      if (payout.status !== PayoutStatus.DRAFT) {
+        throw conflict(`That payout is already ${payout.status.toLowerCase()}.`)
+      }
+
+      await tx.payout.update({
+        where: { id: payout.id },
+        data: { status: PayoutStatus.APPROVED },
+      })
+
+      return {
+        // Approved, not executed: there is a further human step, and marking
+        // this EXECUTED would take it off the owner's list of things to do.
+        executed: false,
+        summary:
+          `Payout ${payout.reference} is authorised. No money has moved — ARC cannot send it. ` +
+          `Pay the partner, then record the transfer reference against this payout.`,
+        details: {
+          payoutId: payout.id,
+          reference: payout.reference,
+          netMinor: payout.netMinor,
+          currency: payout.currency,
+          nextStep: `/owner/payouts/${payout.id}`,
+        },
+      }
+    }
+
+    case 'reverse_order_items': {
+      /*
+       * The provider says it no longer holds this payment. A person has now
+       * said what happens to the bookings it paid for.
+       *
+       * Everything here is what `cancelOrderItem` does — release the places,
+       * reverse the earnings lines — with two differences. The capacity goes
+       * back because somebody else can now use it. And no refund is computed:
+       * the money has already gone back to the cardholder, at the provider, and
+       * computing a second refund against a cancellation window would send it
+       * twice.
+       */
+      const order = await tx.order.findFirst({
+        where: { id: action.orderId, propertyId },
+        select: { id: true, reference: true, status: true, currency: true },
+      })
+      if (!order) throw notFound('Order')
+
+      const items = await tx.orderItem.findMany({
+        where: { id: { in: action.orderItemIds }, orderId: order.id },
+        select: {
+          id: true,
+          slotId: true,
+          quantity: true,
+          status: true,
+          currency: true,
+          lineTotalMinor: true,
+          hotelEarningsMinor: true,
+          platformEarningsMinor: true,
+          supplierPayableMinor: true,
+          experience: { select: { titleEn: true } },
+        },
+      })
+
+      const now = new Date()
+      let reversedMinor = 0
+      let cancelled = 0
+
+      for (const item of items) {
+        if (
+          item.status === OrderItemStatus.CANCELLED ||
+          item.status === OrderItemStatus.REFUNDED
+        ) {
+          // Already gone: its capacity went back then, and returning it again
+          // would under-count `booked`. `returnCapacity` throws rather than
+          // clamping (ADR-020), so this `continue` is load-bearing.
+          continue
+        }
+
+        await tx.orderItem.update({
+          where: { id: item.id },
+          data: {
+            status: OrderItemStatus.REFUNDED,
+            cancelledAt: now,
+            // What the provider returned to the cardholder, recorded against
+            // the line so the guest's order page can account for it.
+            refundedMinor: item.lineTotalMinor,
+          },
+        })
+        await returnCapacity(tx, { slotId: item.slotId, quantity: item.quantity })
+        cancelled += 1
+
+        const reversals = [
+          { account: 'hotel_earnings', amountMinor: -item.hotelEarningsMinor },
+          { account: 'platform_commission', amountMinor: -item.platformEarningsMinor },
+          { account: 'supplier_payable', amountMinor: -item.supplierPayableMinor },
+        ].filter((entry) => entry.amountMinor !== 0)
+
+        if (reversals.length > 0) {
+          await tx.ledgerEntry.createMany({
+            data: reversals.map((entry) => ({
+              organizationId,
+              orderId: order.id,
+              orderItemId: item.id,
+              account: entry.account,
+              amountMinor: entry.amountMinor,
+              currency: item.currency,
+              memo: `${action.cause === 'DISPUTE' ? 'Chargeback' : 'Provider refund'} · reversing ${item.experience.titleEn}`,
+            })),
+          })
+          reversedMinor += reversals.reduce((n, entry) => n + entry.amountMinor, 0)
+        }
+      }
+
+      /*
+       * Recompute the order's earnings from its surviving lines, exactly as
+       * `cancelOrderItem` does.
+       *
+       * Reversing the ledger is not enough. `Order.hotelEarningsMinor` and its
+       * two siblings are what the owner's briefing and the revenue report sum,
+       * and both include `PARTIALLY_CANCELLED` orders — so leaving the stored
+       * totals alone left a partly charged-back order still presenting its
+       * whole sale as earned, with the money already back on the cardholder's
+       * card. The ledger said one thing and the dashboard another.
+       */
+      const siblings = await tx.orderItem.findMany({
+        where: { orderId: order.id },
+        select: {
+          status: true,
+          hotelEarningsMinor: true,
+          platformEarningsMinor: true,
+          supplierPayableMinor: true,
+          refundedMinor: true,
+        },
+      })
+
+      const live = siblings.filter(
+        (s) => s.status !== OrderItemStatus.CANCELLED && s.status !== OrderItemStatus.REFUNDED,
+      )
+      const remaining = live.length
+
+      await tx.order.update({
+        where: { id: order.id },
+        data: {
+          status: remaining === 0 ? OrderStatus.REFUNDED : OrderStatus.PARTIALLY_CANCELLED,
+          refundedMinor: siblings.reduce((n, s) => n + s.refundedMinor, 0),
+          refundedAt: now,
+          cancellationReason: `provider_${action.cause.toLowerCase()}:${action.providerEventId}`,
+          hotelEarningsMinor: live.reduce((n, s) => n + s.hotelEarningsMinor, 0),
+          platformEarningsMinor: live.reduce((n, s) => n + s.platformEarningsMinor, 0),
+          supplierPayableMinor: live.reduce((n, s) => n + s.supplierPayableMinor, 0),
+          ...(remaining === 0 ? { cancelledAt: now } : {}),
+        },
+      })
+
+      return {
+        executed: true,
+        summary:
+          `${cancelled} ${cancelled === 1 ? 'booking' : 'bookings'} on ${order.reference} reversed. ` +
+          `The places are back on sale and the earnings lines are reversed. No refund was sent from ` +
+          `ARC — the money went back to the cardholder at the payment provider.`,
+        details: {
+          orderId: order.id,
+          reference: order.reference,
+          cause: action.cause,
+          providerEventId: action.providerEventId,
+          itemsReversed: cancelled,
+          ledgerReversedMinor: reversedMinor,
+          orderStatus: remaining === 0 ? OrderStatus.REFUNDED : OrderStatus.PARTIALLY_CANCELLED,
         },
       }
     }

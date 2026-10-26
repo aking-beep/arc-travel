@@ -218,7 +218,7 @@ export default async function OwnerDashboardPage() {
         </Card>
       </div>
 
-      <p className="text-sand-400 text-xs">Organization {organizationId.slice(0, 8)} · demo data</p>
+      <p className="text-sand-500 text-xs">Organization {organizationId.slice(0, 8)} · demo data</p>
     </div>
   )
 }

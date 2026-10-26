@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db'
+import { verificationStanding } from '@/modules/admin/verification'
 import { conflict, invalid, notFound } from '@/lib/errors'
 import { fromDateKey, localInstant } from '@/lib/dates'
 import {
@@ -338,7 +339,14 @@ export async function checkPublishReadiness(experienceId: string): Promise<Publi
       guideIncluded: true,
       activity: { select: { guideRequired: true, name: true } },
       supplier: {
-        select: { name: true, verification: true, insuranceOnFile: true, status: true },
+        select: {
+          name: true,
+          verification: true,
+          verifiedChecks: true,
+          insuranceExpiresOn: true,
+          insuranceOnFile: true,
+          status: true,
+        },
       },
       prices: { where: { isActive: true }, select: { id: true, amountMinor: true } },
       _count: { select: { slots: true } },
@@ -362,7 +370,17 @@ export async function checkPublishReadiness(experienceId: string): Promise<Publi
     )
   }
 
-  if (experience.supplier.verification !== VerificationStatus.VERIFIED) {
+  /*
+   * The standing today, not the stored column — a verification that has lapsed
+   * is reported as what it is rather than as a pass. ADR-036.
+   */
+  const standing = verificationStanding(experience.supplier)
+  if (standing.standing === 'lapsed') {
+    warnings.push(
+      `${experience.supplier.name}'s verification has lapsed. ${standing.reason ?? ''} ` +
+        'Guests see an "unverified partner" notice until it is re-checked.',
+    )
+  } else if (standing.standing !== 'verified') {
     warnings.push(
       `${experience.supplier.name} is not verified. Guests will see an "unverified partner" notice until ARC completes a check.`,
     )

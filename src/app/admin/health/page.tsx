@@ -30,6 +30,19 @@ export default async function HealthPage() {
   const actor = await requireActor()
   const env = getEnv()
 
+  /*
+   * Three states, and the difference matters to whoever is reading this
+   * page. While ARC_DATA_MODE=demo the sign-in switcher issues an owner
+   * session with no credential (ADR-028) and the seeded guest portals are
+   * reachable by token, so "open" means a stranger with the URL can act as
+   * the hotel.
+   */
+  const frontDoor = (process.env.ARC_DEMO_PASSPHRASE ?? '').length > 0
+    ? 'passphrase required'
+    : env.ARC_ALLOW_OPEN_DEMO
+      ? 'OPEN — deliberately (ARC_ALLOW_OPEN_DEMO)'
+      : 'open — no passphrase set'
+
   const organization = await prisma.organization.findFirst({
     orderBy: { createdAt: 'asc' },
     select: { id: true, name: true },
@@ -174,15 +187,32 @@ export default async function HealthPage() {
                 { label: 'Data mode', value: env.ARC_DATA_MODE },
                 { label: 'Payments', value: env.PAYMENTS_PROVIDER },
                 { label: 'AI provider', value: `${env.AI_PROVIDER} (${env.AI_MODEL})` },
-                { label: 'Maps', value: env.MAPS_PROVIDER },
-                { label: 'Conditions', value: env.CONDITIONS_PROVIDER },
-                { label: 'Messaging', value: env.MESSAGING_PROVIDER },
+                /*
+                 * Each of these has one possible value, which is the point.
+                 * They are still shown: an operator checking whether live
+                 * marine data is gating recommendations needs to see the answer
+                 * here, and "fixture" is the answer.
+                 */
+                { label: 'Maps', value: `${env.MAPS_PROVIDER} (seeded matrix, ADR-011)` },
+                { label: 'Conditions', value: `${env.CONDITIONS_PROVIDER} (seeded reports)` },
+                { label: 'Messaging', value: `${env.MESSAGING_PROVIDER} (refuses to deliver)` },
                 { label: 'Travel advice', value: env.TRAVEL_ADVICE_PROVIDER },
                 {
                   label: 'Outbound guest messaging',
                   value: env.ARC_ENABLE_OUTBOUND_MESSAGING ? 'ENABLED' : 'disabled',
                 },
                 { label: 'AI rate limit', value: `${env.AI_RATE_LIMIT_PER_MINUTE}/min per user` },
+                /*
+                 * Who can get in. Shown because the answer used to be
+                 * unknowable from inside the product: the passphrase gate is
+                 * opt-in, so a deployment that never set one was open and said
+                 * nothing anywhere. In production that is now a startup
+                 * refusal unless it was asked for; here it is simply visible.
+                 */
+                {
+                  label: 'Front door',
+                  value: frontDoor,
+                },
               ].map((row) => (
                 <div key={row.label} className="flex items-center justify-between gap-3 py-2">
                   <dt className="text-sand-600">{row.label}</dt>
@@ -291,7 +321,7 @@ export default async function HealthPage() {
                       {event.actor ? ` · ${event.actor.name}` : ` · ${event.actorKind}`}
                     </span>
                   </span>
-                  <span className="text-sand-400 shrink-0 text-xs tabular-nums">
+                  <span className="text-sand-500 shrink-0 text-xs tabular-nums">
                     {event.createdAt.toISOString().slice(0, 16).replace('T', ' ')}
                   </span>
                 </li>

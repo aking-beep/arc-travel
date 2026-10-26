@@ -5,11 +5,14 @@ import { LinkButton } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/states'
 import { Money } from '@/components/money'
+import { PaymentForm } from '@/components/guest/payment-form'
 import { createTranslator } from '@/lib/i18n'
 import { getLocale } from '@/lib/i18n/server'
 import { toLocalDateKey, toLocalTimeString } from '@/lib/dates'
 import { resolvePortalForRequest } from '../resolve'
 import { getCartView, getOrCreateCart, validateCart } from '@/modules/commerce/cart'
+import { startPaymentSession, type PaymentSession } from '@/modules/commerce/payment-session'
+import { isAppError } from '@/lib/errors'
 import { BasketActions, CheckoutForm } from './forms'
 
 export const metadata = { title: 'Your basket' }
@@ -49,6 +52,34 @@ export default async function BasketPage({ params }: { params: Promise<{ token: 
 
   const blocking = validation.problems.filter((p) => p.code !== 'empty')
 
+  /*
+   * The payment, opened server-side at render.
+   *
+   * Done here rather than from the client so no key or secret is decided in
+   * the browser, and so the amount the guest confirms is the amount this
+   * server computed from the basket it just read.
+   *
+   * Only when the basket is actually payable. Opening a payment for a basket
+   * with a blocking problem would hand a guest a chargeable credential for an
+   * order `checkout()` is going to refuse — the one failure that takes money
+   * and gives nothing back.
+   *
+   * A provider failure is caught and rendered. It must not 500 the page: the
+   * basket, the holds and the remove buttons are all still useful, and an
+   * error boundary swallowing the lot is how a guest ends up re-adding
+   * everything.
+   */
+  let payment: PaymentSession | null = null
+  let paymentError: string | null = null
+  if (blocking.length === 0) {
+    try {
+      payment = await startPaymentSession({ cartId, guestId: context.guestId })
+    } catch (error) {
+      if (!isAppError(error)) throw error
+      paymentError = error.message
+    }
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -87,12 +118,13 @@ export default async function BasketPage({ params }: { params: Promise<{ token: 
               </div>
               <div className="text-right">
                 <Money
+                  intent="neutral"
                   amountMinor={item.lineTotalMinor}
                   currency={item.currency}
                   className="font-semibold"
                 />
                 <p className="text-sand-500 text-xs">
-                  {item.quantity} × <Money amountMinor={item.unitPriceMinor} currency={item.currency} />
+                  {item.quantity} × <Money amountMinor={item.unitPriceMinor} currency={item.currency} intent="neutral" />
                 </p>
               </div>
             </div>
@@ -127,29 +159,52 @@ export default async function BasketPage({ params }: { params: Promise<{ token: 
         <CardContent className="space-y-2 text-sm">
           <div className="flex justify-between">
             <span className="text-sand-600">{t('common.subtotal')}</span>
-            <Money amountMinor={cart.subtotalMinor} currency={cart.currency} />
+            <Money amountMinor={cart.subtotalMinor} currency={cart.currency} intent="neutral" />
           </div>
           {cart.feesMinor > 0 ? (
             <div className="flex justify-between">
               <span className="text-sand-600">{t('common.fees')}</span>
-              <Money amountMinor={cart.feesMinor} currency={cart.currency} />
+              <Money amountMinor={cart.feesMinor} currency={cart.currency} intent="neutral" />
             </div>
           ) : null}
           <div className="border-sand-200 flex justify-between border-t pt-2 text-base font-semibold">
             <span>{t('common.total')}</span>
-            <Money amountMinor={cart.totalMinor} currency={cart.currency} />
+            <Money amountMinor={cart.totalMinor} currency={cart.currency} intent="neutral" />
           </div>
 
-          <CheckoutForm
-            token={token}
-            idempotencyKey={idempotencyKey}
-            disabled={blocking.length > 0}
-            locale={locale}
-          />
+          {paymentError ? (
+            <p
+              className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"
+              role="alert"
+            >
+              {paymentError}
+            </p>
+          ) : null}
 
-          <p className="text-sand-500 text-xs leading-relaxed">
-            {t('guest.orderSimulatedNote')}
-          </p>
+          {payment && !payment.isSimulated && payment.clientSecret && payment.publishableKey ? (
+            <PaymentForm
+              clientSecret={payment.clientSecret}
+              publishableKey={payment.publishableKey}
+              amountMinor={payment.amountMinor}
+              currency={payment.currency}
+              locale={locale}
+              token={token}
+              idempotencyKey={idempotencyKey}
+            />
+          ) : (
+            <CheckoutForm
+              token={token}
+              idempotencyKey={idempotencyKey}
+              disabled={blocking.length > 0 || paymentError !== null}
+              locale={locale}
+            />
+          )}
+
+          {payment && !payment.isSimulated ? null : (
+            <p className="text-sand-500 text-xs leading-relaxed">
+              {t('guest.orderSimulatedNote')}
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

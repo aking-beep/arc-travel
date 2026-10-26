@@ -6,6 +6,7 @@ import { EmptyState } from '@/components/ui/states'
 import { Money } from '@/components/money'
 import { createTranslator } from '@/lib/i18n'
 import { getLocale } from '@/lib/i18n/server'
+import { isCurrentlyVerified } from '@/modules/admin/verification'
 import { listGuestCatalog } from '@/modules/guest/portal'
 import { resolvePortalForRequest } from '../resolve'
 
@@ -24,6 +25,9 @@ export default async function ExplorePage({
   const t = createTranslator(locale)
 
   const all = await listGuestCatalog(context.propertyId)
+  // One instant for the whole render, read on the server. Each listing's
+  // verification badge is answered against it.
+  const now = new Date()
   const categories = [...new Set(all.map((e) => e.category))]
   const filtered = category ? all.filter((e) => e.category === category) : all
 
@@ -71,7 +75,14 @@ export default async function ExplorePage({
           {filtered.map((experience) => {
             const basePrice =
               experience.prices.find((p) => p.kind === 'BASE') ?? experience.prices[0]
-            const unverified = experience.supplier.verification !== 'VERIFIED'
+            /*
+             * The live answer, not the stored column. A verification lapses
+             * when the insurance certificate on file expires (ADR-036), and
+             * this listing is a claim to a guest about a stranger — so it asks
+             * whether the verification holds now, which is the same question
+             * the experience page asks.
+             */
+            const unverified = !isCurrentlyVerified(experience.supplier, now)
 
             return (
               <Card key={experience.id}>
@@ -120,6 +131,7 @@ export default async function ExplorePage({
                           <>
                             <span className="text-sand-500 text-xs">{t('common.from')} </span>
                             <Money
+                              intent="neutral"
                               amountMinor={basePrice.amountMinor}
                               currency={basePrice.currency}
                               className="font-semibold"

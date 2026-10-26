@@ -16,10 +16,9 @@ import { applyDatabaseUrl } from '../src/lib/database-url'
 
 applyDatabaseUrl()
 import { execFileSync } from 'node:child_process'
-import { PrismaClient } from '@prisma/client'
+import { prisma } from '../src/lib/db'
 
 async function countOrganizations(): Promise<number> {
-  const prisma = new PrismaClient()
   try {
     return await prisma.organization.count()
   } finally {

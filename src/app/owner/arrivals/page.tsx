@@ -115,7 +115,7 @@ export default async function ArrivalsPage({
                         {bookedItems.length > 0 ? (
                           <div>
                             <p className="text-sand-500 text-xs font-medium uppercase">
-                              Booked · <Money amountMinor={spend} currency="MXN" /> simulated
+                              Booked · <Money amountMinor={spend} currency="MXN" intent="neutral" /> simulated
                             </p>
                             <ul className="text-sand-700 mt-1 space-y-0.5 text-sm">
                               {bookedItems.map((item) => (
@@ -130,7 +130,7 @@ export default async function ArrivalsPage({
                           <p className="text-sand-600 text-sm">Nothing booked yet.</p>
                         )}
 
-                        <p className="text-sand-400 font-mono text-xs">
+                        <p className="text-sand-500 font-mono text-xs">
                           Portal link: /g/{stay.portalToken}
                         </p>
                       </CardContent>

@@ -11,7 +11,7 @@ bearing.
 ## Commands
 
 ```bash
-npm run setup       # generate client, push schema, seed
+npm run setup       # generate client, apply migrations, seed
 npm run dev
 npm run verify      # typecheck → lint → test → build. Run before any commit.
 npm test            # unit + integration (needs TEST_DATABASE_URL)
@@ -179,6 +179,7 @@ Two E2E habits, learned the hard way and recorded in the specs:
 | The gate derives a demanded ability when there is no reading | ADR-017. Guarding the ability rules on a snapshot meant a guest who stated no level was offered an advanced-only break on any undated day |
 | `addToCart` re-runs the safety gate | ADR-019. The itinerary was not the only route to a booking, so gating only the recommendation left the commitment open |
 | CHECK constraints live in `prisma/constraints.sql`, not the schema | ADR-020. Prisma cannot express them, and application-only invariants fail silently |
+| `prisma/constraints.sql` is duplicated inside a migration | ADR-034. The file stays the one people edit and read; the migration is how a database gets it. `tests/unit/migrations.test.ts` fails if the two drift |
 | `returnCapacity` throws instead of clamping | ADR-020. The clamp kept the counter non-negative while hiding the double-cancellation that caused it |
 | `invitePartner` refuses an email that already has an account | ADR-021. It used to `upsert`, rewriting a stranger's profile and grafting a membership onto it |
 | `/sign-in` 404s outside demo mode and lists no guests | **Superseded by ADR-028.** The page now works in every mode and lists accounts only in demo mode, because real passwords exist |
@@ -187,6 +188,16 @@ Two E2E habits, learned the hard way and recorded in the specs:
 | `checkout()` takes a payment it did not confirm | ADR-026. Confirming and then booking has a window that can only be closed with an automatic refund, which needs an `Approval` row |
 | The operating-window gate is its own module with four callers | ADR-029. The hours check existed three times and disagreed with itself |
 | An organization has a platform commission default as well as a hotel one | ADR-030. The platform share fell back to zero, so ARC earned nothing unless somebody wrote a rule |
+| The seeded portal tokens are an HMAC, not literals, and `playwright.config.ts` mints a secret per run | ADR-035. A portal token is a bearer credential and `demo-portal-01` was readable in the repo. Deterministic fixtures and unguessable tokens are not in conflict |
+| `LOCAL_SEED_TOKEN_SECRET` lives in `src/lib/env.ts`, not in `demo-portals.ts` where it is used | ADR-035. `demo-portals` needs `node:crypto`; `env` is reached from middleware, which runs on the edge runtime where that module does not exist |
+| A VERIFIED partner can read as `lapsed`, and the guest surfaces ask `isCurrentlyVerified` rather than the column | ADR-036. `insuranceOnFile` was a boolean and liability insurance expires. The stored decision was right when it was made; it is not current now |
+| The two ADR-036 Supplier constraints are added `NOT VALID` | ADR-036 amendment. Validating them checks existing rows, and the rows they reject are the pre-ADR verified ones the ADR deliberately keeps. New writes carry their evidence; history keeps its own. A later migration cannot fix this: `migrate deploy` stops at the first failure, so the declaration has to be `NOT VALID` where it is added |
+| A guest-facing verification badge never reads `supplier.verification` | ADR-036. The column is a historical decision; `isCurrentlyVerified` is the live answer. Spread `VERIFICATION_STANDING_SELECT` so the query loads what the question needs |
+| New CHECK constraints go in a NEW `*_constraints` migration, never appended to an applied one | ADR-036. `migrate deploy` never re-runs a recorded migration, so an edit lands on fresh databases and misses every running deployment |
+| `/api/cron/check-invariants` returns 200 when it finds a violation | ADR-037. The check ran and worked; the database is what is unhealthy. A 500 would re-alert every few minutes and hide a real monitoring failure |
+| `/api/health` exists as well as `/admin/health` and tells an anonymous caller almost nothing | ADR-037. The admin page cannot be polled, and an unauthenticated endpoint is reconnaissance for whoever finds it |
+| The `--color-sand-*` lightness values look arbitrary | ADR-038. Each is set by measured contrast against the worst light surface it sits on. Changing one is a contrast decision; re-run the accessibility spec |
+| The accessibility spec runs last in the E2E suite | ADR-038. One violation only existed once a guest had generated an itinerary. A clean-seed audit missed it |
 
 ## Review
 

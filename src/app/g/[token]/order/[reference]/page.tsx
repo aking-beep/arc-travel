@@ -9,6 +9,7 @@ import { getLocale } from '@/lib/i18n/server'
 import { toLocalDateKey, toLocalTimeString } from '@/lib/dates'
 import { resolvePortalForRequest } from '../../resolve'
 import { getOrderForGuest } from '@/modules/commerce/checkout'
+import { isCurrentlyVerified } from '@/modules/admin/verification'
 import { CancelBookingForm } from './forms'
 
 export const metadata = { title: 'Your booking' }
@@ -26,6 +27,7 @@ export default async function OrderPage({
   const locale = await getLocale()
   const t = createTranslator(locale)
 
+  const now = new Date()
   const live = order.items.filter((i) => i.status !== 'CANCELLED' && i.status !== 'REFUNDED')
   const cancelled = order.items.filter((i) => i.status === 'CANCELLED' || i.status === 'REFUNDED')
 
@@ -61,13 +63,16 @@ export default async function OrderPage({
                 </p>
                 <p className="text-sand-500 text-xs">
                   {item.experience.supplier.name}
-                  {item.experience.supplier.verification === 'VERIFIED'
+                  {/* The live answer: a verification lapses when the
+                      insurance on file expires (ADR-036). */}
+                  {isCurrentlyVerified(item.experience.supplier, now)
                     ? ''
                     : ` · ${t('common.unverified')}`}
                 </p>
               </div>
               <div className="text-right">
                 <Money
+                  intent="neutral"
                   amountMinor={item.lineTotalMinor}
                   currency={item.currency}
                   className="font-semibold"
@@ -115,7 +120,7 @@ export default async function OrderPage({
                   <span className="text-sand-500 text-xs">
                     {item.refundedMinor > 0 ? (
                       <>
-                        Refunded <Money amountMinor={item.refundedMinor} currency={item.currency} />
+                        Refunded <Money amountMinor={item.refundedMinor} currency={item.currency} intent="neutral" />
                       </>
                     ) : (
                       'No refund — outside the window'
@@ -135,25 +140,25 @@ export default async function OrderPage({
         <CardContent className="space-y-1.5 text-sm">
           <div className="flex justify-between">
             <span className="text-sand-600">{t('common.subtotal')}</span>
-            <Money amountMinor={order.subtotalMinor} currency={order.currency} />
+            <Money amountMinor={order.subtotalMinor} currency={order.currency} intent="neutral" />
           </div>
           {order.feesMinor > 0 ? (
             <div className="flex justify-between">
               <span className="text-sand-600">{t('common.fees')}</span>
-              <Money amountMinor={order.feesMinor} currency={order.currency} />
+              <Money amountMinor={order.feesMinor} currency={order.currency} intent="neutral" />
             </div>
           ) : null}
           {order.refundedMinor > 0 ? (
             <div className="flex justify-between">
               <span className="text-sand-600">Refunded</span>
               <span>
-                −<Money amountMinor={order.refundedMinor} currency={order.currency} />
+                −<Money amountMinor={order.refundedMinor} currency={order.currency} intent="neutral" />
               </span>
             </div>
           ) : null}
           <div className="border-sand-200 flex justify-between border-t pt-2 font-semibold">
             <span>{t('common.total')}</span>
-            <Money amountMinor={order.totalMinor} currency={order.currency} />
+            <Money amountMinor={order.totalMinor} currency={order.currency} intent="neutral" />
           </div>
         </CardContent>
       </Card>

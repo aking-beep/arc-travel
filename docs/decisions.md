@@ -192,7 +192,10 @@ workflow. All three matter at ten locales and none at two.
 ## ADR-011 — A seeded travel matrix, not a routing API
 
 **Decision.** `TravelEdge` rows seeded with times a local would quote.
-`MAPS_PROVIDER` can switch to Mapbox or Google later.
+A routing provider would be a new `MapsProvider` implementation plus a value in
+the `MAPS_PROVIDER` enum. That enum now holds only `fixture`: it listed `mapbox`
+and `google` for a long time with nothing behind either, which made a decision
+recorded here look like a configuration flag.
 
 **Why.** Itinerary feasibility must be reproducible in tests, and for a town
 this size a resident's estimate is more honest than a routing engine's
@@ -800,3 +803,569 @@ argument rather than reading one from the row and hard-coding the other.
 **Consequences.** The seed states both defaults explicitly. A unit test asserts
 the zero case still works, so the fix cannot be read as "the platform share may
 never be zero".
+
+---
+
+## ADR-031 — The card is collected by Stripe's Payment Element, not by ARC
+
+**Status.** Accepted, 2026-10-25.
+
+**Context.** ARC had a Stripe adapter, a signature-verified webhook, a `FAILED`
+order state that returns capacity, a unique index enforcing one order per
+payment — and no way for a guest to pay. `checkout()` requires a confirmed
+payment intent when the provider is live (ADR-026) and nothing produced one.
+The build could take an order and could not take money. Every green test about
+payments was a test about simulated payments.
+
+**Decision.** Three parts.
+
+1. **`createIntent` returns Stripe's `client_secret`; `retrieveIntent` does
+   not.** The secret is a bearer credential for one payment. `createIntent` is
+   where a payment is being opened and the browser genuinely needs it;
+   `retrieveIntent` runs after the guest has paid, answering "did this stand",
+   and carrying the credential into that path only widens where it can be
+   logged.
+
+2. **The card is typed into an iframe Stripe serves,** through
+   `@stripe/stripe-js` and the imperative Elements API. No card number reaches
+   an ARC origin, server or log. The React wrapper is not taken — the
+   imperative API is two calls, and the loader is taken only because the script
+   *must* come from `js.stripe.com` for PCI scope to stay where it is.
+
+3. **The payment is opened server-side, at render, with a derived idempotency
+   key.** `modules/commerce/payment-session` computes the basket total from the
+   rows it just read and asks the provider for exactly that. The key is a hash
+   of `(cartId, totalMinor, currency)`, so re-rendering an unchanged basket
+   returns the same intent and the same secret, and changing the basket asks
+   for a different payment.
+
+**Why the derived key.** The basket page is a Server Component that re-renders
+on every `revalidatePath`. A random key per render would leave abandoned
+intents at Stripe and, worse, let one guest hold two confirmable secrets for
+the same basket at once.
+
+**Why the CSP widens conditionally.** Collecting a card needs
+`script-src https://js.stripe.com` and `frame-src https://js.stripe.com`. The
+hosted demo takes no payments and renders no payment form, so it keeps
+`frame-src 'none'` and no third-party script origin. Allowing Stripe's hosts
+everywhere "because the pilot will need them" is the kind of default nobody
+revisits.
+
+**Consequences.**
+
+- `STRIPE_PUBLISHABLE_KEY` joins the two secrets a live provider already
+  required, and is refused unless it starts `pk_` — this value is rendered into
+  a page, and a secret key pasted into the slot would be published. The secret
+  key is refused if it starts `pk_`, because the usual mistake is swapping them.
+- The window ADR-026 accepted is now reachable by a real guest: between Stripe
+  confirming and `checkout()` committing, a closed tab means a payment with no
+  order. It is still the right trade — the alternative needs an automatic
+  refund, which needs an `Approval` row naming a person (non-negotiable 6) —
+  and the guest is now told so, with the payment reference, rather than shown a
+  generic failure. `docs/operations.md` says how to reconcile it.
+- A payment is not opened for a basket with a blocking problem. Handing a guest
+  a chargeable credential for an order `checkout()` is going to refuse is the
+  one failure that takes money and gives nothing back.
+
+---
+
+## ADR-032 — ARC computes payouts and records them; it does not send money
+
+**Status.** Accepted, 2026-10-25.
+
+**Context.** ARC recorded, to the centavo, what every supplier was owed —
+`LedgerEntry` rows on `supplier_payable`, written in the same transaction as
+the order — and had no way to discharge any of it. A ledger of obligations with
+no settlement path is a list of people who have not been paid.
+
+**Decision.** `Payout` and `PayoutLine`, an owner-approved run, and a recorded
+settlement. No provider transfer.
+
+Paying automatically means every supplier is a connected account at a payment
+provider, which means KYC on each small Oaxacan operator before they can be
+paid at all. That is a commercial and legal process, not code. For a pilot with
+six suppliers in one town the money moves by transfer or in cash, and what ARC
+owes the hotel is an accurate number, a remittance advice, and a record of who
+authorised it.
+
+So the guarantee is narrower than "payouts work", and is stated exactly:
+
+1. **The amount is derived, not recomputed.** A run reads ledger rows;
+   `/partner/earnings` reads the same rows. A payout that recomputed the split
+   from orders would drift from the partner's own page the moment a commission
+   rule changed.
+2. **Nothing is paid twice.** `PayoutLine.ledgerEntryId` is unique. Two
+   concurrent runs both pass the `payoutLine: null` filter and the second one
+   loses at the index — the guarantee is the database's, per ADR-020.
+3. **A person authorised it.** `SETTLED` requires an approved `SUPPLIER_PAYOUT`
+   proposal, and `settlePayout` reads *that proposal's* approval rather than
+   trusting `Payout.status`, so a status advanced by any other path still
+   cannot pay.
+4. **A reversal reduces the next payout.** A period netting zero or less
+   produces no payout and leaves its entries unclaimed, so they offset the run
+   after. Writing them off would be ARC absorbing a refund it had already paid
+   out on.
+
+**A defect this surfaced.** `cancelOrderItem` wrote one negative entry on a
+`refund` account. The ledger balanced and *each individual account was wrong*:
+a cancelled line's `supplier_payable` stayed at its full positive value for
+ever. Survivable while nothing read the account. The case it cannot survive is
+ordinary — the hotel pays the partner, then the guest cancels inside the window
+— because there is no negative entry on the partner's account to net the
+overpayment off their next payment. Cancellation now writes the same three
+per-account reversals `payment-events` already wrote for a failed payment. The
+seed matches.
+
+**Consequences.** A deferred constraint trigger asserts a payout's lines sum to
+its declared total — a CHECK cannot read another table, and trusting the service
+is what ADR-020 argues against for invariants that matter. A CHECK refuses a
+`SETTLED` row with no method, reference, time and user. Approving a payout
+executes nothing (`executed: false`): ARC cannot send money, so an execution
+claiming to have paid would be the plainest lie in the codebase, and marking it
+`EXECUTED` would take it off the owner's list of things still to do.
+
+**Cost.** Somebody has to make a bank transfer and type a reference in.
+Automating it is Stripe Connect plus KYC per supplier, and that is a pilot
+decision rather than a coding one.
+
+---
+
+## ADR-033 — A refund or chargeback at the provider opens an approval; it cancels nothing
+
+**Status.** Accepted, 2026-10-25. Supersedes the "what this build does not
+have" entry in `docs/operations.md` that said these events were ignored.
+
+**Context.** The Stripe webhook acted on `payment_intent.payment_failed` and
+`payment_intent.canceled` and deliberately ignored `charge.refunded` and
+`charge.dispute.*`. So a guest could get their money back at Stripe and keep
+the boat seat for ever, and the hotel would pay a supplier out of money that
+had gone back to a cardholder.
+
+The reason it was ignored was sound: reversing a confirmed booking is a
+consequential action and needs an `Approval` row naming who decided
+(non-negotiable 6). The alternative to ignoring the event was ARC cancelling a
+guest's booking on its own.
+
+**Decision.** A third option, which is the one the proposal machinery was built
+for. A refund or dispute event:
+
+1. **Stamps the order** with `reversalReportedAt`, `reversalCause`,
+   `reversalEventId` and `reversedMinor`. Nothing is cancelled. The flag is what
+   excludes the order from a supplier payout in the meantime, so ARC cannot pay
+   out on a charge that has gone back.
+2. **Opens a `PAYMENT_REVERSAL` proposal** whose stored action is
+   `reverse_order_items` with the live items enumerated. Approving runs the
+   closed-union branch in `workflows/proposals` — the one code path allowed to
+   take a booking away — and writes the `Approval` row.
+
+**Why the items are enumerated at report time rather than resolved on
+approval.** The proposal describes a specific decision: the owner is agreeing to
+reverse *these* bookings. Recomputing the set on approval means a line added in
+between — the guest books something else on the same order — gets cancelled by
+an approval nobody gave for it.
+
+**Why rejecting is a real answer.** A refund can be a goodwill gesture the hotel
+intends to honour the booking through, and a dispute can be resolved in ARC's
+favour. Rejecting keeps the booking; the report stays on the order, so it is
+still excluded from a payout until somebody resolves it.
+
+**Why one open decision per order.** A second event — the other half of a
+partial refund, or a dispute following a refund — updates the amount and finds
+the proposal already open. Stacking a second would ask the same question twice
+and allow approving it twice, reversing the same lines on the second pass.
+`returnCapacity` throws rather than clamping (ADR-020), so that would be a
+constraint violation rather than a silent miscount, which is better but not an
+excuse.
+
+**Consequences.** `readPaymentEvent` now reads `charge.*` events, whose object
+*references* an intent rather than being one. That asymmetry was the stated
+reason for ignoring the family; what makes the reference safe is not where it
+comes from but what the handler may do with it. `charge.dispute.closed` is still
+ignored: it can close either way, a dispute won asks for nothing, and a dispute
+lost has already arrived as `funds_withdrawn`. No refund is computed on
+execution — the money has already gone back at the provider, and computing a
+second one against the cancellation window would send it twice.
+
+## ADR-034 — Migrations replace `db push`, and the constraints become one of them
+
+**Status:** accepted · 2026-10-26
+
+**Context.** The deployment ran `prisma db push --accept-data-loss` followed by a
+separate `db execute` of `prisma/constraints.sql`. The reasoning was recorded
+honestly at the time: the schema was still moving and a demo database carried
+nothing worth migrating. Both halves of that have now expired. The schema is
+about to hold payment references, payouts and settlement records, and
+`--accept-data-loss` is a standing authorisation to drop whatever is in the way
+of making the database match the file — which is exactly the wrong instinct to
+have running in a build that will one day point at a hotel's revenue.
+
+The two-step arrangement had a second problem that was never about data loss. A
+deployment that applied the schema and then failed on the constraints came up
+*working*, with `booked + held <= capacity` enforced only by application code.
+ADR-020 exists because application-only invariants fail silently; a deployment
+order that could silently produce exactly that state undid it.
+
+**Decision.** Two migrations, and the constraints are the second one.
+
+`20261025000000_baseline` is the whole datamodel, generated with
+`migrate diff --from-empty`. `20261025000001_constraints` is
+`prisma/constraints.sql` applied verbatim. The build is
+`prisma generate && prisma migrate deploy && npm run db:ensure-seed`.
+
+`prisma/constraints.sql` stays the file people edit — it is readable as one
+document, which a directory of migrations is not, and the integration tests and
+the restore runbook both reference it. The migration holds a copy, and
+`tests/unit/migrations.test.ts` fails if the two drift. Two copies on purpose is
+a cost; the alternative is a migration that reads a file whose contents will
+have changed by the time anyone re-runs it, which is not a migration.
+
+**Consequences.** Every database that predates this needs baselining with
+`migrate resolve --applied`, which `docs/deployment.md` sets out along with the
+`migrate diff` check that makes the claim true rather than merely quiet.
+
+The test harness builds its schema with `migrate deploy` too, not `db push`.
+Those are not the same schema in general — one applies the datamodel, the other
+applies a sequence — and a suite that only ever saw the first proves nothing
+about what deployment does. It drops and recreates the schema itself rather than
+using `migrate reset`: Prisma 7 refuses `reset` when it detects an AI agent and
+asks for a consent string, which is a good guard that it would be wrong to
+disarm by committing the consent token, and `reset` also runs the seed now that
+`--skip-seed` is gone. `tests/global-setup.ts` refuses any URL whose database
+name does not contain "test" before it drops anything.
+
+**Also here:** the Prisma 7 upgrade this forced. Prisma 7 removed `url` from the
+`datasource` block, so the connection string now resolves in exactly one place
+(`src/lib/database-url.ts`) for both the client and the CLI, instead of ARC and
+a Rust engine each reading `process.env` with their own rules — which is the
+disagreement that cost this project a week of red deployments. It also cleared
+three high-severity advisories in `deepmerge-ts`; `npm audit` reports none.
+
+## ADR-035 — Portal tokens are derived from a secret, and an open demo must say so
+
+**Status:** accepted · 2026-10-26
+
+**Context.** Item 11 of the launch-readiness list: "anyone can currently open
+the demo guest portals and change things." True, for two unrelated reasons.
+
+The seeded stays' portal tokens were `demo-portal-01` through `demo-portal-06`,
+literals in `prisma/seed.ts`. A portal token is a bearer credential —
+`resolvePortalContext` takes one and returns a guest, and the holder can then
+change that guest's preferences, add to their basket and cancel their bookings.
+So the credential for six guests on every ARC Stay deployment was readable by
+anyone who had opened the repository. The remaining seeded stays were no better:
+their tokens came from `seededToken(rng)`, and the PRNG's seed, `20_251_020`, is
+a literal in the same file.
+
+Separately, the front-door lock was opt-in. `ARC_DEMO_PASSPHRASE` unset meant no
+gate at all, which is right for `npm run dev` and wrong for a public URL — and
+nothing anywhere said which state a deployment was in. While
+`ARC_DATA_MODE=demo` the sign-in page also issues an owner, partner or admin
+session with no credential (ADR-028), so "no gate" means a stranger with the URL
+can verify a partner, publish an experience or read every guest's dietary notes.
+
+**Decision.** Two changes, one for each cause.
+
+Portal tokens are an HMAC of `ARC_SEED_TOKEN_SECRET` over a per-stay label
+(`src/lib/demo-portals.ts`). Deterministic and unguessable are not in conflict:
+the fixtures have to reproduce byte-for-byte, because Playwright asserts on them
+and demo screenshots have to keep working, and an HMAC is as deterministic as a
+PRNG while not being computable without the key. A documented non-secret
+fallback keeps a clean checkout working; production refuses to start on that
+fallback, on a secret under 32 characters, or on none at all.
+
+And a production demo is either locked or explicitly open. Setting
+`ARC_DEMO_PASSPHRASE` locks it; setting `ARC_ALLOW_OPEN_DEMO=1` says the
+openness was intended. Setting neither is now a startup error. `/admin/health`
+shows which state the deployment is in, because the previous arrangement's real
+failure was not that the door was open but that nothing said so.
+
+**Consequences.**
+
+Changing the secret changes every seeded token, so a printed QR code or a shared
+link stops working. Reseed after changing it.
+
+`playwright.config.ts` mints a random secret per run rather than carrying a
+fixed one. A fixed secret in the repository would have exactly the property the
+production check exists to reject, and the check is keyed on `NODE_ENV` — which
+means it fires for a local `next start` too, and the E2E runner is an open demo,
+so it declares `ARC_ALLOW_OPEN_DEMO=1`. Declaring it is the honest answer:
+keying the check on something narrower would mean it never ran anywhere it could
+be tested.
+
+The seed prints the portal links on a developer machine and withholds them in
+production. `db:ensure-seed` runs inside the hosted build, and there is no point
+deriving a credential from a secret and then printing it, next to the guest's
+name, into a build log that outlives the deployment.
+
+`LOCAL_SEED_TOKEN_SECRET` is declared in `src/lib/env.ts` rather than in
+`demo-portals.ts`, where it is used. `demo-portals` needs `node:crypto`, `env`
+is reached from `src/middleware.ts`, and middleware runs on the edge runtime
+where `node:crypto` does not exist — importing the one into the other took every
+request down with "Native module not found: node:crypto". `src/lib/demo-gate.ts`
+uses WebCrypto for the same reason. The dependency points the other way.
+
+**What this does not fix.** Everyone who gets through the front door still
+shares one set of seeded guests, and can still change their data. A per-visitor
+sandbox is a different feature, and ADR-028's credential-free switcher is still
+the thing that makes a demo demonstrable. This ADR makes the door closable and
+the credentials unguessable; it does not make a shared demo private.
+
+## ADR-036 — A verification is a recorded checklist, and it can lapse
+
+**Status:** accepted · 2026-10-26
+
+**Context.** Item 8 of the launch-readiness list was "verifying real suppliers —
+all six seeded ones are still unverified". The seeded six are fixtures and must
+stay unverified; verifying an invented business would be inventing a commercial
+relationship, which non-negotiable 2 forbids. So the actionable part was not
+"verify these partners" but "is the thing ARC does when it verifies a partner
+worth the badge it prints".
+
+It was not, for two reasons.
+
+`verifySupplier` took a free-text note with a ten-character minimum. That made
+`VERIFIED` mean "an admin typed at least ten characters", which records that
+something happened rather than what was checked. "Looks fine" cleared the bar,
+and a year later nobody could tell whether the RFC had ever been seen.
+
+And `insuranceOnFile` was a boolean. A boolean cannot expire; liability
+insurance does. A partner verified in January on a certificate that ran out in
+March was still shown to guests as verified in December, on the strength of a
+document nobody had looked at since. The badge was not wrong when it was
+granted — it simply went on being displayed long after it stopped being true.
+
+**Decision.** Two things.
+
+The checks are enumerated in `src/modules/admin/verification.ts`, recorded
+individually on the Supplier row, and all six required ones must be present
+before `VERIFIED` is reachable. The service refuses otherwise and so does a
+CHECK constraint, which holds the part that cannot drift: `VERIFIED` is
+unreachable with an empty checklist. Each check carries the specifics of what to
+look at — the Capitanía de Puerto permit, the SAT constancia, confirming a CLABE
+by calling a number you already had — because "check the insurance" is not a
+step. `docs/supplier-verification.md` is the operator's version.
+
+Two checks are optional, because some do not apply to every partner: a
+one-person surf guide has no acta constitutiva, and refusing to verify anyone
+who lacks one would mean the status stopped being used, which is the failure
+mode where a process produces a worse outcome than no process.
+
+And a verification can lapse. `verificationStanding` derives a current answer
+from the stored decision plus the clock: verified, lapsed, unverified or
+rejected. Insurance has a mandatory expiry date, and from that date the standing
+is `lapsed`. `isCurrentlyVerified` is what the basket, the itinerary, the guest
+experience page and the publish checks ask — not the stored column.
+
+**Consequences.**
+
+A lapse changes presentation, not data. The stored decision is not rewritten:
+it was correct on the evidence available. Nothing is unpublished and no booking
+is cancelled, because ARC does not take consequential action by itself
+(non-negotiable 6) and an expired certificate is grounds for a phone call, not
+for cancelling a guest's booking. `/admin` shows it in red with the reason and
+warns at thirty days; the publish checks report it as a lapse rather than as a
+plain "not verified", because the two call for different conversations.
+
+A verified partner with the insurance check recorded and **no** expiry on file
+reads as lapsed. That is every row predating this ADR, deliberately: the honest
+statement is "nobody knows when that certificate expires", and the migration
+does not backfill because a checklist invented on a partner's behalf is exactly
+the thing non-negotiable 2 is about. The documentation says to re-check them.
+
+The expiry is compared as a calendar day (`DateKey`, `@db.Date`), not as an
+instant. A certificate expiring today is cover today, and comparing a midnight
+timestamp against `now` would expire it a day early everywhere west of UTC —
+which is all of Mexico.
+
+The constraints arrive as a *second* constraints migration rather than an edit
+to `20261025000001_constraints`. A deployment that has applied that file will
+never apply it again, so editing it would mean the constraint existed on a fresh
+database and was missing from the hosted demo: the schema and the repository
+would agree and the live database would disagree with both.
+`tests/unit/migrations.test.ts` now checks `prisma/constraints.sql` against every
+`*_constraints` migration, so the convention is enforced rather than noted.
+
+### Amendment, 2026-10-26: what "lapsed" covers, and NOT VALID
+
+Two corrections, both found in review of the commit above.
+
+**An incomplete checklist is a lapse, not a pass.** `verificationStanding`
+looked at the insurance expiry and nothing else, so a `VERIFIED` row with an
+empty `verifiedChecks` — the state *every* verification recorded before this
+ADR is in — fell through as currently verified. That is the opposite of what
+this ADR and `docs/supplier-verification.md` say, and in the dangerous
+direction: a guest-facing badge resting on evidence that does not exist.
+A `VERIFIED` row missing any required check now reads as lapsed, with the
+missing keys named.
+
+Guest surfaces were asking the stored column rather than the live question in
+three places (the portal catalogue, the booking page, and both the owner and
+partner views), and in the catalogue's case could not have asked it — the query
+selected `verification` alone. `VERIFICATION_STANDING_SELECT` exists so a query
+that feeds a verification claim loads what the claim needs; selecting the column
+by itself is what made `verification !== 'VERIFIED'` the easy wrong answer.
+
+**The two Supplier constraints are declared `NOT VALID`.** Added validating,
+they check every existing row, and the rows they reject are precisely the
+pre-ADR ones this amendment is about — so a deployment carrying a single
+verified partner would have stopped mid-migration. Demoting those rows is not
+the answer either: this ADR keeps the stored decision, which was correct on the
+evidence available, and changes only what ARC derives from it. `NOT VALID` says
+exactly that — every write from here on carries its evidence, and history keeps
+its own.
+
+This was first written as a *third* constraints migration re-declaring the two
+`NOT VALID` — which does not work, and review caught it. `migrate deploy`
+applies migrations in order and stops at the first failure, so the validating
+version in `20261026000001_verification_constraints` failed before anything
+could replace it; the same went for `constraints.sql`, where the validating
+block came first. Reproduced against a database holding one pre-ADR verified
+row: `P3018`, `check constraint "supplier_verified_is_evidenced" of relation
+"Supplier" is violated by some row`. The declaration is now `NOT VALID` where it
+is first added, and there is no third migration. Editing an applied migration
+is still the rule's exception rather than the rule: this one had been applied
+only to the hosted demo, which took the `NOT VALID` re-declaration in the same
+`migrate deploy` run and so already holds the corrected form.
+
+## ADR-037 — Monitoring watches the data, not only the requests
+
+**Status:** accepted · 2026-10-26
+
+**Context.** Item 10 was "monitoring and alerts". The build had error reporting
+and nothing else, and error reporting only sees failures loud enough to produce
+an exception.
+
+Almost nothing this product can get seriously wrong is that loud. A slot whose
+`booked + held` exceeds `capacity`. A counter gone negative. A confirmed order
+whose three-account split does not add up to its total. A payout that does not
+equal the sum of its lines. A ledger entry claimed by two payouts. An order left
+`PENDING` after ADR-026 said none could be. A refund reported at Stripe with
+nobody deciding what to do about it. A partner's insurance certificate expiring
+while nobody looks.
+
+None of those throws. None produces a 500. A guest does not notice and an owner
+does not notice. The ledger bug in `cancelOrderItem` — a cancelled line whose
+supplier payable stayed at full value for ever — was found by writing a test,
+not by anything watching production, and the first real-world symptom would have
+been a partner asking why their payout was short.
+
+There was also no uptime monitoring, for a specific reason: `/admin/health`
+requires a signed-in platform admin, so nothing could poll it, and handing a
+monitoring service an admin session is worse than not monitoring.
+
+**Decision.** Three signals, because they fail separately.
+
+`GET /api/health` is unauthenticated and says almost nothing: status, the time,
+and 503 when the database does not answer. An uptime checker alerts on a
+non-200. With `MONITORING_TOKEN` presented it also returns the data mode, the
+providers, whether outbound messaging is on and whether the demo's front door is
+locked — a deployment that quietly became a live-payments one is worth an alert.
+Nothing more: an unauthenticated endpoint is reconnaissance for whoever finds
+it.
+
+`POST /api/cron/check-invariants`, hourly, runs the nine checks above. Each one
+watches a state that a CHECK constraint or a unique index makes unreachable
+through the application — which is the point. If one fires, something wrote to
+the database directly or a restore came back without its constraints, and that
+is precisely the failure nobody would otherwise see.
+
+And a documented set of four alerting rules with thresholds, plus service levels
+a pilot conversation can use.
+
+**Consequences.**
+
+The check reports and never repairs. Every finding is either
+impossible-through-the-application or a decision for a person; repairing one
+automatically would mean ARC writing to money or inventory with nobody having
+decided to (non-negotiable 6), and would destroy the evidence of how it
+happened. The same judgement as `returnCapacity` throwing instead of clamping:
+the clamp kept the counter tidy while hiding the double-cancellation.
+
+It returns 200 when it finds something. The check ran and worked; the database is
+what is unhealthy. A 500 would make the scheduler retry, re-alerting every few
+minutes, and would make a monitoring failure indistinguishable from a finding.
+
+A `critical` finding is reported as a fault, so it reaches whatever already
+watches faults instead of needing a second integration nobody configured.
+Warnings stay in the log, because paging on a queue trains whoever is on call to
+ignore the channel — the same reasoning that keeps 4xx `AppError`s out of error
+reporting.
+
+Findings carry ids only, and a test asserts no guest data appears in a report.
+
+The fourth alerting rule is "a scheduled job has gone quiet", which matters more
+than it looks: a cron that silently stops produces no errors, so every other
+alert keeps saying everything is fine while holds accumulate and nothing checks
+the data.
+
+**What this still does not have:** anything actually wired to a pager. The
+signals exist and the rules are written; a monitoring service configured to
+watch them and a person on a rota are pilot decisions, and neither lives in this
+repository. `docs/operations.md` says so rather than implying coverage.
+
+## ADR-038 — The dark end of the palette is set by contrast
+
+**Status:** accepted · 2026-10-26
+
+**Context.** Item 9 asked for an accessibility audit. The first run failed on
+every surface in the product, and almost all of it was one colour.
+
+`text-sand-500` was the subtle-text token — 166 uses, every one of them text —
+and at L 0.672 it scored 2.98:1 against white. WCAG 2.1 AA wants 4.5:1 for body
+text. It was the timestamp on every row, the caption under every figure and the
+hint under every form field, which is to say the product was readable and its
+explanations were not.
+
+**Decision.** The fix is the palette, not 166 files. `sand-400` through
+`sand-700` are set by measured contrast against the *worst* light surface they
+appear on, which is `sand-100` (`--surface-sunken`) rather than white. `sand-500`
+now scores 4.92:1 there, `sand-600` 6.64:1, `sand-700` 8.76:1.
+
+`sand-400` went from 1.99:1 to 3.07:1 — WCAG 1.4.11 wants 3:1 for the boundary
+of a UI component, which no automated check verifies and which a 1.99:1 border
+was quietly failing. It is a border colour, not a text colour: the dozen
+`text-sand-400` usages are `text-sand-500` now, because 3.07:1 is right for a
+border and wrong for a timestamp.
+
+Changing one of these values is therefore a contrast decision, and the comment
+in `globals.css` says so.
+
+**Four other findings, each its own lesson.**
+
+`--color-gold-deep` passed on white and failed on `--color-ivory`, the explore
+surface's own background: a colour that passes where it was chosen and fails
+where it is used.
+
+`opacity-60` on the locale switcher. Opacity multiplies against whatever is
+behind it, so the resulting contrast is not a number anyone can state — and this
+one came out under 4.5:1. Explicit colours are checkable; alpha on text is not.
+
+The brand link's `aria-label` did not contain its own visible text, so a
+voice-control user saying "click ARC Travel" could not activate it (WCAG 2.5.3).
+The spans already read "ARC Travel". Naming it again, differently, only broke
+it.
+
+And `text-jade-700/70` on the AI provenance line — "Written by … It can
+rephrase them; it cannot add to them" — at 3.1:1. The disclosure that exists
+because non-negotiable 5 says the AI explains and never decides was the least
+readable text on the page. A label saying so in grey-on-grey is not the
+disclosure it appears to be.
+
+**Consequences.**
+
+The audit is `tests/e2e/10-accessibility.spec.ts`, not a report. A report is a
+snapshot of a branch; a spec makes a regression a failing test. Axe's
+`best-practice` rules are excluded: they are advice, some of it contested, and a
+failing test that reports advice gets suppressed and takes the real failures
+with it.
+
+The `jade-700/70` finding was invisible from a clean seed — it needs a guest to
+have generated an itinerary first — and was caught only because the spec runs
+after the rest of the suite has used the app. Ordering the accessibility spec
+last is load-bearing, not tidiness.
+
+Nine passing surfaces means "no machine-detectable failures", not "accessible".
+Axe finds perhaps a third of what a real audit finds; `docs/accessibility.md`
+lists what still needs a person, including a screen reader in both languages and
+the conditions card in particular, which is the surface where a
+misunderstanding has physical consequences.

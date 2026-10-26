@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db'
+import { isCurrentlyVerified } from '@/modules/admin/verification'
 import { conflict, invalid, notFound } from '@/lib/errors'
 import { CartStatus, ExperienceStatus, SlotStatus } from '@/lib/prisma-types'
 import { getAvailability, placeHold, releaseHold, releaseHoldsForCart } from '@/modules/inventory/service'
@@ -296,7 +297,7 @@ export async function getCartView(cartId: string, now = new Date()): Promise<Car
               category: true,
               durationMinutes: true,
               meetingPoint: true,
-              supplier: { select: { name: true, verification: true } },
+              supplier: { select: { name: true, verification: true, verifiedChecks: true, insuranceExpiresOn: true } },
             },
           },
           slot: { select: { id: true, startsAt: true } },
@@ -342,7 +343,13 @@ export async function getCartView(cartId: string, now = new Date()): Promise<Car
         durationMinutes: item.experience.durationMinutes,
         meetingPoint: item.experience.meetingPoint,
         supplierName: item.experience.supplier.name,
-        supplierVerified: item.experience.supplier.verification === 'VERIFIED',
+        /*
+         * The *current* standing, not the stored column. A verified partner
+         * whose insurance certificate has expired is not a verified partner
+         * today, and a basket is exactly where that matters: the guest is
+         * about to pay. See src/modules/admin/verification.ts and ADR-036.
+         */
+        supplierVerified: isCurrentlyVerified(item.experience.supplier, now),
         holdExpiresAt,
         // A lapsed hold means the places are back in the pool, so show what is
         // genuinely left rather than what the guest reserved earlier.

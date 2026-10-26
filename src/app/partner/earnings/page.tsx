@@ -72,7 +72,7 @@ export default async function EarningsPage() {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-semibold">
-              <Money amountMinor={earnings.refundedMinor} currency={earnings.currency} />
+              <Money amountMinor={earnings.refundedMinor} currency={earnings.currency} intent="neutral" />
             </p>
             <p className="text-sand-500 mt-1 text-xs">{earnings.refundedCount} cancellations</p>
           </CardContent>
@@ -96,7 +96,7 @@ export default async function EarningsPage() {
                       {row.bookings} bookings · {row.guests} guests
                     </p>
                   </div>
-                  <Money amountMinor={row.payableMinor} currency={earnings.currency} className="font-semibold" />
+                  <Money amountMinor={row.payableMinor} currency={earnings.currency} className="font-semibold" intent="earned" />
                 </li>
               ))}
             </ul>

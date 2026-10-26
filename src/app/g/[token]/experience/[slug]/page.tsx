@@ -9,6 +9,7 @@ import { createTranslator } from '@/lib/i18n'
 import { getLocale } from '@/lib/i18n/server'
 import { toLocalDateKey, toLocalTimeString } from '@/lib/dates'
 import { getGuestExperience } from '@/modules/guest/portal'
+import { isCurrentlyVerified } from '@/modules/admin/verification'
 import { resolvePortalForRequest } from '../../resolve'
 import { getConditions } from '@/modules/destination/conditions'
 import { evaluateSlotsForGuest } from '@/modules/destination/suitability'
@@ -51,7 +52,11 @@ export default async function ExperienceDetailPage({
 
   const basePrice = experience.prices.find((p) => p.kind === 'BASE') ?? experience.prices[0]
   const groupPrice = experience.prices.find((p) => p.kind === 'GROUP')
-  const verified = experience.supplier.verification === 'VERIFIED'
+  /*
+   * The standing today, not the stored column: a partner verified in January on
+   * a certificate that expired in March is not verified in December. ADR-036.
+   */
+  const verified = isCurrentlyVerified(experience.supplier)
   const partySize = preferences.partySize || context.partySize
 
   const byDate = new Map<string, typeof experience.slots>()
@@ -88,17 +93,17 @@ export default async function ExperienceDetailPage({
 
       <div className="text-sand-700 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
         <span className="flex items-center gap-1.5">
-          <Clock className="text-sand-400 size-4" aria-hidden />
+          <Clock className="text-sand-500 size-4" aria-hidden />
           {experience.durationMinutes} {t('common.minutes')}
         </span>
         {experience.place ? (
           <span className="flex items-center gap-1.5">
-            <MapPin className="text-sand-400 size-4" aria-hidden />
+            <MapPin className="text-sand-500 size-4" aria-hidden />
             {experience.place.name}
           </span>
         ) : null}
         <span className="flex items-center gap-1.5">
-          <Users className="text-sand-400 size-4" aria-hidden />
+          <Users className="text-sand-500 size-4" aria-hidden />
           {experience.minParty}–{experience.maxParty} {t('common.people')}
         </span>
       </div>
@@ -115,6 +120,7 @@ export default async function ExperienceDetailPage({
           {basePrice ? (
             <p>
               <Money
+                intent="neutral"
                 amountMinor={basePrice.amountMinor}
                 currency={basePrice.currency}
                 className="text-lg font-semibold"
@@ -124,13 +130,13 @@ export default async function ExperienceDetailPage({
           ) : null}
           {basePrice && basePrice.bookingFeeMinor > 0 ? (
             <p className="text-sand-600">
-              Plus a <Money amountMinor={basePrice.bookingFeeMinor} currency={basePrice.currency} />{' '}
+              Plus a <Money amountMinor={basePrice.bookingFeeMinor} currency={basePrice.currency} intent="neutral" />{' '}
               booking fee, charged once.
             </p>
           ) : null}
           {groupPrice ? (
             <p className="text-sand-600">
-              <Money amountMinor={groupPrice.amountMinor} currency={groupPrice.currency} />{' '}
+              <Money amountMinor={groupPrice.amountMinor} currency={groupPrice.currency} intent="neutral" />{' '}
               {t('common.perPerson')} for {groupPrice.minParty} or more.
             </p>
           ) : null}

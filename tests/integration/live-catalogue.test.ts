@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { prisma } from '@/lib/db'
 import { ExperienceStatus, VerificationStatus } from '@/lib/prisma-types'
 import { liveExperience, liveExperiences, liveStay } from '@/modules/discovery/live'
-import { createTenant, resetDatabase, type TenantFixture } from '../helpers/factory'
+import { createTenant, markVerified, resetDatabase, type TenantFixture } from '../helpers/factory'
 
 let tenant: TenantFixture
 
@@ -63,10 +63,7 @@ describe('liveExperiences', () => {
       verification: VerificationStatus.UNVERIFIED,
     })
 
-    await prisma.supplier.update({
-      where: { id: tenant.supplierId },
-      data: { verification: VerificationStatus.VERIFIED },
-    })
+    await markVerified(tenant.supplierId)
     const [verified] = await liveExperiences('en')
     expect(verified?.provenance).toEqual({
       kind: 'live',

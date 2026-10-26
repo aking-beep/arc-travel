@@ -16,10 +16,32 @@
   --color-sand-100: oklch(0.967 0.012 83);
   --color-sand-200: oklch(0.932 0.019 80);
   --color-sand-300: oklch(0.878 0.026 78);
-  --color-sand-400: oklch(0.783 0.032 76);
-  --color-sand-500: oklch(0.672 0.034 74);
-  --color-sand-600: oklch(0.548 0.031 72);
-  --color-sand-700: oklch(0.432 0.027 70);
+  /*
+   * The dark end of the ramp is set by contrast, not by taste. ADR-038.
+   *
+   * `text-sand-500` is the product's subtle-text colour — 166 uses, every one
+   * of them text — and at its old L of 0.672 it scored 2.98:1 on white. WCAG
+   * 2.1 AA wants 4.5:1 for body text, so every surface in the product failed
+   * the audit on one colour. The values below clear 4.5:1 against the *worst*
+   * light surface they sit on, which is `sand-100` (`--surface-sunken`) rather
+   * than white:
+   *
+   *   sand-500  4.92:1    sand-600  6.64:1    sand-700  8.76:1
+   *
+   * `sand-400` is borders and icons, and went from 1.99:1 to 3.07:1 — WCAG
+   * 1.4.11 wants 3:1 for the boundary of a UI component, which an automated
+   * check cannot verify and which a 1.99:1 border was failing. It is **not** a
+   * text colour: `text-sand-400` appeared in a dozen places and every one is
+   * now `text-sand-500`, because 3.07:1 is the right number for a border and
+   * the wrong one for a timestamp.
+   *
+   * Changing a value here is therefore a contrast decision. Re-run
+   * `npx playwright test tests/e2e/10-accessibility.spec.ts` after.
+   */
+  --color-sand-400: oklch(0.640 0.034 76);
+  --color-sand-500: oklch(0.525 0.031 74);
+  --color-sand-600: oklch(0.455 0.028 72);
+  --color-sand-700: oklch(0.390 0.025 70);
   --color-sand-800: oklch(0.322 0.022 68);
   --color-sand-900: oklch(0.232 0.018 66);
   --color-sand-950: oklch(0.158 0.014 64);
@@ -78,9 +100,16 @@
   --color-sand: #e4ddd0;
   --color-ink: #202824;
   --color-ink-soft: #3a443f;
-  --color-muted: #6b726d;
+  /* 6.37:1 on white, 6.10:1 on sand-50. Was #6b726d, which cleared white by a
+   * hair and failed on a card. ADR-038. */
+  --color-muted: #5a615c;
   --color-gold: #b08d57;
-  --color-gold-deep: #8e6f3f;
+  /*
+   * 5.77:1 on white, 5.40:1 on ivory. Was #8e6f3f: 4.67:1 on white and 4.37:1
+   * on `--color-ivory`, which is the explore surface's own background — so it
+   * passed where it was chosen and failed where it was used. ADR-038.
+   */
+  --color-gold-deep: #7d6137;
   --color-gold-hover: #c29e68;
   --color-sage: #52685b;
   --color-sage-soft: #dce3dd;

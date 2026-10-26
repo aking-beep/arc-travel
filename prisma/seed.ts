@@ -34,7 +34,6 @@ import {
   Pace,
   PlaceKind,
   PriceKind,
-  PrismaClient,
   Provenance,
   ProposalKind,
   ProposalStatus,
@@ -49,14 +48,27 @@ import { generateConditions } from './seed/conditions'
 import { PLACES, TRAVEL_EDGES } from './seed/destination'
 import { AMENITIES, GUESTS, ROOM_TYPES, STAFF } from './seed/people'
 import { createRng, seededReference, seededToken, type Rng } from './seed/rng'
+import {
+  DEMO_PORTAL_COUNT,
+  demoPortalToken,
+  seededPortalToken,
+} from '../src/lib/demo-portals'
 import { addDays, dateRange, fromDateKey, localInstant, toDateKey, type DateKey } from '../src/lib/dates'
 import { money } from '../src/lib/money'
 import { resolveCommission, splitEarnings, type CommissionRuleInput } from '../src/modules/commerce/commission'
 import { checkTravelAdviceSource } from '../src/modules/culture-context/snapshots'
 import { FixtureTravelAdviceProvider } from '../src/modules/integrations/defaults'
-import { prisma as appPrisma } from '../src/lib/db'
-
-const prisma = new PrismaClient()
+/*
+ * The application's client, not a second one of this script's own.
+ *
+ * There used to be a `new PrismaClient()` here as well as this import, which
+ * meant two pools and two connections for one script. Prisma 7 turned that from
+ * untidy into broken: a client needs a driver adapter now, and the one place
+ * that knows how to build it — including the prefixed-`*_DATABASE_URL` fallback
+ * a managed host writes — is `src/lib/db.ts`. One client, one place that
+ * resolves the URL. See ADR-034.
+ */
+import { prisma } from '../src/lib/db'
 
 const SEED = 20_251_020
 const ORG_SLUG = 'casa-olas-group'
@@ -691,7 +703,7 @@ async function seedGuestsAndStays(
         status: rng.bool(0.04) ? StayStatus.CANCELLED : StayStatus.CHECKED_OUT,
         roomRevenueMinor: (roomType?.baseRateMinor ?? 300000) * nights,
         currency: CURRENCY,
-        portalToken: seededToken(rng),
+        portalToken: seededPortalToken(`history-${String(i)}`),
       },
     })
     stays.push({ id: stay.id, guestId, checkIn, checkOut, status: stay.status })
@@ -739,9 +751,17 @@ async function seedGuestsAndStays(
         status: plan.status,
         roomRevenueMinor: (roomType?.baseRateMinor ?? 300000) * plan.nights,
         currency: CURRENCY,
-        // Stable tokens for the first few so demo QR links do not move between
-        // seeds; the rest are seeded-random.
-        portalToken: i < 6 ? `demo-portal-${String(i + 1).padStart(2, '0')}` : seededToken(rng),
+        /*
+         * Stable tokens so demo QR links do not move between seeds — but
+         * derived from ARC_SEED_TOKEN_SECRET, not written here. These used to
+         * be the literals `demo-portal-01`..`06`, which meant anyone who had
+         * read this file could open a hosted demo's guest portals and act as
+         * those guests. See src/lib/demo-portals.ts.
+         */
+        portalToken:
+          i < DEMO_PORTAL_COUNT
+            ? demoPortalToken(i + 1)
+            : seededPortalToken(`current-${String(i)}`),
         arrivalNotes:
           plan.offsetIn === 0 ? 'Arriving today. No transport booked yet.' : null,
       },
@@ -921,8 +941,16 @@ async function seedHistoricalOrders(
       })
 
       if (refunded) {
-        await prisma.ledgerEntry.create({
-          data: { organizationId, orderId: order.id, orderItemId: item.id, account: 'refund', amountMinor: -line.lineTotalMinor, currency: CURRENCY, memo: 'Simulated refund', createdAt: confirmedAt },
+        // Reversed per account, exactly as `cancelOrderItem` does. It used to
+        // be one entry on a `refund` account: the ledger balanced and each
+        // individual account was wrong, which stopped being survivable once
+        // `supplier_payable` became the basis for paying a partner.
+        await prisma.ledgerEntry.createMany({
+          data: [
+            { organizationId, orderId: order.id, orderItemId: item.id, account: 'hotel_earnings', amountMinor: -split.hotel.amountMinor, currency: CURRENCY, memo: 'Simulated refund · reversing hotel share', createdAt: confirmedAt },
+            { organizationId, orderId: order.id, orderItemId: item.id, account: 'platform_commission', amountMinor: -split.platform.amountMinor, currency: CURRENCY, memo: 'Simulated refund · reversing ARC commission', createdAt: confirmedAt },
+            { organizationId, orderId: order.id, orderItemId: item.id, account: 'supplier_payable', amountMinor: -split.supplier.amountMinor, currency: CURRENCY, memo: 'Simulated refund · reversing supplier payable', createdAt: confirmedAt },
+          ],
         })
       }
     }
@@ -1119,9 +1147,31 @@ async function main(): Promise<void> {
   console.log('  orders            %d simulated (%d line items)', orderCount, itemCount)
   console.log('')
   console.log('  Sign in at /sign-in — owner: elena@casaolas.demo')
-  console.log('  Guest portal links (QR targets):')
-  for (const t of portalTokens) {
-    console.log('    /g/%s  → %s %s', t.portalToken, t.guest.firstName, t.guest.lastName)
+
+  /*
+   * The portal links are printed on a developer machine and withheld in
+   * production.
+   *
+   * `npm run db:ensure-seed` runs this script in the hosted build, so anything
+   * printed here lands in a build log that outlives the deployment and is
+   * visible to anyone who can see the project. A portal token is a bearer
+   * credential; there is no point deriving it from a secret and then printing
+   * it next to the guest's name.
+   *
+   * An operator who needs one can read it from the database, or from the stay's
+   * page in the product, both of which require being someone.
+   */
+  if (process.env.NODE_ENV === 'production') {
+    console.log(
+      '  Guest portal links: %d minted, not printed. A build log is not the place for a ' +
+        'bearer credential — read them from the stay pages in /owner/arrivals.',
+      portalTokens.length,
+    )
+  } else {
+    console.log('  Guest portal links (QR targets):')
+    for (const t of portalTokens) {
+      console.log('    /g/%s  → %s %s', t.portalToken, t.guest.firstName, t.guest.lastName)
+    }
   }
   console.log('')
   console.log('  All money and metrics above are DEMO DATA. No real bookings exist.')
@@ -1134,5 +1184,4 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect()
-    await appPrisma.$disconnect()
   })

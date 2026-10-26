@@ -134,7 +134,7 @@ export default async function GuestItineraryPage({
           <h2 className="font-display text-xl font-semibold">{itinerary.title}</h2>
           <p className="text-sand-600 mt-1 text-sm">
             {t(`pace.${itinerary.pace}`)} · {itinerary.partySize} {t('common.people')} ·{' '}
-            <Money amountMinor={itinerary.estimatedTotalMinor} currency={itinerary.currency} />{' '}
+            <Money amountMinor={itinerary.estimatedTotalMinor} currency={itinerary.currency} intent="potential" />{' '}
             {t('common.total').toLowerCase()}
           </p>
         </div>
@@ -148,7 +148,15 @@ export default async function GuestItineraryPage({
               {paragraph}
             </p>
           ))}
-          <p className="text-jade-700/70 mt-2 text-xs">
+          {/*
+            * Full-strength `text-jade-700`, not `/70`. At 70% alpha this was
+            * 3.1:1 against the jade-50 panel and failed WCAG AA — which made
+            * the AI provenance disclosure the least readable text on the page.
+            * Non-negotiable 5 is that the AI explains and never decides; a
+            * label saying so in grey-on-grey is not the disclosure it looks
+            * like. ADR-038.
+            */}
+          <p className="text-jade-700 mt-2 text-xs">
             Written by {itinerary.agentRun?.model ?? 'the mock provider'} from the reasons below. It
             can rephrase them; it cannot add to them.
           </p>
@@ -171,7 +179,7 @@ export default async function GuestItineraryPage({
                 {dayCost > 0 ? (
                   <p className="text-sand-500 text-xs">
                     {t('guest.estimatedDayCost')}{' '}
-                    <Money amountMinor={dayCost} currency={itinerary.currency} />
+                    <Money amountMinor={dayCost} currency={itinerary.currency} intent="potential" />
                   </p>
                 ) : null}
               </div>
@@ -218,6 +226,7 @@ export default async function GuestItineraryPage({
                           )}
                           {item.estimatedCostMinor > 0 ? (
                             <Money
+                              intent="potential"
                               amountMinor={item.estimatedCostMinor}
                               currency={item.currency}
                               className="text-sm font-medium"
@@ -305,7 +314,7 @@ export default async function GuestItineraryPage({
             <ul className="text-sand-700 space-y-1.5 text-sm">
               {unmet.map((constraint, index) => (
                 <li key={`${constraint.code}-${index}`} className="flex items-start gap-2">
-                  <CalendarRange className="text-sand-400 mt-0.5 size-3.5 shrink-0" aria-hidden />
+                  <CalendarRange className="text-sand-500 mt-0.5 size-3.5 shrink-0" aria-hidden />
                   <span>
                     {constraint.date ? (
                       <span className="text-sand-500 font-mono text-xs">{constraint.date} </span>

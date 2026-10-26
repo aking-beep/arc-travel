@@ -24,18 +24,25 @@ import { cn } from '@/lib/cn'
  * and half the callers are client components, so demo-ness would have to be
  * threaded through every one of them as a prop. The marker is therefore the
  * caller's to place, and the rule above is where to place it.
+ *
+ * `intent` is **required**, and used to have a `neutral` default. Thirty-nine
+ * of eighty-one call sites took that default — eight of them on
+ * `/owner/revenue`, the one page where ADR-007's distinction between money
+ * earned and money that might be is the whole point. A default that is right
+ * on a line item and wrong on a revenue total is a rule enforced by whoever
+ * remembers it. `neutral` is still available; it now has to be chosen.
  */
 export function Money({
   amountMinor,
   currency = 'MXN',
   locale,
-  intent = 'neutral',
+  intent,
   className,
 }: {
   amountMinor: number
   currency?: string
   locale?: string
-  intent?: 'earned' | 'potential' | 'neutral'
+  intent: 'earned' | 'potential' | 'neutral'
   className?: string
 }) {
   return (

@@ -6,6 +6,7 @@ import {
   Hotel,
   LayoutDashboard,
   LineChart,
+  Send,
   Store,
   Sunrise,
   Tags,
@@ -31,6 +32,7 @@ const NAV = [
   { href: '/owner/arrivals', label: 'Arrivals', icon: CalendarCheck },
   { href: '/owner/approvals', label: 'Approvals', icon: ClipboardCheck },
   { href: '/owner/revenue', label: 'Revenue', icon: LineChart },
+  { href: '/owner/payouts', label: 'Partner payouts', icon: Send },
   { href: '/owner/property', label: 'Property', icon: Hotel },
 ]
 
@@ -63,7 +65,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
             <Link href="/owner" className="font-display text-jade-900 font-semibold tracking-tight">
               ARC Stay
             </Link>
-            <span className="text-sand-400">/</span>
+            <span className="text-sand-500">/</span>
             <span className="text-sand-700 text-sm">{propertyName}</span>
           </div>
           <div className="flex items-center gap-3">

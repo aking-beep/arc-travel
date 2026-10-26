@@ -21,6 +21,14 @@ env:
   AI_PROVIDER: mock
   PAYMENTS_PROVIDER: simulated
   NEXT_TELEMETRY_DISABLED: '1'
+  # A production build of a demo must say whether its front door is open and
+  # must key the seeded portal tokens with something that is not the
+  # repository's fallback (ADR-035). This runner signs in through the
+  # credential-free account switcher, so "open" is the honest answer; a literal
+  # secret is fine here because CI is not reachable from the internet and the
+  # check exists to stop a *deployment* shipping the fallback.
+  ARC_ALLOW_OPEN_DEMO: '1'
+  ARC_SEED_TOKEN_SECRET: ci-only-portal-token-key-not-a-deployment-000000
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -94,12 +102,13 @@ jobs:
         env:
           PGPASSWORD: arc
 
-      # Vitest's global setup pushes the schema to TEST_DATABASE_URL itself,
-      # so only the demo database needs preparing here.
-      - name: Push schema and apply the CHECK constraints
-        run: |
-          npx prisma db push --skip-generate --accept-data-loss
-          npm run db:constraints
+      # Vitest's global setup applies the migrations to TEST_DATABASE_URL
+      # itself, so only the demo database needs preparing here. `migrate
+      # deploy` rather than `db push` since ADR-034: the constraints arrive with
+      # the migrations, so there is no separate step for them, and CI exercises
+      # the same path a deployment takes.
+      - name: Apply the migrations
+        run: npx prisma migrate deploy
 
       - name: Unit and integration tests
         run: npm test
@@ -139,10 +148,9 @@ jobs:
 
       - run: npx prisma generate
 
-      - name: Push schema, apply constraints, seed the demo data
+      - name: Apply the migrations and seed the demo data
         run: |
-          npx prisma db push --skip-generate --accept-data-loss
-          npm run db:constraints
+          npx prisma migrate deploy
           npm run db:seed
 
       - name: Production build

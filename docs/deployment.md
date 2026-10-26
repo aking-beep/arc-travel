@@ -8,31 +8,37 @@ provider and no real inventory, and nothing here changes that.
 
 1. A PostgreSQL 16 database the deployment can reach.
 2. Six environment variables (below).
-3. A build that pushes the schema, applies the CHECK constraints and seeds the
-   demo data before building the app.
+3. A build that applies the migrations and seeds the demo data before building
+   the app.
 
 ## The build
 
 ```bash
 npm run vercel-build
 # prisma generate
-#   && prisma db push --accept-data-loss
-#   && npm run db:constraints
+#   && prisma migrate deploy
 #   && npm run db:ensure-seed
 #   && next build
 ```
 
 Three things about this are deliberate.
 
-**`db push`, not `migrate deploy`.** The POC has no migration history — the
-schema is still moving and a demo database carries nothing worth migrating.
-A pilot with a real hotel's data needs migrations; see `docs/roadmap.md`.
+**`migrate deploy`, not `db push`.** It used to be `db push --accept-data-loss`,
+on the grounds that a demo database carries nothing worth migrating. That was
+true right up until the moment it stopped being true, and the moment it stops
+being true is not announced. `migrate deploy` applies a reviewed sequence of
+files, fails rather than guessing, and never drops a column to make the schema
+match — which is precisely what `--accept-data-loss` authorises it to do. See
+ADR-034.
 
-**`db:constraints` runs separately.** The CHECK constraints in
-`prisma/constraints.sql` cannot be expressed in the Prisma schema (ADR-020) and
-`db push` does not know about them. Skipping this step leaves
+**The CHECK constraints are a migration now, not a separate step.** There is no
+`db:constraints` in the build any more: `20261025000001_constraints` applies
+`prisma/constraints.sql`, so the constraints arrive with the schema rather than
+after it. A deployment can no longer come up with
 `booked + held <= capacity` enforced only by application code, which is how two
-counter-corruption bugs stayed invisible.
+counter-corruption bugs stayed invisible. `prisma/constraints.sql` is still the
+file people edit; `tests/unit/migrations.test.ts` fails if the migration's copy
+drifts from it.
 
 **`db:ensure-seed`, not `db:seed`.** `npm run db:seed` truncates the tenant
 tables first. That is right on a developer machine and wrong on a hosted demo,
@@ -41,9 +47,96 @@ every redeploy. `db:ensure-seed` counts organizations and seeds only an empty
 database.
 
 Every route in the app is server-rendered on demand, so `next build` itself does
-not read the database. The build only fails on a database problem if the schema
-push, the constraints or the seed cannot run — which is the honest outcome,
-because the app is unusable without them.
+not read the database. The build only fails on a database problem if the
+migrations or the seed cannot run — which is the honest outcome, because the app
+is unusable without them.
+
+## Baselining a database that predates the migrations
+
+**Read this before the first deployment that runs `migrate deploy`.** Every
+database that existed before 2026-10-25 — the hosted demo, and every developer's
+local `arc_stay` — was built by `db push` and has no `_prisma_migrations` table.
+`migrate deploy` sees a database with tables in it and no record of how they got
+there, refuses to touch it, and fails the build. That is the right behaviour: it
+cannot know whether the existing schema matches the first migration or is three
+months divergent, and guessing is how data gets dropped.
+
+There are two fixes, and which one is right depends entirely on whether the
+data in front of you is worth keeping.
+
+### If it is a demo database, reset it
+
+A demo's whole content is the deterministic seed, so there is nothing to
+preserve and nothing to claim. Set `ARC_DB_REBUILD=1` on the project and
+redeploy. `prisma/rebuild.ts` runs ahead of `migrate deploy`, resets the
+`public` schema, and the migrations then build it from scratch with
+`db:ensure-seed` refilling it. **Remove the flag afterwards** — left set, every
+future deploy resets the database.
+
+It refuses unless `ARC_DATA_MODE=demo`, and refuses again if the database is
+named like a production one, because the mode variable and the database
+somebody actually pointed at have disagreed before. The same script is how you
+reset a demo whose seeded availability horizon has run out.
+
+Locally that is `ARC_DB_REBUILD=1 npm run db:rebuild && npm run setup`.
+
+### If the data matters, baseline it
+
+Tell Prisma, once, that both migrations are already applied:
+
+```bash
+# Check first. This should list both migrations as "not yet applied" against a
+# database whose tables already exist.
+npx prisma migrate status
+
+npx prisma migrate resolve --applied 20261025000000_baseline
+npx prisma migrate resolve --applied 20261025000001_constraints
+
+npx prisma migrate status   # "Database schema is up to date!"
+```
+
+`resolve --applied` writes the migration rows and runs no SQL, so it cannot
+damage anything — but it is also a claim, and an untrue claim here is worse than
+the error it silences. Before making it, confirm the schema really does match:
+
+```bash
+npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+```
+
+Exit code 0 and "No difference detected" means the claim is true. **Anything
+else means it is not**, and the database needs the difference applied by hand
+first (or, on a demo database with nothing worth keeping, dropping and letting
+`migrate deploy` build it from scratch). Do not baseline a database whose schema
+disagrees with the datamodel; the next migration will be written against a
+schema that is not the one in front of it.
+
+**`migrate diff` does not check the second migration.** It compares what Prisma
+can express, and the whole reason `prisma/constraints.sql` exists is that Prisma
+cannot express CHECK constraints or constraint triggers (ADR-020). So a database
+can pass the diff above and still have none of them — which is exactly the state
+a `db push` database is in, since `db push` never read that file either. Marking
+`20261025000001_constraints` applied on such a database records a claim that is
+simply false, and the invariant the whole inventory model rests on goes back to
+being enforced by application code alone.
+
+So make it true before claiming it. Every statement in `constraints.sql` is
+`IF EXISTS`-guarded, so this is safe to run whatever state the database is in:
+
+```bash
+npm run db:constraints
+
+# 16 CHECK constraints and 1 constraint trigger, as of this writing. Compare
+# against `grep -c 'ADD CONSTRAINT' prisma/constraints.sql` rather than against
+# the number written here.
+psql "$DATABASE_URL" -c "SELECT count(*) FROM pg_constraint
+  WHERE contype = 'c' AND connamespace = 'public'::regnamespace;"
+```
+
+Then `migrate resolve` both migrations. `./scripts/restore-drill.sh` checks the
+same two counts on a restored database, for the same reason.
+
+A fresh database needs none of this. `migrate deploy` on an empty database
+applies both migrations and records them.
 
 ## Environment variables
 
@@ -55,11 +148,36 @@ because the app is unusable without them.
 | `ARC_DATA_MODE` | `demo` | Labels every figure as synthetic and refuses a live payment provider |
 | `AI_PROVIDER` | `mock` | Deterministic explanations, no network, no cost |
 | `PAYMENTS_PROVIDER` | `simulated` | Redundant with `ARC_DATA_MODE=demo`, which already refuses anything else; set explicitly so the intent is visible |
-| `ARC_DEMO_PASSPHRASE` | optional | See the front door below |
+
+Taking a real payment needs `ARC_DATA_MODE=pilot` (or `live`) plus all three
+Stripe variables: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and
+`STRIPE_PUBLISHABLE_KEY`. The app refuses to start without any one of them —
+half-configured payments is the condition where a guest can be charged and not
+booked, or booked and never un-booked. The publishable key is checked for its
+`pk_` prefix because it is rendered into a page, and the secret key is checked
+for *not* having one, because swapping the two is the mistake that happens.
+With a live provider configured, the Content-Security-Policy widens to allow
+`https://js.stripe.com` as a script and frame source; without one it does not.
+See ADR-031.
+| `ARC_DEMO_PASSPHRASE` | one of these two | See the front door below |
+| `ARC_ALLOW_OPEN_DEMO` | one of these two | Says you meant the demo to be open to anyone with the URL |
+| `ARC_SEED_TOKEN_SECRET` | 32+ random chars | Keys the seeded guests' portal tokens, which are bearer credentials |
 
 `MAPS_PROVIDER`, `CONDITIONS_PROVIDER`, `MESSAGING_PROVIDER` and
-`ANALYTICS_PROVIDER` all default to their offline implementations, so a hosted
-demo needs no third-party keys at all.
+`ANALYTICS_PROVIDER` have exactly one value each — the offline implementation —
+so a hosted demo needs no third-party keys at all.
+
+They used to accept seven names between them (`mapbox`, `google`, `stormglass`,
+`openweather`, `twilio`, `resend`, `posthog`) with nothing behind any of them.
+Setting one changed the value `/admin/health` displayed and changed no
+behaviour. `CONDITIONS_PROVIDER=stormglass` was the one that mattered: it told
+an operator that live marine data was feeding the conditions gate, while the
+gate carried on reading seeded `ConditionReport` rows. A name from that list is
+now refused at boot with a message saying it is unbuilt and what answers
+instead, and `MAPBOX_ACCESS_TOKEN`, `GOOGLE_MAPS_API_KEY`, `STORMGLASS_API_KEY`
+and `POSTHOG_KEY` warn on startup rather than sitting there looking connected.
+Adding a name back to one of those enums without an implementation is a type
+error in `getIntegrations()`, not a setting that is read and ignored.
 
 ## Connection pooling
 
@@ -98,6 +216,46 @@ It is a lock on the front door, not an authorisation mechanism. Every role and
 tenant check behind it still re-derives from the database, and the guest portal
 token is still the only guest credential.
 
+### Open by decision, never by omission
+
+The gate is opt-in, which meant a production deployment that simply never set a
+passphrase was wide open and said so nowhere. That is now a startup refusal: in
+production, with `ARC_DATA_MODE=demo`, ARC will not start unless either
+`ARC_DEMO_PASSPHRASE` is set or `ARC_ALLOW_OPEN_DEMO=1` says the openness was
+intended. Both are fine answers. Neither is.
+
+`/admin/health` shows which of the three states a deployment is in — passphrase
+required, deliberately open, or open with no passphrase set (the last reachable
+only outside production).
+
+### The seeded guests' portal tokens
+
+A portal token is a bearer credential. `resolvePortalContext` takes one and
+returns a guest, after which the holder can change that guest's preferences,
+add to their basket and cancel their bookings.
+
+The seed's tokens were `demo-portal-01` through `demo-portal-06`, written into
+`prisma/seed.ts` — so anyone who had read the repository could open a hosted
+demo's guest portals and act as those guests. The rest of the seeded stays were
+no better: their tokens came from a PRNG whose seed was a literal in the same
+directory.
+
+They are an HMAC of `ARC_SEED_TOKEN_SECRET` now (`src/lib/demo-portals.ts`):
+deterministic, so the Playwright specs and demo screenshots still work, and not
+derivable without the secret. Production refuses to start without one, refuses
+the documented local fallback, and refuses anything under 32 characters.
+
+```bash
+openssl rand -hex 32
+```
+
+Changing the secret changes every seeded token, so any QR code already printed
+or link already shared stops working. Reseed after changing it.
+
+The seed prints the links on a developer machine and withholds them in
+production — `db:ensure-seed` runs inside the hosted build, and a build log
+outlives the deployment.
+
 Platform-level protection is the better option where it is available: on Vercel,
 Deployment Protection with a password is a Pro feature, and the Hobby plan offers
 only Vercel Authentication, which restricts viewing to people with an account on
@@ -106,6 +264,7 @@ the team and so cannot be handed to a hotel owner.
 ## What is still missing for a pilot
 
 A real hotel's data needs what `docs/pilot-plan.md` specifies, and at minimum:
-a real identity provider in place of `/sign-in`, migrations in place of
-`db push`, a backup policy, and `ARC_DATA_MODE=pilot` with the demo markers
-replaced by real provenance.
+a real identity provider in place of `/sign-in`, a backup policy with a restore
+that has actually been rehearsed, and `ARC_DATA_MODE=pilot` with the demo
+markers replaced by real provenance. Migrations are no longer on this list; see
+ADR-034.

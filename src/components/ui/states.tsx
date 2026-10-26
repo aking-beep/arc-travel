@@ -32,7 +32,7 @@ export function EmptyState({
         className,
       )}
     >
-      {icon ? <div className="text-sand-400">{icon}</div> : null}
+      {icon ? <div className="text-sand-500">{icon}</div> : null}
       <p className="text-sand-800 font-medium">{title}</p>
       {description ? <p className="text-sand-600 max-w-prose text-sm">{description}</p> : null}
       {action ? <div className="pt-2">{action}</div> : null}

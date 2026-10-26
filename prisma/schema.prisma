@@ -15,9 +15,12 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// The connection URL is no longer here. Prisma 7 takes it from
+// `prisma.config.ts` for the CLI and from a driver adapter for the client, so
+// there is now exactly one place that resolves it — see `src/lib/db.ts` and
+// `src/lib/database-url.ts`.
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 // === Enums ===================================================================
@@ -227,6 +230,11 @@ enum ProposalKind {
   SUPPLIER_OUTREACH
   PRICE_ADJUSTMENT
   GUEST_MESSAGE
+  /// Money is about to leave the business. Approval is not advisory here.
+  SUPPLIER_PAYOUT
+  /// A refund or chargeback raised at the provider needs a human to decide
+  /// what happens to the booking it paid for.
+  PAYMENT_REVERSAL
 }
 
 enum ProposalStatus {
@@ -241,6 +249,30 @@ enum ProposalStatus {
 enum ApprovalDecision {
   APPROVED
   REJECTED
+}
+
+/// Where a payout run is in its life.
+///
+/// There is no AUTOMATED state and no provider transfer. ARC computes what is
+/// owed, an owner approves it, somebody pays it, and the reference of that
+/// payment is recorded here. See ADR-032.
+enum PayoutStatus {
+  /// Computed from unpaid ledger entries. Claims them, so no second run can.
+  DRAFT
+  /// An owner approved it. The money has not moved.
+  APPROVED
+  /// Paid outside ARC; `settlementReference` names the transfer.
+  SETTLED
+  /// Abandoned. Its lines are released back to the next run.
+  CANCELLED
+}
+
+/// Why a confirmed payment stopped standing, as the provider described it.
+enum PaymentReversalCause {
+  /// A refund issued at the provider rather than through ARC.
+  REFUND
+  /// The cardholder's bank reversed the charge.
+  DISPUTE
 }
 
 enum CommissionBasis {
@@ -293,6 +325,7 @@ model Organization {
   analyticsEvents  AnalyticsEvent[]
   idempotencyKeys  IdempotencyKey[]
   invitations      Invitation[]
+  payouts          Payout[]
 
   @@index([status])
 }
@@ -340,6 +373,7 @@ model Property {
   itineraries       Itinerary[]
   carts             Cart[]
   orders            Order[]
+  payouts           Payout[]
   commissionRules   CommissionRule[]
   amenities         Amenity[]
   proposals         Proposal[]
@@ -373,6 +407,7 @@ model User {
   cultureChangeReviews CultureSourceChange[]
   invitations      Invitation[] @relation("InvitationUser")
   invitationsSent  Invitation[] @relation("InvitationSender")
+  payoutsSettled   Payout[]
 }
 
 /// Binds a user to an organization with a role. The sole source of authority.
@@ -558,7 +593,18 @@ model Supplier {
   /// Certifications the supplier CLAIMS. Unverified until an admin records a
   /// check — the UI must never render these as confirmed.
   claimedCertifications String[] @default([])
+  /// Which verification checks an admin has actually recorded, from
+  /// `VERIFICATION_CHECKS` in src/modules/admin/verification.ts. VERIFIED
+  /// requires every required one; the list is kept so a later reviewer can see
+  /// what was and was not looked at, rather than inferring it from a note.
+  verifiedChecks String[]   @default([])
   insuranceOnFile Boolean     @default(false)
+  /// When the insurance certificate on file expires.
+  ///
+  /// A boolean cannot expire, and liability insurance does. Without this,
+  /// `insuranceOnFile = true` meant "somebody saw a certificate once", which is
+  /// not the same claim and gets less true every month.
+  insuranceExpiresOn DateTime? @db.Date
   payoutsEnabled  Boolean     @default(false)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
@@ -570,6 +616,7 @@ model Supplier {
   experiences Experience[]
   agreements  SupplierAgreement[]
   memberships Membership[]
+  payouts     Payout[]
 
   @@index([organizationId, status])
   @@index([verification])
@@ -917,6 +964,20 @@ model Order {
   cancelledAt    DateTime?
   refundedAt     DateTime?
   cancellationReason String?
+  /// Set when the provider reported a refund or chargeback against this
+  /// order's payment. The order is NOT cancelled by that report: reversing a
+  /// guest's booking is a consequential action and needs an Approval row
+  /// naming who decided (non-negotiable 6). This field is what stops the order
+  /// being treated as good money in the meantime — a payout excludes it. See
+  /// ADR-033.
+  reversalReportedAt DateTime?
+  reversalCause  PaymentReversalCause?
+  /// The provider's own event id, so the report can be traced and so a
+  /// redelivery is recognisable.
+  reversalEventId String?
+  /// What the provider said was reversed, minor units. Not necessarily the
+  /// order total: a partial refund is a partial reversal.
+  reversedMinor  Int         @default(0)
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
@@ -973,6 +1034,7 @@ model OrderItem {
 
   hold           InventoryHold?
   itineraryItems ItineraryItem[]
+  ledgerEntries  LedgerEntry[]
 
   @@index([orderId])
   @@index([organizationId, supplierId, status])
@@ -1021,9 +1083,107 @@ model LedgerEntry {
   createdAt      DateTime @default(now())
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  /// Optional, because the column is: a future entry might belong to an order
+  /// rather than a line. Declared as a relation so a payout can scope entries
+  /// by supplier in the query rather than by fetching and filtering, which is
+  /// where "whose money is this" gets guessed.
+  orderItem OrderItem? @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+
+  payoutLine PayoutLine?
 
   @@index([organizationId, account])
   @@index([orderId])
+  /// The index the payout run reads: unpaid supplier entries, oldest first.
+  @@index([organizationId, account, createdAt])
+}
+
+/// A batch of supplier earnings, computed, approved and then paid by hand.
+///
+/// ARC moves no money. What this model is for is the three things that have to
+/// be true before anybody moves any:
+///
+///   1. **What is owed** is derived from `LedgerEntry` rows rather than
+///      recomputed from orders, so a payout and `/partner/earnings` cannot
+///      disagree.
+///   2. **Nothing is paid twice.** Each line claims exactly one ledger entry
+///      and `PayoutLine.ledgerEntryId` is unique, so the guarantee is the
+///      database's rather than the query's.
+///   3. **A person decided.** Settling requires an approved Proposal of kind
+///      SUPPLIER_PAYOUT, which carries an Approval row naming the user.
+///
+/// Reversals are included as the negative entries they are, so a refund after
+/// a payout reduces the next one rather than being written off. A period whose
+/// net is zero or negative produces no payout at all and leaves its entries
+/// unclaimed, to offset the run after.
+///
+/// See ADR-032.
+model Payout {
+  id             String   @id @default(uuid())
+  organizationId String
+  propertyId     String
+  supplierId     String
+  /// Human reference for a remittance advice, e.g. "PO-20261025-0001".
+  reference      String   @unique
+  /// The window whose entries this run claimed, inclusive.
+  periodStart    DateTime @db.Date
+  periodEnd      DateTime @db.Date
+  currency       String   @default("MXN")
+  /// Sum of this payout's lines. Equal to the sum by construction, and
+  /// re-asserted by a CHECK the application cannot bypass.
+  netMinor       Int
+  status         PayoutStatus @default(DRAFT)
+  /// The proposal whose approval authorises settlement. Null only on a DRAFT.
+  proposalId     String?  @unique
+  /// How the money actually moved, recorded by whoever moved it.
+  settlementReference String?
+  settlementMethod    String?
+  settledAt      DateTime?
+  settledById    String?
+  cancelledAt    DateTime?
+  note           String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property     Property     @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  supplier     Supplier     @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  proposal     Proposal?    @relation(fields: [proposalId], references: [id], onDelete: SetNull)
+  settledBy    User?        @relation(fields: [settledById], references: [id], onDelete: SetNull)
+
+  lines PayoutLine[]
+
+  @@index([organizationId, supplierId, status])
+  @@index([propertyId, status])
+}
+
+/// One ledger entry, claimed by one payout.
+///
+/// The amount is copied rather than read through the relation so a remittance
+/// advice reproduces byte for byte years later, and so the payout's total can
+/// be checked against its lines without a join to a table that might have been
+/// corrected since.
+model PayoutLine {
+  id             String   @id @default(uuid())
+  organizationId String
+  payoutId       String
+  /// Unique: a ledger entry can be claimed by exactly one payout, ever. This
+  /// is the constraint that makes "nothing is paid twice" a property of the
+  /// database rather than of whoever wrote the query.
+  ledgerEntryId  String   @unique
+  orderId        String
+  orderItemId    String?
+  /// Signed. A reversal is a negative line, not an omission.
+  amountMinor    Int
+  currency       String   @default("MXN")
+  /// What the guest bought, as it was called at the time.
+  description    String
+  createdAt      DateTime @default(now())
+
+  payout      Payout      @relation(fields: [payoutId], references: [id], onDelete: Cascade)
+  ledgerEntry LedgerEntry @relation(fields: [ledgerEntryId], references: [id], onDelete: Restrict)
+
+  @@index([payoutId])
+  @@index([organizationId])
 }
 
 /// Guarantees a retried mutation (checkout, approval) produces one effect.
@@ -1289,6 +1449,7 @@ model Proposal {
   agentRun     AgentRun?    @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
 
   approvals Approval[]
+  payout    Payout?
 
   @@index([organizationId, propertyId, status])
   @@index([status, expiresAt])

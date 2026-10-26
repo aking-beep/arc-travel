@@ -119,19 +119,23 @@ The seed prints the full list each time it runs.
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Development server |
-| `npm run setup` | Generate client, push schema, apply constraints, seed |
-| `npm run db:constraints` | Apply `prisma/constraints.sql` (CHECK constraints Prisma cannot express) |
+| `npm run setup` | Generate client, apply migrations, seed |
+| `npm run db:migrate:status` | Whether this database has every migration |
+| `npm run restore-drill` | Rehearse the backup restore end to end (`docs/operations.md`) |
+| `npm run db:constraints` | Re-apply `prisma/constraints.sql` after a `pg_restore` (ADR-020); normally arrives with the migrations |
 | `npm run db:seed` | Reseed (truncates first; idempotent and deterministic) |
+| `npm run db:rebuild` | Reset a **demo** schema so migrations can rebuild it — needs `ARC_DB_REBUILD=1`, refuses outside demo mode ([`docs/deployment.md`](docs/deployment.md)) |
 | `npm run db:ensure-seed` | Seed only if the database is empty — for a hosted demo, where a redeploy must not wipe data |
 | `npm run db:studio` | Prisma Studio |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint |
 | `npm test` | Unit + integration (needs `TEST_DATABASE_URL`) |
 | `npm run test:unit` | Unit only — no database |
-| `npm run test:e2e` | Playwright (builds and serves, reseeds the demo database first) |
+| `npm run test:e2e` | Playwright (builds and serves, reseeds the demo database first) — includes the WCAG audit and the concurrency race |
+| `npm run load-test` | Read-only load test against a running server (`docs/operations.md`) |
 | `npm run build` | Production build |
 | `npm run verify` | typecheck → lint → test → build |
-| `npm run vercel-build` | Hosted build: schema push → constraints → seed-if-empty → build. See [`docs/deployment.md`](docs/deployment.md) |
+| `npm run vercel-build` | Hosted build: generate → rebuild-if-asked → `migrate deploy` → seed-if-empty → build. See [`docs/deployment.md`](docs/deployment.md) |
 
 ## Testing
 

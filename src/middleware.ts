@@ -23,17 +23,47 @@ import { GATE_COOKIE, gatePassphrase, gateToken, tokensMatch } from '@/lib/demo-
  * style-only injection is not the threat the policy is for. `img-src` names
  * the Magic Patterns CDN explicitly, the same host `next.config.ts` allows the
  * optimiser to fetch from.
+ *
+ * ## Stripe's hosts are allowed only when a live payment provider is set
+ *
+ * Collecting a card means loading a script from `js.stripe.com` and letting it
+ * open an iframe from the same origin — that iframe is what keeps the card
+ * number out of ARC's reach, so there is no version of this that does not
+ * widen the policy.
+ *
+ * It is widened conditionally. The hosted demo takes no payments, renders no
+ * payment form, and gets the tighter policy it had before: `frame-src 'none'`
+ * and no third-party script origin. Allowing Stripe everywhere "because the
+ * pilot will need it" would mean every demo deployment carried a script source
+ * and a frame source it never uses, which is the kind of default nobody
+ * revisits.
+ *
+ * Read from `process.env` rather than `getEnv()`: this runs in the edge
+ * runtime, where the Zod parse and its database-url resolution do not belong.
+ * A value other than `stripe` simply leaves the policy tight, which is the
+ * safe direction to fail in.
  */
-function contentSecurityPolicy(nonce: string, isDev: boolean): string {
+const STRIPE_SCRIPT = 'https://js.stripe.com'
+const STRIPE_API = 'https://api.stripe.com'
+
+export function contentSecurityPolicy(
+  nonce: string,
+  isDev: boolean,
+  options: { allowStripe: boolean },
+): string {
+  const { allowStripe } = options
   const directives = [
     "default-src 'self'",
     // `unsafe-eval` only in development, where the dev overlay and HMR need it.
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' ${isDev ? "'unsafe-eval'" : ''}`.trim(),
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' ${allowStripe ? STRIPE_SCRIPT : ''} ${isDev ? "'unsafe-eval'" : ''}`
+      .replace(/\s+/g, ' ')
+      .trim(),
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' blob: data: https://cdn.magicpatterns.com",
     "font-src 'self' data:",
-    `connect-src 'self'${isDev ? ' ws: wss:' : ''}`,
-    "frame-src 'none'",
+    `connect-src 'self'${allowStripe ? ` ${STRIPE_API} ${STRIPE_SCRIPT}` : ''}${isDev ? ' ws: wss:' : ''}`,
+    // The card fields live in an iframe Stripe serves. Nothing else may frame.
+    allowStripe ? `frame-src ${STRIPE_SCRIPT}` : "frame-src 'none'",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -47,7 +77,9 @@ function contentSecurityPolicy(nonce: string, isDev: boolean): string {
 export async function middleware(request: NextRequest): Promise<NextResponse> {
   const isDev = process.env.NODE_ENV !== 'production'
   const nonce = Buffer.from(crypto.randomUUID()).toString('base64')
-  const csp = contentSecurityPolicy(nonce, isDev)
+  const csp = contentSecurityPolicy(nonce, isDev, {
+    allowStripe: process.env.PAYMENTS_PROVIDER === 'stripe',
+  })
 
   const requestHeaders = new Headers(request.headers)
   requestHeaders.set('x-nonce', nonce)

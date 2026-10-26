@@ -44,7 +44,7 @@ export default async function PartnerLayout({ children }: { children: React.Reac
             <Link href="/partner" className="font-display text-jade-900 font-semibold">
               ARC Stay
             </Link>
-            <span className="text-sand-400">/</span>
+            <span className="text-sand-500">/</span>
             <span className="text-sand-700 text-sm">{supplierName}</span>
           </div>
           <div className="flex items-center gap-3">

@@ -102,6 +102,16 @@ export interface StripePaymentEvent {
   paymentIntentId: string
   /** Stripe's own failure code, where it sent one. */
   failureCode: string | null
+  /**
+   * What the provider says it reversed, in minor units.
+   *
+   * Set on a refund or a dispute, where the amount is the point and is not
+   * necessarily the order total — a partial refund is a partial reversal. Null
+   * on a payment failure, where nothing was ever taken.
+   */
+  reversedMinor: number | null
+  /** The currency of `reversedMinor`, upper-cased. */
+  reversedCurrency: string | null
 }
 
 /**
@@ -110,6 +120,22 @@ export interface StripePaymentEvent {
  * Returns null for anything else, including an event whose payload does not
  * contain a payment-intent id — a shape change at Stripe should make ARC do
  * nothing, not make it guess which order an event is about.
+ *
+ * ## Two event families, two places the intent id lives
+ *
+ * A `payment_intent.*` event's object **is** the intent, so the id is the
+ * object's own. A `charge.*` or `charge.dispute.*` event's object *references*
+ * one through `payment_intent`, which is a field in a payload an attacker
+ * cannot forge (the signature covers it) but which does point at a different
+ * row than the object itself.
+ *
+ * That difference used to be the reason only the first family was read at all.
+ * It is now read from `payment_intent` explicitly, and shape-checked the same
+ * way, because the alternative — ignoring every refund and chargeback — meant
+ * a guest could get their money back at Stripe and keep the boat seat for
+ * ever. What stops the reference being dangerous is not where it comes from
+ * but what the handler is allowed to *do* with it: a refund or dispute event
+ * records a report and opens an approval. It cancels nothing. See ADR-033.
  */
 export function readPaymentEvent(body: unknown): StripePaymentEvent | null {
   if (body === null || typeof body !== 'object') return null
@@ -121,16 +147,75 @@ export function readPaymentEvent(body: unknown): StripePaymentEvent | null {
   const object = data?.object as Record<string, unknown> | undefined
   if (!object) return null
 
-  /*
-   * A `payment_intent.*` event's object *is* the intent; a `charge.*` event's
-   * object references one. Only the former is handled, so the id is the
-   * object's own and never a field that could point at another order.
-   */
-  if (!event.type.startsWith('payment_intent.')) return null
-  if (typeof object.id !== 'string' || !object.id.startsWith('pi_')) return null
+  const intentId = paymentIntentIdFor(event.type, object)
+  if (!intentId) return null
 
   const lastError = object.last_payment_error as Record<string, unknown> | undefined
   const failureCode = typeof lastError?.code === 'string' ? lastError.code : null
 
-  return { id: event.id, type: event.type, paymentIntentId: object.id, failureCode }
+  const reversal = reversedAmountFor(event.type, object)
+
+  return {
+    id: event.id,
+    type: event.type,
+    paymentIntentId: intentId,
+    failureCode,
+    reversedMinor: reversal?.amountMinor ?? null,
+    reversedCurrency: reversal?.currency ?? null,
+  }
+}
+
+/** The intent this event is about, from whichever field holds it. */
+function paymentIntentIdFor(type: string, object: Record<string, unknown>): string | null {
+  const looksLikeAnIntent = (value: unknown): value is string =>
+    typeof value === 'string' && /^pi_[A-Za-z0-9_]{8,200}$/.test(value)
+
+  if (type.startsWith('payment_intent.')) {
+    return looksLikeAnIntent(object.id) ? object.id : null
+  }
+
+  if (type.startsWith('charge.')) {
+    // `payment_intent` can be an expanded object rather than a string id,
+    // depending on the account's API version and expansion settings.
+    const field = object.payment_intent
+    if (looksLikeAnIntent(field)) return field
+    if (field !== null && typeof field === 'object') {
+      const nested = (field as Record<string, unknown>).id
+      return looksLikeAnIntent(nested) ? nested : null
+    }
+    return null
+  }
+
+  return null
+}
+
+/**
+ * How much the provider says went back, for the event types where that is the
+ * substance of the message.
+ *
+ * `charge.refunded` carries `amount_refunded` on the charge — the cumulative
+ * total refunded, which is the number that matters: two partial refunds
+ * produce two events and the second one's cumulative figure is the whole
+ * story. A dispute's `amount` is what is being challenged.
+ */
+function reversedAmountFor(
+  type: string,
+  object: Record<string, unknown>,
+): { amountMinor: number; currency: string } | null {
+  const currency = typeof object.currency === 'string' ? object.currency.toUpperCase() : null
+  if (!currency) return null
+
+  if (type === 'charge.refunded') {
+    const refunded = object.amount_refunded
+    return typeof refunded === 'number' && refunded > 0
+      ? { amountMinor: refunded, currency }
+      : null
+  }
+
+  if (type.startsWith('charge.dispute.')) {
+    const amount = object.amount
+    return typeof amount === 'number' && amount > 0 ? { amountMinor: amount, currency } : null
+  }
+
+  return null
 }

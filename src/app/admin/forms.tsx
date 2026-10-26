@@ -4,6 +4,7 @@ import { useActionState } from 'react'
 import { Textarea } from '@/components/ui/field'
 import { FormFeedback, SubmitButton } from '@/components/ui/form-feedback'
 import { emptyFormState } from '@/lib/form-state'
+import { VERIFICATION_CHECKS } from '@/modules/admin/verification'
 import {
   refreshTravelAdviceAction,
   reviewSourceChangeAction,
@@ -14,15 +15,21 @@ import {
 /**
  * Verification form.
  *
- * The note is required to approve, not optional. A "verified" badge with no
- * record of what was checked is worse than no badge at all.
+ * The note is required to approve, not optional, and is no longer the whole
+ * evidential basis: the checklist is. A "verified" badge backed by ten
+ * characters of free text is worse than no badge at all, because it reads as an
+ * assurance. See `src/modules/admin/verification.ts` and ADR-036.
  */
 export function VerifySupplierForm({
   supplierId,
-  insuranceOnFile,
+  verifiedChecks,
+  insuranceExpiresOn,
 }: {
   supplierId: string
-  insuranceOnFile: boolean
+  /** Keys already recorded, so a re-check starts from what is known. */
+  verifiedChecks: readonly string[]
+  /** `YYYY-MM-DD`, computed on the server — a client component must not read the clock. */
+  insuranceExpiresOn: string | null
 }) {
   const [state, formAction] = useActionState(verifySupplierAction, emptyFormState)
 
@@ -31,23 +38,52 @@ export function VerifySupplierForm({
       <input type="hidden" name="supplierId" value={supplierId} />
       <FormFeedback state={state} />
 
+      <fieldset className="space-y-2">
+        <legend className="text-sand-700 text-sm font-medium">
+          What was checked
+        </legend>
+        <p className="text-sand-500 text-xs">
+          Every required check must be recorded before this partner can be verified. The service
+          refuses otherwise — leave them unverified rather than verifying what has not been seen.
+        </p>
+        {VERIFICATION_CHECKS.map((check) => (
+          <label key={check.key} className="flex gap-2 text-sm">
+            <input
+              type="checkbox"
+              name={`check:${check.key}`}
+              defaultChecked={verifiedChecks.includes(check.key)}
+              className="accent-jade-800 mt-0.5 size-4 shrink-0"
+            />
+            <span>
+              <span className="font-medium">{check.label}</span>
+              {check.required ? null : <span className="text-sand-500"> (if it applies)</span>}
+              <span className="text-sand-500 block text-xs leading-snug">{check.detail}</span>
+            </span>
+          </label>
+        ))}
+      </fieldset>
+
+      <label className="block text-sm">
+        <span className="text-sand-700 font-medium">Insurance expires</span>
+        <span className="text-sand-500 block text-xs">
+          From the certificate. Required with the insurance check: the verification lapses on this
+          date rather than standing for ever.
+        </span>
+        <input
+          type="date"
+          name="insuranceExpiresOn"
+          defaultValue={insuranceExpiresOn ?? ''}
+          className="border-sand-300 mt-1 rounded-lg border px-2 py-1 text-sm"
+        />
+      </label>
+
       <Textarea
         name="note"
         rows={2}
         maxLength={400}
-        placeholder="What did you actually check? Required to approve — at least ten characters."
+        placeholder="Policy number, insurer, who you spoke to. Required to approve — at least ten characters."
         className="text-sm"
       />
-
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          name="insuranceOnFile"
-          defaultChecked={insuranceOnFile}
-          className="accent-jade-800 size-4"
-        />
-        Insurance document seen and on file
-      </label>
 
       <div className="flex flex-wrap gap-2">
         <SubmitButton name="decision" value="VERIFIED" size="sm" pendingLabel="Recording…">
