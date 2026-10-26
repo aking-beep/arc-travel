@@ -11,7 +11,7 @@ import {
   listSupplierExperiences,
   resolveOperatingSupplier,
 } from '@/modules/suppliers/service'
-import { VerificationStatus } from '@/lib/prisma-types'
+import { verificationStanding } from '@/modules/admin/verification'
 import { toDateKey, toLocalTimeString } from '@/lib/dates'
 
 export const metadata = { title: 'Overview' }
@@ -27,7 +27,10 @@ export default async function PartnerDashboardPage() {
     getSupplierEarnings(actor, supplierId),
   ])
 
-  const verified = profile.verification === VerificationStatus.VERIFIED
+  // The live answer, so a partner learns their verification has lapsed from
+  // their own dashboard rather than from a guest (ADR-036).
+  const standing = verificationStanding(profile, new Date())
+  const verified = standing.standing === 'verified'
   const unconfirmed = bookings.filter((b) => !b.supplierConfirmedAt)
   const published = experiences.filter((e) => e.status === 'PUBLISHED')
 
@@ -54,12 +57,18 @@ export default async function PartnerDashboardPage() {
           ) : (
             <ShieldAlert className="text-sand-600 size-4" aria-hidden />
           )}
-          {verified ? 'Verified by ARC' : 'Not yet verified by ARC'}
+          {verified
+            ? 'Verified by ARC'
+            : standing.standing === 'lapsed'
+              ? 'Your verification has lapsed'
+              : 'Not yet verified by ARC'}
         </p>
         <p className="text-sand-600 mt-1 text-sm leading-relaxed">
           {verified
             ? 'Your documents are on file and guests see a verified badge.'
-            : 'Guests see a notice saying ARC has not checked your documents, and the certifications on your profile are shown as your own claims. Verification is an ARC review, not something the hotel can grant.'}
+            : standing.standing === 'lapsed'
+              ? `${standing.reason ?? ''} Guests no longer see a verified badge. Nothing of yours has been unpublished and no booking has been cancelled — send the renewal and ARC will record it again.`
+              : 'Guests see a notice saying ARC has not checked your documents, and the certifications on your profile are shown as your own claims. Verification is an ARC review, not something the hotel can grant.'}
         </p>
         {!profile.insuranceOnFile ? (
           <p className="mt-2 text-sm font-medium text-amber-800">No insurance document on file.</p>

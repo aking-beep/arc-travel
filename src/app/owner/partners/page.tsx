@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { requireActor } from '@/modules/auth/service'
 import { getCatalogFormOptions } from '@/modules/catalog/service'
 import { listPartners, resolveOperatingProperty } from '@/modules/hotels/service'
-import { VerificationStatus } from '@/lib/prisma-types'
+import { verificationStanding } from '@/modules/admin/verification'
 import { PartnerInviteForm } from './forms'
 
 export const metadata = { title: 'Partners' }
@@ -17,7 +17,15 @@ export default async function PartnersPage() {
     getCatalogFormOptions(actor, propertyId),
   ])
 
-  const unverified = partners.filter((p) => p.verification !== VerificationStatus.VERIFIED)
+  /*
+   * One instant for the whole page, and the live answer rather than the stored
+   * column: a verification lapses by itself when the insurance certificate on
+   * file expires (ADR-036), and an owner reading "verified" about a lapsed
+   * partner is the same false claim a guest would be reading.
+   */
+  const now = new Date()
+  const standings = new Map(partners.map((p) => [p.id, verificationStanding(p, now)]))
+  const notVerified = partners.filter((p) => standings.get(p.id)?.standing !== 'verified')
 
   return (
     <div className="mx-auto max-w-5xl space-y-8">
@@ -25,14 +33,15 @@ export default async function PartnersPage() {
         <h1 className="font-display text-2xl font-semibold">Partners</h1>
         <p className="text-sand-600 mt-1 text-sm">
           The operators who actually deliver the experiences. {partners.length} on file,{' '}
-          {unverified.length} not yet verified by ARC.
+          {notVerified.length} not verified by ARC right now.
         </p>
       </div>
 
       <div className="space-y-4">
         {partners.map((partner) => {
           const agreement = partner.agreements[0]
-          const verified = partner.verification === VerificationStatus.VERIFIED
+          const standing = standings.get(partner.id)
+          const verified = standing?.standing === 'verified'
 
           return (
             <Card key={partner.id}>
@@ -91,12 +100,21 @@ export default async function PartnersPage() {
                     ) : (
                       <ShieldAlert className="text-sand-600 size-4" aria-hidden />
                     )}
-                    {verified ? 'Verified by ARC' : 'Not verified by ARC'}
+                    {verified
+                      ? 'Verified by ARC'
+                      : standing?.standing === 'lapsed'
+                        ? 'Verification lapsed'
+                        : 'Not verified by ARC'}
                   </p>
                   <p className="text-sand-600 mt-1 text-xs leading-relaxed">
                     {verified
                       ? 'Documents have been checked and recorded.'
-                      : 'ARC has not checked this partner’s documents. Guests see a notice to that effect, and the certifications below are claims the partner made, not confirmed facts.'}
+                      : standing?.standing === 'lapsed'
+                        ? // The cause, then the same claims sentence: a lapsed
+                          // verification means the certifications below are
+                          // back to being the partner's own claims.
+                          `${standing.reason ?? ''} Guests no longer see a verified badge, and the certifications below are claims the partner made, not confirmed facts.`
+                        : 'ARC has not checked this partner’s documents. Guests see a notice to that effect, and the certifications below are claims the partner made, not confirmed facts.'}
                   </p>
                   {partner.claimedCertifications.length > 0 ? (
                     <ul className="text-sand-600 mt-2 space-y-0.5 text-xs">

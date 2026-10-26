@@ -1185,6 +1185,36 @@ would agree and the live database would disagree with both.
 `tests/unit/migrations.test.ts` now checks `prisma/constraints.sql` against every
 `*_constraints` migration, so the convention is enforced rather than noted.
 
+### Amendment, 2026-10-26: what "lapsed" covers, and NOT VALID
+
+Two corrections, both found in review of the commit above.
+
+**An incomplete checklist is a lapse, not a pass.** `verificationStanding`
+looked at the insurance expiry and nothing else, so a `VERIFIED` row with an
+empty `verifiedChecks` — the state *every* verification recorded before this
+ADR is in — fell through as currently verified. That is the opposite of what
+this ADR and `docs/supplier-verification.md` say, and in the dangerous
+direction: a guest-facing badge resting on evidence that does not exist.
+A `VERIFIED` row missing any required check now reads as lapsed, with the
+missing keys named.
+
+Guest surfaces were asking the stored column rather than the live question in
+three places (the portal catalogue, the booking page, and both the owner and
+partner views), and in the catalogue's case could not have asked it — the query
+selected `verification` alone. `VERIFICATION_STANDING_SELECT` exists so a query
+that feeds a verification claim loads what the claim needs; selecting the column
+by itself is what made `verification !== 'VERIFIED'` the easy wrong answer.
+
+**The two Supplier constraints are re-declared `NOT VALID`.** Added validating,
+they check every existing row, and the rows they reject are precisely the
+pre-ADR ones this amendment is about — so a deployment carrying a single
+verified partner would have stopped mid-migration. Demoting those rows is not
+the answer either: this ADR keeps the stored decision, which was correct on the
+evidence available, and changes only what ARC derives from it. `NOT VALID` says
+exactly that — every write from here on carries its evidence, and history keeps
+its own. A third constraints migration, for the reason the paragraph above
+gives.
+
 ## ADR-037 — Monitoring watches the data, not only the requests
 
 **Status:** accepted · 2026-10-26

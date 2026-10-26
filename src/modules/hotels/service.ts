@@ -3,6 +3,7 @@ import { conflict, forbidden, notFound } from '@/lib/errors'
 import { EntityStatus, InvitationKind, Role, VerificationStatus } from '@/lib/prisma-types'
 import { createInvitation } from '@/modules/auth/invitations'
 import { assertOrganizationAccess, assertPropertyAccess, type ActorContext } from '@/modules/tenancy/context'
+import { VERIFICATION_STANDING_SELECT } from '@/modules/admin/verification'
 import { recordAudit } from '@/modules/workflows/audit'
 import { amenitySchema, partnerInviteSchema, propertyProfileSchema, roomTypeSchema } from './schemas'
 
@@ -462,8 +463,11 @@ export async function listPartners(actor: ActorContext, propertyId: string) {
       description: true,
       categories: true,
       status: true,
-      verification: true,
       insuranceOnFile: true,
+      // The three columns a verification standing is derived from, so the
+      // owner's list can say "lapsed" rather than "verified" about a
+      // certificate that has expired (ADR-036).
+      ...VERIFICATION_STANDING_SELECT,
       claimedCertifications: true,
       contactEmail: true,
       contactPhone: true,

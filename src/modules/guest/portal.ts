@@ -9,6 +9,7 @@ import {
 import { fromPrismaLocale, type AppLocale } from '@/lib/i18n'
 import { daysBetween, toDateKey, type DateKey } from '@/lib/dates'
 import { StayStatus } from '@/lib/prisma-types'
+import { VERIFICATION_STANDING_SELECT } from '@/modules/admin/verification'
 
 /**
  * Guest portal context.
@@ -250,7 +251,7 @@ export async function listGuestCatalog(propertyId: string) {
       guideIncluded: true,
       meetingPoint: true,
       imageUrl: true,
-      supplier: { select: { id: true, name: true, verification: true } },
+      supplier: { select: { id: true, name: true, ...VERIFICATION_STANDING_SELECT } },
       place: { select: { id: true, name: true, kind: true } },
       activity: { select: { name: true, guideRequired: true, maxSafeRisk: true, physicalIntensity: true } },
       prices: {

@@ -12,6 +12,7 @@ import {
   type ExperienceCategory,
 } from '@/lib/prisma-types'
 import { assertPropertyAccess, type ActorContext } from '@/modules/tenancy/context'
+import { VERIFICATION_STANDING_SELECT } from '@/modules/admin/verification'
 import { getIntegrations } from '@/modules/integrations/defaults'
 import type { PaymentIntent, PaymentsProvider } from '@/modules/integrations/types'
 import { consumeHold, inSerializableTransaction, returnCapacity } from '@/modules/inventory/service'
@@ -1054,7 +1055,9 @@ export async function getOrderForGuest(reference: string, guestId: string) {
               meetingPoint: true,
               durationMinutes: true,
               cancellationPolicyHours: true,
-              supplier: { select: { name: true, verification: true, contactPhone: true } },
+              supplier: {
+                select: { name: true, contactPhone: true, ...VERIFICATION_STANDING_SELECT },
+              },
             },
           },
           slot: { select: { startsAt: true, endsAt: true } },

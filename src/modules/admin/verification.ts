@@ -147,6 +147,21 @@ export interface StandingInput {
 }
 
 /**
+ * The three columns `verificationStanding` reads, as a Prisma `select`.
+ *
+ * Spread this wherever a query feeds a verification claim, rather than
+ * selecting `verification` alone. Selecting only the column is how the guest
+ * catalogue came to show a lapsed partner as verified: the page had no way to
+ * ask the live question because the live question's inputs were not loaded, and
+ * `verification !== 'VERIFIED'` is always available and always nearly right.
+ */
+export const VERIFICATION_STANDING_SELECT = {
+  verification: true,
+  verifiedChecks: true,
+  insuranceExpiresOn: true,
+} as const
+
+/**
  * Whether a stored verification still holds today.
  *
  * Deliberately a pure function over the row plus `now`, so the same answer is
@@ -183,10 +198,39 @@ export function verificationStanding(
   /*
    * Verified, but is it still true?
    *
-   * A verified partner with the insurance check recorded and no expiry on file
-   * predates this field. Treated as lapsed rather than silently trusted: the
-   * honest statement is "nobody knows when that certificate expires", and
-   * recording the date takes a minute.
+   * First: a VERIFIED row whose checklist is incomplete. Every verification
+   * recorded before ADR-036 is in that state — an empty `verifiedChecks` and no
+   * expiry — because the service that wrote it had no checklist to fill in.
+   * Those read as lapsed, which is what `docs/supplier-verification.md`
+   * promises and what the honest statement is: nobody can now say what was
+   * checked. Falling through to `verified` here would have kept a guest-facing
+   * badge resting on a decision whose evidence does not exist, which is the
+   * one thing ADR-036 was for.
+   *
+   * It is the derived answer that changes, never the stored one. ARC does not
+   * rewrite somebody's recorded decision (non-negotiable 6); it stops
+   * repeating the claim until the checks are recorded again.
+   */
+  const missingRequired = REQUIRED_CHECK_KEYS.filter(
+    (key) => !supplier.verifiedChecks.includes(key),
+  )
+  if (missingRequired.length > 0) {
+    return {
+      standing: 'lapsed',
+      reason:
+        `Recorded as verified, but ${String(missingRequired.length)} required ` +
+        `check${missingRequired.length === 1 ? '' : 's'} ${missingRequired.length === 1 ? 'is' : 'are'} ` +
+        'not on file, so nobody can say what was checked. Re-check and record them.',
+      expiredOn: null,
+      missingChecks: missingRequired,
+    }
+  }
+
+  /*
+   * Then the insurance date. A verified partner with the insurance check
+   * recorded and no expiry on file predates that field. Treated as lapsed
+   * rather than silently trusted: the honest statement is "nobody knows when
+   * that certificate expires", and recording the date takes a minute.
    */
   if (supplier.verifiedChecks.includes(INSURANCE_CHECK_KEY)) {
     if (!supplier.insuranceExpiresOn) {

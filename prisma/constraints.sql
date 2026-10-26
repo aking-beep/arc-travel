@@ -197,3 +197,24 @@ ALTER TABLE "Supplier" DROP CONSTRAINT IF EXISTS "supplier_insurance_expiry_is_d
 ALTER TABLE "Supplier" ADD CONSTRAINT "supplier_insurance_expiry_is_dated" CHECK (
   "insuranceExpiresOn" IS NULL OR 'insurance' = ANY("verifiedChecks")
 );
+
+-- Re-declared NOT VALID.
+--
+-- The validating version above checks every existing row, and the rows it
+-- rejects are exactly the ones ADR-036 is about: a partner verified before that
+-- release has an empty checklist, because the service that recorded the
+-- decision had no checklist to fill in. ARC keeps that recorded decision and
+-- changes only what it derives from it — `verificationStanding` reads an
+-- incomplete checklist as lapsed — so the constraint must bind new writes
+-- without rejecting old rows. Validate it once a database has none left.
+
+ALTER TABLE "Supplier" DROP CONSTRAINT IF EXISTS "supplier_verified_is_evidenced";
+ALTER TABLE "Supplier" ADD CONSTRAINT "supplier_verified_is_evidenced" CHECK (
+  "verification" <> 'VERIFIED'
+  OR (array_length("verifiedChecks", 1) IS NOT NULL AND "verificationNotes" IS NOT NULL)
+) NOT VALID;
+
+ALTER TABLE "Supplier" DROP CONSTRAINT IF EXISTS "supplier_insurance_expiry_is_dated";
+ALTER TABLE "Supplier" ADD CONSTRAINT "supplier_insurance_expiry_is_dated" CHECK (
+  "insuranceExpiresOn" IS NULL OR 'insurance' = ANY("verifiedChecks")
+) NOT VALID;

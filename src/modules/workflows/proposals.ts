@@ -547,25 +547,43 @@ async function executeAction(
         }
       }
 
-      const remaining = await tx.orderItem.count({
-        where: {
-          orderId: order.id,
-          status: { in: [OrderItemStatus.PENDING, OrderItemStatus.CONFIRMED] },
+      /*
+       * Recompute the order's earnings from its surviving lines, exactly as
+       * `cancelOrderItem` does.
+       *
+       * Reversing the ledger is not enough. `Order.hotelEarningsMinor` and its
+       * two siblings are what the owner's briefing and the revenue report sum,
+       * and both include `PARTIALLY_CANCELLED` orders — so leaving the stored
+       * totals alone left a partly charged-back order still presenting its
+       * whole sale as earned, with the money already back on the cardholder's
+       * card. The ledger said one thing and the dashboard another.
+       */
+      const siblings = await tx.orderItem.findMany({
+        where: { orderId: order.id },
+        select: {
+          status: true,
+          hotelEarningsMinor: true,
+          platformEarningsMinor: true,
+          supplierPayableMinor: true,
+          refundedMinor: true,
         },
       })
 
-      const refundedTotal = await tx.orderItem.aggregate({
-        where: { orderId: order.id },
-        _sum: { refundedMinor: true },
-      })
+      const live = siblings.filter(
+        (s) => s.status !== OrderItemStatus.CANCELLED && s.status !== OrderItemStatus.REFUNDED,
+      )
+      const remaining = live.length
 
       await tx.order.update({
         where: { id: order.id },
         data: {
           status: remaining === 0 ? OrderStatus.REFUNDED : OrderStatus.PARTIALLY_CANCELLED,
-          refundedMinor: refundedTotal._sum.refundedMinor ?? 0,
+          refundedMinor: siblings.reduce((n, s) => n + s.refundedMinor, 0),
           refundedAt: now,
           cancellationReason: `provider_${action.cause.toLowerCase()}:${action.providerEventId}`,
+          hotelEarningsMinor: live.reduce((n, s) => n + s.hotelEarningsMinor, 0),
+          platformEarningsMinor: live.reduce((n, s) => n + s.platformEarningsMinor, 0),
+          supplierPayableMinor: live.reduce((n, s) => n + s.supplierPayableMinor, 0),
           ...(remaining === 0 ? { cancelledAt: now } : {}),
         },
       })

@@ -9,6 +9,7 @@ import { getLocale } from '@/lib/i18n/server'
 import { toLocalDateKey, toLocalTimeString } from '@/lib/dates'
 import { resolvePortalForRequest } from '../../resolve'
 import { getOrderForGuest } from '@/modules/commerce/checkout'
+import { isCurrentlyVerified } from '@/modules/admin/verification'
 import { CancelBookingForm } from './forms'
 
 export const metadata = { title: 'Your booking' }
@@ -26,6 +27,7 @@ export default async function OrderPage({
   const locale = await getLocale()
   const t = createTranslator(locale)
 
+  const now = new Date()
   const live = order.items.filter((i) => i.status !== 'CANCELLED' && i.status !== 'REFUNDED')
   const cancelled = order.items.filter((i) => i.status === 'CANCELLED' || i.status === 'REFUNDED')
 
@@ -61,7 +63,9 @@ export default async function OrderPage({
                 </p>
                 <p className="text-sand-500 text-xs">
                   {item.experience.supplier.name}
-                  {item.experience.supplier.verification === 'VERIFIED'
+                  {/* The live answer: a verification lapses when the
+                      insurance on file expires (ADR-036). */}
+                  {isCurrentlyVerified(item.experience.supplier, now)
                     ? ''
                     : ` · ${t('common.unverified')}`}
                 </p>

@@ -365,6 +365,19 @@ describe('a reversal reported by the provider', () => {
     const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId } })
     expect(order.status).toBe(OrderStatus.REFUNDED)
 
+    /*
+     * The order's own split is recomputed from its surviving lines, not left at
+     * what was charged. It used to keep the full sale while the ledger said the
+     * money had gone back; every current reader filters to CONFIRMED, which is
+     * the only reason nobody saw a refunded order still presenting earnings.
+     * `cancelOrderItem` has always recomputed these, so a reversal that did not
+     * was two answers to one question.
+     */
+    expect(order.hotelEarningsMinor).toBe(0)
+    expect(order.platformEarningsMinor).toBe(0)
+    expect(order.supplierPayableMinor).toBe(0)
+    expect(order.refundedMinor).toBe(order.totalMinor)
+
     // Reversed per account, so each one sums to what is actually owed — and
     // every account back to zero, because the whole order went.
     const entries = await prisma.ledgerEntry.findMany({ where: { orderId } })

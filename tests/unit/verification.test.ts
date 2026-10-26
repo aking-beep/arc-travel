@@ -73,15 +73,31 @@ describe('verificationStanding', () => {
     expect(standing.reason).toMatch(/no expiry date/i)
   })
 
-  it('does not lapse a verified partner whose insurance check was never recorded', () => {
-    // Nothing to expire, so nothing lapses. Such a row should not be VERIFIED
-    // in the first place — the service and a CHECK constraint both refuse it —
-    // but this function must not invent a failure mode of its own.
+  it('lapses a verified partner whose checklist is incomplete', () => {
+    /*
+     * This test used to assert the opposite — that an incomplete checklist is
+     * nothing to expire and so nothing lapses — which made a VERIFIED row with
+     * no insurance check read as currently verified. That is the state every
+     * pre-ADR-036 verification is in, and `docs/supplier-verification.md`
+     * promises those read as lapsed. "Nothing recorded" is not evidence of
+     * anything; it is the absence of the evidence the badge claims.
+     */
     const standing = verificationStanding(
       { verification: VerificationStatus.VERIFIED, verifiedChecks: ['identity'], insuranceExpiresOn: null },
       NOW,
     )
-    expect(standing.standing).toBe('verified')
+    expect(standing.standing).toBe('lapsed')
+    expect(standing.missingChecks).toContain(INSURANCE_CHECK_KEY)
+    expect(standing.missingChecks).not.toContain('identity')
+  })
+
+  it('lapses a verified partner with an empty checklist, as every pre-ADR-036 row is', () => {
+    const standing = verificationStanding(
+      { verification: VerificationStatus.VERIFIED, verifiedChecks: [], insuranceExpiresOn: null },
+      NOW,
+    )
+    expect(standing.standing).toBe('lapsed')
+    expect(standing.reason).toMatch(/nobody can say what was checked/i)
   })
 
   it('reports how many required checks are outstanding when unverified', () => {
