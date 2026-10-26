@@ -143,7 +143,7 @@ export async function listDemoAccounts() {
       name: true,
       isPlatformAdmin: true,
       memberships: { select: { role: true, propertyId: true, supplierId: true } },
-      guest: { select: { id: true } },
+      guests: { select: { id: true } },
     },
   })
 
@@ -154,6 +154,6 @@ export async function listDemoAccounts() {
     roles: u.isPlatformAdmin
       ? (['ADMIN'] as string[])
       : [...new Set(u.memberships.map((m) => m.role as string))],
-    isGuest: Boolean(u.guest),
+    isGuest: u.guests.length > 0,
   }))
 }
