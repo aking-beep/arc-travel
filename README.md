@@ -121,6 +121,7 @@ The seed prints the full list each time it runs.
 | `npm run dev` | Development server |
 | `npm run setup` | Generate client, apply migrations, seed |
 | `npm run db:migrate:status` | Whether this database has every migration |
+| `npm run restore-drill` | Rehearse the backup restore end to end (`docs/operations.md`) |
 | `npm run db:constraints` | Re-apply `prisma/constraints.sql` after a `pg_restore` (ADR-020); normally arrives with the migrations |
 | `npm run db:seed` | Reseed (truncates first; idempotent and deterministic) |
 | `npm run db:ensure-seed` | Seed only if the database is empty — for a hosted demo, where a redeploy must not wipe data |

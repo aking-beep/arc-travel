@@ -89,6 +89,31 @@ first (or, on a demo database with nothing worth keeping, dropping and letting
 disagrees with the datamodel; the next migration will be written against a
 schema that is not the one in front of it.
 
+**`migrate diff` does not check the second migration.** It compares what Prisma
+can express, and the whole reason `prisma/constraints.sql` exists is that Prisma
+cannot express CHECK constraints or constraint triggers (ADR-020). So a database
+can pass the diff above and still have none of them — which is exactly the state
+a `db push` database is in, since `db push` never read that file either. Marking
+`20261025000001_constraints` applied on such a database records a claim that is
+simply false, and the invariant the whole inventory model rests on goes back to
+being enforced by application code alone.
+
+So make it true before claiming it. Every statement in `constraints.sql` is
+`IF EXISTS`-guarded, so this is safe to run whatever state the database is in:
+
+```bash
+npm run db:constraints
+
+# 16 CHECK constraints and 1 constraint trigger, as of this writing. Compare
+# against `grep -c 'ADD CONSTRAINT' prisma/constraints.sql` rather than against
+# the number written here.
+psql "$DATABASE_URL" -c "SELECT count(*) FROM pg_constraint
+  WHERE contype = 'c' AND connamespace = 'public'::regnamespace;"
+```
+
+Then `migrate resolve` both migrations. `./scripts/restore-drill.sh` checks the
+same two counts on a restored database, for the same reason.
+
 A fresh database needs none of this. `migrate deploy` on an empty database
 applies both migrations and records them.
 

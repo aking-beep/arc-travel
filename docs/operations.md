@@ -268,15 +268,55 @@ Then point the app at the restored database and check `/admin/health`.
 
 ### Testing the restore
 
-A backup nobody has restored is a hypothesis. Restore into a scratch database
-and run the integration suite against it at least once per release:
+A backup nobody has restored is a hypothesis. So the whole sequence above is a
+script, and running it is one command:
 
 ```bash
-TEST_DATABASE_URL="$RESTORE_URL" npm run test:integration
+npm run restore-drill          # against DATABASE_URL; drops its scratch database after
+DRILL_KEEP=1 npm run restore-drill    # keep the scratch database to poke at
 ```
 
-The suite truncates tenant tables, so **never** point it at anything you want
-to keep.
+It takes a dump, restores it into a scratch database, re-applies the
+constraints, checks the migration state, proves the capacity invariant and the
+ledger, sweeps stale holds, and then reads the restored data through the real
+module code. Eleven checks, one line each, non-zero exit on the first failure.
+It never writes to `DATABASE_URL`.
+
+**Run it before a release**, and after any change to the schema, the constraints
+or the seed. Three minutes.
+
+#### Rehearsal record
+
+| Date | Result | Notes |
+| --- | --- | --- |
+| 2026-10-26 | 11/11 pass | First end-to-end rehearsal. Found four things, all now fixed: see below |
+
+What the first rehearsal found, recorded because "the steps are written down"
+and "the steps work" turned out to be different claims in four separate places:
+
+1. **The commands could not be pasted as written.** `DATABASE_URL` carries
+   Prisma's `?schema=public`, and every `pg_*` tool rejects it —
+   `psql: error: invalid URI query parameter: "schema"`. The drill strips the
+   query string; a person doing this by hand at three in the morning would not
+   have known to.
+2. **`TEST_DATABASE_URL="$RESTORE_URL" npm run test:integration` was the wrong
+   advice.** It was right when the harness used `db push`. Since the harness
+   started building its schema from the migrations (ADR-034) it drops the public
+   schema first, so pointed at a restore it destroys the thing it is checking
+   and then proves the migrations work — which was never the question. Replaced
+   by `scripts/restore-smoke.ts`, which reads the restored rows through the
+   module code and tries to violate the capacity constraint to confirm the
+   restore carried it.
+3. **`prisma/seed.ts` and `prisma/ensure-seed.ts` each built their own
+   `PrismaClient`.** Harmless until Prisma 7, which requires a driver adapter;
+   both then failed at startup, which would have taken the hosted build down on
+   its first deploy. Both now use the one client in `src/lib/db.ts`.
+4. **Baselining a `db push` database could record a false claim.**
+   `migrate diff` compares what Prisma can express, and the entire point of
+   `prisma/constraints.sql` is that Prisma cannot express it (ADR-020). A
+   database could pass the diff with none of the CHECK constraints present and
+   be marked as having had the constraints migration applied. `docs/deployment.md`
+   now says to apply them first and count them.
 
 ---
 
@@ -295,7 +335,9 @@ than none:
 - **No uptime monitoring** beyond `/admin/health`, which requires a signed-in
   platform admin and so cannot be polled by a checker.
 - **No log retention policy.** Logs go wherever the host puts them.
-- **No restore drill on a schedule.** See above; it is a manual step.
+- **No restore drill on a schedule.** `npm run restore-drill` exists and has
+  been run; nothing runs it for you. Putting it in CI needs a scratch database
+  CI can create, which is a pilot decision.
 - **No automated supplier payment.** ARC computes what each partner is owed,
   takes an owner's approval and records the transfer reference; it does not move
   the money. See "Paying partners" below, and ADR-032.

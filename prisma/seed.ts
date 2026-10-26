@@ -34,7 +34,6 @@ import {
   Pace,
   PlaceKind,
   PriceKind,
-  PrismaClient,
   Provenance,
   ProposalKind,
   ProposalStatus,
@@ -54,9 +53,17 @@ import { money } from '../src/lib/money'
 import { resolveCommission, splitEarnings, type CommissionRuleInput } from '../src/modules/commerce/commission'
 import { checkTravelAdviceSource } from '../src/modules/culture-context/snapshots'
 import { FixtureTravelAdviceProvider } from '../src/modules/integrations/defaults'
-import { prisma as appPrisma } from '../src/lib/db'
-
-const prisma = new PrismaClient()
+/*
+ * The application's client, not a second one of this script's own.
+ *
+ * There used to be a `new PrismaClient()` here as well as this import, which
+ * meant two pools and two connections for one script. Prisma 7 turned that from
+ * untidy into broken: a client needs a driver adapter now, and the one place
+ * that knows how to build it — including the prefixed-`*_DATABASE_URL` fallback
+ * a managed host writes — is `src/lib/db.ts`. One client, one place that
+ * resolves the URL. See ADR-034.
+ */
+import { prisma } from '../src/lib/db'
 
 const SEED = 20_251_020
 const ORG_SLUG = 'casa-olas-group'
@@ -1142,5 +1149,4 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect()
-    await appPrisma.$disconnect()
   })
