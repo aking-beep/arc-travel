@@ -56,7 +56,20 @@ export default defineConfig({
   webServer: {
     command: `npm run start -- --port ${PORT}`,
     url: BASE_URL,
-    reuseExistingServer: !process.env.CI,
+    /*
+     * Never reuse a server somebody left running, even locally.
+     *
+     * `next start` serves the `.next` build it found at boot, and the HTML it
+     * renders names hashed asset chunks. Rebuild while it is running and every
+     * page it then serves asks for stylesheets that no longer exist: the CSS
+     * request aborts, Tailwind's `relative` never applies, and a `fill` image
+     * positions itself against the viewport instead of its card — so the suite
+     * fails with clicks intercepted by an image from another section, which
+     * reads as a product bug and is not one. It cost an hour once.
+     *
+     * With this false, a busy port is an immediate, legible error instead.
+     */
+    reuseExistingServer: false,
     timeout: 180_000,
     stdout: 'pipe',
     stderr: 'pipe',

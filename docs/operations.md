@@ -147,6 +147,11 @@ failing to pay, `swept` being large on one run, a lapsed verification.
 you are allowed to generate traffic against. 24 concurrent clients for 15
 seconds over the public and guest read paths, reporting p50/p95/p99 per route.
 
+`npm run load-test` is the same thing. It needs a server already running, and
+**stop that server before running the acceptance suite**: Playwright no longer
+reuses one, so a server you left on the port now fails the run immediately
+rather than serving pages that reference asset chunks a later build replaced.
+
 ```
 path                  n     p50     p95     p99     max   errors
 /                    168     702    1243    1344    1387        0
