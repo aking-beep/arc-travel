@@ -220,15 +220,26 @@ export interface GuestRegistrationResult {
  * Creates or takes over the account for a proved claim, inside a transaction.
  *
  * Both sign-up paths end here, because the interesting part is the same for
- * both and getting it wrong twice would be two bugs. Two cases:
+ * both and getting it wrong twice would be two bugs. Three cases:
  *
- *   * **No user.** Create one and link the guest record to it, conditional on
- *     `userId: null` so a second caller racing for the same booking loses
- *     rather than overwriting the first.
- *   * **A placeholder user**, created by the front desk or the seed with no
- *     credentials and the same address. Set the password on it, conditional on
- *     `passwordHash: null` for the same reason. This is a handover, not a new
- *     account: the person keeps the identity their bookings already point at.
+ *   * **A placeholder the guest record points at**, created by the front desk
+ *     or the seed with no credentials and the same address. Set the password
+ *     on it. A handover, not a new account: the person keeps the identity
+ *     their bookings already point at.
+ *   * **An orphan placeholder at the same address**, left behind when an
+ *     earlier claim at another property repointed its guest record away from
+ *     it. Nothing can sign into it and `User.email` is unique, so refusing
+ *     here would mean refusing that address forever — there is no password
+ *     reset to recover it with. Take it over on the same terms.
+ *   * **No user.** Create one.
+ *
+ * Every write is conditional on what was read: `passwordHash: null` on the
+ * user, and the owner the `ClaimableStay` carried on the guest record. That
+ * record was read *outside* this transaction, so its owner is a hypothesis
+ * rather than a fact — an unconditional write would let a concurrent
+ * `claimStayForAccount` and this function each overwrite the other, which is
+ * the race the whole claim exists to close. A lost race is a conflict, never
+ * an overwrite.
  */
 async function establishAccount(
   tx: Prisma.TransactionClient,
@@ -237,21 +248,39 @@ async function establishAccount(
   claimedWith: string[],
   termsAccepted: boolean,
 ): Promise<string> {
-  let userId: string
+  // The placeholder this claim may take over, re-read inside the transaction.
+  // Either the user the guest record points at, or — when it points at nobody
+  // — an orphan at the same address.
+  const placeholder =
+    stay.guestUser ??
+    (await tx.user.findUnique({
+      where: { email: input.email },
+      select: { id: true, passwordHash: true },
+    }))
 
-  if (stay.guestUser) {
+  const hasPassword =
+    placeholder === null
+      ? false
+      : 'hasPassword' in placeholder
+        ? placeholder.hasPassword
+        : placeholder.passwordHash !== null
+
+  let userId: string
+  let tookOver: boolean
+
+  if (placeholder && hasPassword) {
+    throw conflict('That email already has an ARC account. Sign in instead.')
+  } else if (placeholder) {
     const taken = await tx.user.updateMany({
-      where: { id: stay.guestUser.id, passwordHash: null },
+      where: { id: placeholder.id, passwordHash: null },
       data: { passwordHash: input.passwordHash, name: input.name },
     })
+    // Somebody set a password on it between the read above and here.
     if (taken.count !== 1) {
       throw conflict('This booking already belongs to an ARC account. Sign in instead.')
     }
-    userId = stay.guestUser.id
-
-    // The record already points at this user, but say so explicitly: a desk
-    // that created the user and never linked it is a shape we have seen.
-    await tx.guest.update({ where: { id: stay.guestId }, data: { userId } })
+    userId = placeholder.id
+    tookOver = true
   } else {
     let created
     try {
@@ -260,20 +289,27 @@ async function establishAccount(
         select: { id: true },
       })
     } catch (error) {
-      // Lost the race to claim the address between the pre-check and here.
+      // Lost the race to claim the address between the read above and here.
       if ((error as { code?: string }).code === 'P2002') {
         throw conflict('That email already has an ARC account. Sign in instead.')
       }
       throw error
     }
     userId = created.id
-
-    const linked = await tx.guest.updateMany({
-      where: { id: stay.guestId, userId: null },
-      data: { userId },
-    })
-    if (linked.count !== 1) throw claimRefused()
+    tookOver = false
   }
+
+  // The owner the guest record is allowed to still have: nobody, or the
+  // placeholder we just took over. Anything else means a concurrent claim won
+  // it, and this one loses rather than overwriting theirs.
+  const linked = await tx.guest.updateMany({
+    where: {
+      id: stay.guestId,
+      ...(stay.guestUser ? { OR: [{ userId: null }, { userId: stay.guestUser.id }] } : { userId: null }),
+    },
+    data: { userId },
+  })
+  if (linked.count !== 1) throw claimRefused()
 
   await recordAudit(
     {
@@ -294,7 +330,7 @@ async function establishAccount(
       metadata: {
         stayId: stay.id,
         claimedWith,
-        tookOverPlaceholder: Boolean(stay.guestUser),
+        tookOverPlaceholder: tookOver,
         acceptedTerms: termsAccepted,
         termsVersion: GUEST_TERMS_VERSION,
       },
@@ -345,13 +381,15 @@ export async function registerGuestAccount(
   if (holdsAccount(stay)) throw claimRefused()
 
   if (!stay.guestUser) {
-    // Checked before the transaction for a readable message, and again by the
-    // unique constraint inside it, which is what actually makes it safe.
+    // Checked before the transaction for a readable message, and again inside
+    // it, which is what actually makes it safe. A *passwordless* user at this
+    // address is not a reason to refuse — `establishAccount` takes it over —
+    // so only a real account stops the claim here.
     const taken = await prisma.user.findUnique({
       where: { email: input.email },
-      select: { id: true },
+      select: { passwordHash: true },
     })
-    if (taken) {
+    if (taken?.passwordHash) {
       throw conflict(
         'That email already has an ARC account. Sign in instead, and add this booking from your account.',
       )
@@ -420,8 +458,8 @@ export async function registerGuestAccountFromPortal(
   }
 
   if (!stay.guestUser) {
-    const taken = await prisma.user.findUnique({ where: { email }, select: { id: true } })
-    if (taken) {
+    const taken = await prisma.user.findUnique({ where: { email }, select: { passwordHash: true } })
+    if (taken?.passwordHash) {
       throw conflict(
         'That email already has an ARC account. Sign in, and add this booking from your account.',
       )
@@ -515,7 +553,15 @@ export async function claimStayForAccount(
 
 export interface AccountOrderItem {
   id: string
-  title: string
+  /**
+   * Both titles, not one.
+   *
+   * `/me` is translated, and picking the language in the module would mean
+   * threading a locale into a read that otherwise has no opinion about who is
+   * looking. The caller holds the locale; `experienceTitle` resolves it.
+   */
+  titleEn: string
+  titleEs: string | null
   startsAt: Date | null
   quantity: number
   totalMinor: number
@@ -651,7 +697,7 @@ export async function getGuestAccount(
               cancelledAt: true,
               supplierConfirmedAt: true,
               slot: { select: { startsAt: true } },
-              experience: { select: { titleEn: true } },
+              experience: { select: { titleEn: true, titleEs: true } },
             },
           },
         },
@@ -707,7 +753,8 @@ export async function getGuestAccount(
         totalMinor: order.totalMinor,
         items: order.items.map((item) => ({
           id: item.id,
-          title: item.experience.titleEn,
+          titleEn: item.experience.titleEn,
+          titleEs: item.experience.titleEs,
           startsAt: item.slot?.startsAt ?? null,
           quantity: item.quantity,
           totalMinor: item.lineTotalMinor,
@@ -731,6 +778,20 @@ export async function getGuestAccount(
   })
 
   return { userId: user.id, name: user.name, email: user.email, stays }
+}
+
+/**
+ * A booked item's title in the reader's language, falling back to English.
+ *
+ * The portal already does this, and `/me` showing English activity names in a
+ * Spanish session while the same bookings read correctly behind the QR code is
+ * the kind of half-translation that makes the whole surface feel untrusted.
+ */
+export function experienceTitle(
+  item: { titleEn: string; titleEs: string | null },
+  locale: AppLocale,
+): string {
+  return locale === 'es' ? (item.titleEs ?? item.titleEn) : item.titleEn
 }
 
 /** Whether a signed-in user has any guest records, used to pick a landing page. */

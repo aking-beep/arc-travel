@@ -10,10 +10,11 @@ import { LocaleSwitcher } from '@/components/locale-switcher'
 import { Money } from '@/components/money'
 import { signOutAction } from '@/app/actions'
 import { getTranslator } from '@/lib/i18n/server'
+import type { AppLocale } from '@/lib/i18n'
 import { toLocalTimeString } from '@/lib/dates'
 import { OrderStatus, StayStatus } from '@/lib/prisma-types'
 import { getActor } from '@/modules/auth/service'
-import { getGuestAccount, type AccountStay } from '@/modules/guest/account'
+import { experienceTitle, getGuestAccount, type AccountStay } from '@/modules/guest/account'
 import { ClaimForm } from './claim-form'
 
 export const metadata = { title: 'Your bookings · ARC Stay' }
@@ -79,7 +80,7 @@ export default async function AccountPage() {
           <>
             <p className="text-sand-600 text-sm">{t('account.subtitle')}</p>
             {account.stays.map((stay) => (
-              <StayCard key={stay.stayId} stay={stay} t={t} />
+              <StayCard key={stay.stayId} stay={stay} t={t} locale={locale} />
             ))}
           </>
         )}
@@ -109,7 +110,15 @@ export default async function AccountPage() {
 
 type Translate = Awaited<ReturnType<typeof getTranslator>>['t']
 
-function StayCard({ stay, t }: { stay: AccountStay; t: Translate }) {
+function StayCard({
+  stay,
+  t,
+  locale,
+}: {
+  stay: AccountStay
+  t: Translate
+  locale: AppLocale
+}) {
   const live = stay.portalPath !== null
   const orders = stay.orders
   const bookedItems = orders.flatMap((order) => order.items)
@@ -231,7 +240,7 @@ function StayCard({ stay, t }: { stay: AccountStay; t: Translate }) {
                       >
                         <span className="min-w-0">
                           <span className={item.cancelledAt ? 'text-sand-500 line-through' : ''}>
-                            {item.title}
+                            {experienceTitle(item, locale)}
                           </span>
                           {item.quantity > 1 ? (
                             <span className="text-sand-500"> ×{item.quantity}</span>

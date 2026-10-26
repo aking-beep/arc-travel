@@ -7,6 +7,7 @@ import { StayStatus } from '@/lib/prisma-types'
 import { verifyCredentials } from '@/modules/auth/credentials'
 import {
   claimStayForAccount,
+  experienceTitle,
   getGuestAccount,
   hasGuestRecords,
   registerGuestAccount,
@@ -58,6 +59,9 @@ interface Booking {
   reference: string
   portalToken: string
   email: string
+  supplierId: string
+  experienceId: string
+  slotId: string
 }
 
 /**
@@ -104,6 +108,9 @@ async function booking(
     reference: stay.reference,
     portalToken: stay.portalToken,
     email: guest.email,
+    supplierId: tenant.supplierId,
+    experienceId: tenant.experienceId,
+    slotId: tenant.slotId,
   }
 }
 
@@ -326,6 +333,27 @@ describe('registerGuestAccount', () => {
     )
   })
 
+  it('takes over an orphan placeholder left by an earlier claim at another property', async () => {
+    // The shape `claimStayForAccount` creates when it absorbs a placeholder:
+    // a credential-free user at this address with no guest records left. It
+    // blocks `User.email`, nothing can sign into it, and there is no password
+    // reset — so refusing here would refuse that address forever.
+    const stay = await booking({ placeholder: false })
+    const orphan = await prisma.user.create({
+      data: { email: stay.email, name: 'Desk Placeholder' },
+    })
+
+    const result = await registerGuestAccount(
+      signUp({ email: stay.email, reference: stay.reference }),
+    )
+
+    expect(result.userId).toBe(orphan.id)
+    expect(await prisma.user.count({ where: { email: stay.email } })).toBe(1)
+    await expect(verifyCredentials({ email: stay.email, password: PASSWORD })).resolves.toBe(
+      result.userId,
+    )
+  })
+
   it('refuses an address that already has a real ARC account elsewhere', async () => {
     const stay = await booking({ placeholder: false })
     await prisma.user.create({
@@ -531,6 +559,45 @@ describe('claimStayForAccount', () => {
   })
 })
 
+describe('establishAccount concurrency', () => {
+  it('a claim that lost the race does not overwrite the winner', async () => {
+    const first = await booking({ name: 'Casa Uno', placeholder: false })
+    const second = await booking({ name: 'Casa Dos' })
+
+    const account = await registerGuestAccount(
+      signUp({ email: first.email, reference: first.reference }),
+    )
+
+    // Both callers read `second`'s guest record while it still pointed at the
+    // placeholder, and both go on to write it. One of them has to lose.
+    const outcomes = await Promise.allSettled([
+      claimStayForAccount(account.userId, { reference: second.reference, email: second.email }),
+      registerGuestAccountFromPortal(
+        { stayReference: second.reference, guestEmail: second.email },
+        portalInput(),
+      ),
+    ])
+
+    expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1)
+
+    // Whoever won, the booking belongs to exactly one account and the record
+    // was not left pointing at the loser.
+    const guest = await prisma.guest.findUniqueOrThrow({
+      where: { id: second.guestId },
+      select: { userId: true },
+    })
+    expect(guest.userId).not.toBeNull()
+
+    const owner = await prisma.user.findUniqueOrThrow({
+      where: { id: guest.userId as string },
+      select: { passwordHash: true },
+    })
+    // And the owner is a real account rather than the placeholder: nobody is
+    // left holding a booking they cannot sign in to.
+    expect(owner.passwordHash).not.toBeNull()
+  })
+})
+
 describe('getGuestAccount', () => {
   it('shows only the signed-in person’s bookings', async () => {
     const mine = await booking({ name: 'Casa Mia', placeholder: false })
@@ -590,6 +657,52 @@ describe('getGuestAccount', () => {
     })
 
     expect((await getGuestAccount(account.userId))?.stays).toHaveLength(0)
+  })
+
+  it('carries both titles for a booked item, so the account can be read in Spanish', async () => {
+    const stay = await booking({ placeholder: false })
+    const account = await registerGuestAccount(
+      signUp({ email: stay.email, reference: stay.reference }),
+    )
+
+    const order = await prisma.order.create({
+      data: {
+        organizationId: stay.organizationId,
+        propertyId: stay.propertyId,
+        guestId: stay.guestId,
+        stayId: stay.stayId,
+        reference: 'ARC-TEST-TITL',
+        currency: 'MXN',
+        totalMinor: 95_000,
+      },
+      select: { id: true },
+    })
+    await prisma.experience.update({
+      where: { id: stay.experienceId },
+      data: { titleEs: 'Clase de surf para principiantes' },
+    })
+    await prisma.orderItem.create({
+      data: {
+        organizationId: stay.organizationId,
+        orderId: order.id,
+        experienceId: stay.experienceId,
+        slotId: stay.slotId,
+        supplierId: stay.supplierId,
+        quantity: 2,
+        unitPriceMinor: 47_500,
+        lineTotalMinor: 95_000,
+        currency: 'MXN',
+      },
+    })
+
+    const view = await getGuestAccount(account.userId)
+    const item = view?.stays[0]?.orders[0]?.items[0]
+    expect(item?.titleEs).toBe('Clase de surf para principiantes')
+    expect(experienceTitle(item!, 'es')).toBe('Clase de surf para principiantes')
+    // English falls back to itself, and a missing Spanish title falls back to
+    // English rather than rendering blank.
+    expect(experienceTitle({ titleEn: 'Sunrise surf', titleEs: null }, 'es')).toBe('Sunrise surf')
+    expect(experienceTitle(item!, 'en')).toBe(item?.titleEn)
   })
 
   it('returns null for an account that no longer exists', async () => {
