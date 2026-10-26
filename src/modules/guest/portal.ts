@@ -100,6 +100,23 @@ export interface PortalContext {
   organizationId: string
   guestFirstName: string
   guestLastName: string
+  guestEmail: string
+  /**
+   * Whether somebody actually holds an ARC account for this guest (ADR-039).
+   *
+   * Not simply `guest.userId !== null`. The front desk and the demo seed both
+   * create a credential-free `User` so the guest has an identity to act
+   * under, and that placeholder is nobody's account — treating it as claimed
+   * would mean every guest the desk ever entered could never sign up, which
+   * is the feature. `holdsAccount` in `./account.ts` makes the same
+   * distinction, from the other side.
+   *
+   * Deliberately a boolean and not the user id: the portal's authority is the
+   * token, and nothing behind it should start branching on who the account
+   * holder is. The portal uses this for one thing — whether to make the
+   * offer.
+   */
+  hasAccount: boolean
   locale: AppLocale
   partySize: number
   intakeCompleted: boolean
@@ -148,11 +165,13 @@ export async function resolvePortalContext(token: string, now = new Date()): Pro
       guest: {
         select: {
           id: true,
+          email: true,
           firstName: true,
           lastName: true,
           locale: true,
           partySize: true,
           intakeCompletedAt: true,
+          user: { select: { email: true, passwordHash: true } },
         },
       },
       property: {
@@ -201,6 +220,12 @@ export async function resolvePortalContext(token: string, now = new Date()): Pro
     organizationId: stay.organizationId,
     guestFirstName: stay.guest.firstName,
     guestLastName: stay.guest.lastName,
+    guestEmail: stay.guest.email,
+    hasAccount: Boolean(
+      stay.guest.user?.passwordHash ||
+        (stay.guest.user &&
+          stay.guest.user.email.toLowerCase() !== stay.guest.email.toLowerCase()),
+    ),
     locale: fromPrismaLocale(stay.guest.locale),
     partySize: Math.max(1, stay.adults + stay.children, stay.guest.partySize),
     intakeCompleted: Boolean(stay.guest.intakeCompletedAt),

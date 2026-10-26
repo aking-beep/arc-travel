@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/states'
 import { Money } from '@/components/money'
 import { ConditionsCard } from '@/components/guest/conditions-card'
+import { AccountNudge } from '@/components/guest/account-nudge'
 import { createTranslator } from '@/lib/i18n'
 import { getLocale } from '@/lib/i18n/server'
 import { toLocalTimeString } from '@/lib/dates'
@@ -78,6 +79,8 @@ export default async function GuestItineraryPage({
             </LinkButton>
           </CardContent>
         </Card>
+
+        <AccountNudge token={token} hasAccount={context.hasAccount} t={t} />
       </div>
     )
   }
@@ -105,6 +108,7 @@ export default async function GuestItineraryPage({
           partySize={preferences.partySize || context.partySize}
           label={t('guest.buildItinerary')}
         />
+        <AccountNudge token={token} hasAccount={context.hasAccount} t={t} />
       </div>
     )
   }
@@ -350,6 +354,8 @@ export default async function GuestItineraryPage({
           />
         </CardContent>
       </Card>
+
+        <AccountNudge token={token} hasAccount={context.hasAccount} t={t} />
     </div>
   )
 }

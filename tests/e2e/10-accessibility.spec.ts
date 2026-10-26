@@ -133,6 +133,29 @@ test.describe('accessibility', () => {
     await signOut(page)
   })
 
+  test('the guest account surfaces', async ({ page }) => {
+    await page.goto('/sign-up/guest')
+    await audit(page, '/sign-up/guest')
+
+    // A token whose guest nobody has claimed, so the in-portal form renders
+    // rather than redirecting to an account that already exists.
+    await page.goto(`/g/${GUEST_PORTAL_TOKENS.arrivingToday}/account`)
+    await audit(page, 'in-portal sign-up')
+
+    // `/me` needs an account, so make one: the surface is a list of stays and
+    // money, and auditing it empty would audit the empty state only.
+    await page.goto(`/g/${GUEST_PORTAL_TOKENS.advancedSurfer}/account`)
+    const passphrase = 'an entirely ordinary passphrase'
+    await page.getByLabel('Password', { exact: true }).fill(passphrase)
+    await page.getByLabel('Confirm password').fill(passphrase)
+    await page.getByRole('checkbox').check()
+    await page.getByRole('button', { name: /create the account/i }).click()
+    await page.waitForURL('/me')
+    await audit(page, '/me')
+
+    await signOut(page)
+  })
+
   test('at phone width, where most guests are', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto(`/g/${GUEST_PORTAL_TOKENS.completedIntake}`)

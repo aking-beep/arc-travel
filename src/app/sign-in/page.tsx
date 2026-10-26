@@ -81,15 +81,37 @@ export default async function SignInPage({
               and that link is their only credential — so it stays with the operator rather than
               being published here. The seed prints the demo links when it runs.
             </p>
+            <p className="text-sand-500 mt-2 max-w-prose text-sm leading-relaxed">
+              Staying somewhere and want your bookings in one place?{' '}
+              <Link
+                href="/sign-up/guest"
+                className="text-jade-800 underline underline-offset-4"
+              >
+                Create a guest account
+              </Link>{' '}
+              with your booking reference. That one needs a real password.
+            </p>
           </>
         ) : (
-          <p className="text-sand-600 mt-6 max-w-prose text-sm leading-relaxed">
-            Running a boutique hotel and want to try ARC Stay?{' '}
-            <Link href="/sign-up" className="text-jade-800 underline underline-offset-4">
-              Register your hotel
-            </Link>
-            .
-          </p>
+          <div className="text-sand-600 mt-6 max-w-prose space-y-2 text-sm leading-relaxed">
+            <p>
+              Running a boutique hotel and want to try ARC Stay?{' '}
+              <Link href="/sign-up" className="text-jade-800 underline underline-offset-4">
+                Register your hotel
+              </Link>
+              .
+            </p>
+            <p>
+              Staying at one?{' '}
+              <Link
+                href="/sign-up/guest"
+                className="text-jade-800 underline underline-offset-4"
+              >
+                Create a guest account
+              </Link>{' '}
+              with the reference from your confirmation.
+            </p>
+          </div>
         )}
 
         <div className="mt-8 space-y-5">

@@ -1369,3 +1369,133 @@ Axe finds perhaps a third of what a real audit finds; `docs/accessibility.md`
 lists what still needs a person, including a screen reader in both languages and
 the conditions card in particular, which is the surface where a
 misunderstanding has physical consequences.
+
+## ADR-039 — A guest may hold an account, and a booking is claimed rather than asserted
+
+**Status:** accepted · 2026-10-26
+
+**Context.** A guest's only way into ARC Stay was `/g/<token>`, the QR code at
+the front desk. The token is a bearer credential scoped to one stay (ADR-035),
+which makes it the right thing to hand over at a desk and the wrong thing to be
+somebody's only way back to their own booking. Three consequences, all of them
+real:
+
+* It cannot be recovered. Lose the photograph of the QR code and the hotel has
+  to reissue the token, which is a phone call for a person who only wanted to
+  check what time their boat leaves.
+* It shows one stay. A guest who has stayed twice, or who is staying at two
+  properties on one trip, holds two unrelated links and has no surface that
+  shows them both.
+* It says nothing about who is holding it. Everything behind it is therefore
+  scoped to the token rather than to a person, which is correct for a token and
+  is not an account.
+
+Meanwhile `Guest.userId` existed and `assertGuestAccess` already honoured it —
+a guest acting on their own record needs no membership. Nothing ever wrote it
+except the seed. The account was modelled and not reachable.
+
+**Decision.** A guest may create an account, and the account is an **index**
+over the bookings they have claimed.
+
+*Claimed, not asserted.* What links a person to a booking is the booking
+reference **and** the address the property recorded against it, together.
+Neither alone: a reference is printed on paper that gets left in rooms, and an
+address is something a stranger may know. ARC specifically does **not** infer
+the link from a matching address alone — a hotel that typed the wrong email
+must not thereby hand a stranger a guest's itinerary and dietary notes. A
+second, better-proved route exists from inside the portal
+(`/g/<token>/account`), where the token is itself the proof and the form asks
+only for a name and a password; that is the funnel that actually converts,
+because a guest standing in the room has the proof already and does not have to
+go and find a reference.
+
+*A refusal says nothing.* Wrong reference, wrong address, cancelled stay,
+expired stay and already-claimed stay all return one message, and claim
+attempts are bounded per caller and per reference. Otherwise the form answers
+"is `STAY-7K4M-QX2P` a real booking, and whose?". The message names both
+possibilities — no match, or already claimed — without saying which, because
+the person it most often reaches is somebody who signed up last week and
+forgot.
+
+*A passwordless user is almost nobody's account.* This is the part that nearly
+made the whole feature undemonstrable, and it is a real-deployment problem
+rather than a demo one. The seed creates a `User` for each seeded guest so they
+have an identity to act under, and sets no password on it. Reading
+`Guest.userId !== null` as "already claimed" would therefore have meant that
+every guest in the demo could never create an account, and the only guests who
+could were ones no hotel had recorded. So a credential-free `User` at the
+guest's own address is a placeholder, and claiming *takes it over*: the password
+is set on it by a conditional update on `passwordHash: null`, and the person
+keeps the identity their bookings already point at. That is exactly the handover
+`acceptInvitationFor` performs for an invited partner, and ADR-021's rule about
+never rewriting a stranger's profile holds because the claim has already proved
+the booking and the addresses have to match. A placeholder pointing at a
+*different* address is not ours to take over, and `holdsAccount` is the one
+place that judgement lives — `resolvePortalContext.hasAccount` asks it from the
+other side, so the portal stops offering an account exactly when somebody holds
+one.
+
+*Amendment, same day: "almost".* `createStay` does **not** create a `User` — only
+the seed does — so in a real deployment `Guest.userId` is null and the claim
+reaches a passwordless row by *email* rather than through the guest record. That
+makes the by-email branch the normal path, not an edge case, and the first
+version of it asked only `passwordHash === null`. `invitePartner` creates
+precisely that shape: a passwordless contact carrying a `SUPPLIER` membership
+and an open invitation. A guest booking under a partner's address could
+therefore have absorbed the partner's account — setting a password on it,
+overwriting the profile, and signing in with the partner's access. So the
+question is not "has this row a password" but "is anybody else expected to set
+one": `isSpokenFor` refuses a row with a password, a membership in any role but
+`GUEST`, or an invitation. `GUEST` is excluded because a guest placeholder
+carries one already, and it confers nothing the claim is not itself
+establishing — which is why the predicate asks about the role rather than
+counting rows.
+
+*An index, not a second portal.* `/me` lists the person's stays and summarises
+each one — dates, the plan's size, what is booked, what is in the basket — and
+hands off to `/g/<token>` for everything that *changes* something. One
+authorisation boundary for the guest surface rather than two, with one set of
+rate limits and one grace window. It is the one surface that may hand over a
+portal token, because the holder of the account has proved they are the person
+it belongs to, and it withholds the link once `resolvePortalContext` would
+refuse it, so the account never offers a link that 404s.
+
+*`Guest.userId` is no longer unique.* A `Guest` is a person **at one
+property**: it carries that property's copy of their preferences, intake and
+consents, and `@@unique([propertyId, email])` already says there is one per
+property per address. The account is the person. The UNIQUE constraint modelled
+a person as the guest of at most one property, which was true only because
+nothing created guest accounts — and would have meant the second hotel somebody
+stayed at could never appear in their account.
+
+**Consequences.**
+
+`User.guest` became `User.guests`. One caller cared: `listDemoAccounts`.
+
+Taking over a placeholder means a demo account the switcher lists can acquire a
+password mid-demo, after which it signs in with one and not with a click. That
+is correct — somebody now holds it — and worth knowing before wondering why a
+seeded guest stopped being a one-click account.
+
+A claim links one booking at a time, deliberately. A stay the property records
+later against the same address does not appear until it is claimed, which is
+friction a loyalty programme would not accept and is the honest behaviour here:
+the reference proves possession of *that* booking, and nothing else does.
+
+The account surface reads the plan, orders and basket from the **stay**, not
+from the guest record, which is why a returning guest's two stays show their
+own bookings rather than one merged list.
+
+Portal tokens now appear in a page served to a signed-in account holder. That
+is the one place it is correct, and it is worth stating plainly because ADR-035
+exists precisely because an earlier `/sign-in` rendered portal tokens into
+markup for anonymous callers. The difference is the session.
+
+**What this does not do.** No email verification, so an address is proved by
+the booking rather than the other way round — which is why the booking
+reference is required and why a matching address alone is never enough. No
+password reset: there is no outbound mail path, and
+`ARC_ENABLE_OUTBOUND_MESSAGING` is false (non-negotiable 6). A guest who
+forgets their password still has their QR code, and the account is additive to
+it rather than a replacement for it. That ordering is deliberate: the portal
+keeps working for everyone who never signs up.

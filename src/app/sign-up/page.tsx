@@ -47,6 +47,13 @@ export default function SignUpPage() {
             Sign in
           </Link>
         </p>
+        <p className="text-sand-600 mt-2 text-sm">
+          Staying at a hotel rather than running one?{' '}
+          <Link href="/sign-up/guest" className="text-jade-800 underline underline-offset-4">
+            Create a guest account
+          </Link>{' '}
+          instead.
+        </p>
       </main>
     </div>
   )

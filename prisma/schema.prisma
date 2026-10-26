@@ -399,7 +399,7 @@ model User {
   updatedAt    DateTime @updatedAt
 
   memberships Membership[]
-  guest       Guest?
+  guests      Guest[]
   approvals   Approval[]
   auditEvents AuditEvent[]
   agentRuns   AgentRun[]
@@ -480,7 +480,10 @@ model Guest {
   id             String   @id @default(uuid())
   organizationId String
   propertyId     String
-  userId         String?  @unique
+  /// The person's ARC account, once they have claimed this booking. Not
+  /// unique: one person can be a guest at more than one property, and each
+  /// property keeps its own guest record. See ADR-039.
+  userId         String?
   firstName      String
   lastName       String
   email          String
@@ -515,6 +518,7 @@ model Guest {
 
   @@unique([propertyId, email])
   @@index([organizationId, propertyId])
+  @@index([userId])
 }
 
 model Stay {

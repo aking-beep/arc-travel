@@ -6,6 +6,7 @@ import { safeNext } from '@/lib/demo-gate'
 import { toFormState, type FormState } from '@/lib/form-state'
 import { signInWithPassword } from '@/modules/auth/credentials'
 import { Role } from '@/lib/prisma-types'
+import { hasGuestRecords } from '@/modules/guest/account'
 import type { ActorContext } from '@/modules/tenancy/context'
 
 /**
@@ -21,13 +22,21 @@ function clientKey(headerList: Headers): string | null {
   return first || headerList.get('x-real-ip') || null
 }
 
-/** Where a person lands when they did not ask for a particular page. */
+/**
+ * Where a person lands when they did not ask for a particular page.
+ *
+ * Membership roles are checked before guest records, because they are the
+ * stronger claim: an owner who also stayed at somebody else's hotel wants
+ * their dashboard. The guest check is last and costs a query, so it only runs
+ * for an account with no membership at all.
+ */
 export async function landingFor(actor: ActorContext): Promise<string> {
   if (actor.isPlatformAdmin) return '/admin'
   const roles = new Set(actor.memberships.map((m) => m.role))
   if (roles.has(Role.OWNER)) return '/owner'
   if (roles.has(Role.STAFF)) return '/owner/arrivals'
   if (roles.has(Role.SUPPLIER)) return '/partner'
+  if (await hasGuestRecords(actor.userId)) return '/me'
   return '/'
 }
 
