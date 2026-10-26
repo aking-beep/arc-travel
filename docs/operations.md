@@ -14,6 +14,7 @@ Nothing here claims a guarantee the build does not have.
 | Job | Route | Schedule | Why |
 | --- | --- | --- | --- |
 | Hold sweep | `POST /api/cron/sweep-holds` | every 15 min | Releases abandoned inventory holds |
+| Invariant check | `POST /api/cron/check-invariants` | hourly, at :17 | Watches for the things that go wrong without throwing |
 
 `vercel.json` holds the schedule. The job is authorised by `CRON_SECRET` in the
 `Authorization` header, compared in constant time; with the variable unset the
@@ -46,6 +47,118 @@ in one Serializable transaction.
 **If `swept` is persistently large,** something upstream is abandoning baskets —
 check whether a client is adding to a cart and never checking out, rather than
 treating the sweep as the fix.
+
+---
+
+## Monitoring
+
+Three separate things, because they fail separately.
+
+### Is it up?
+
+`GET /api/health` — unauthenticated, and therefore it says almost nothing:
+
+```json
+{ "status": "ok", "time": "2026-10-26T01:00:00.000Z" }
+```
+
+`status` is `degraded` and the response is **503** when the database does not
+answer. Point an uptime checker at it and alert on a non-200.
+
+`/admin/health` is the rich page and requires a signed-in platform admin, which
+is why it cannot be polled and why this exists. With `MONITORING_TOKEN` set and
+presented as a bearer token, `/api/health` also returns the data mode, the
+payment and AI providers, whether outbound messaging is enabled, and whether the
+demo's front door is locked. Nothing else: an unauthenticated endpoint is
+reconnaissance for whoever finds it, and an authenticated one is still a log
+entry somewhere.
+
+```bash
+curl -fsS https://<host>/api/health
+curl -fsS https://<host>/api/health -H "Authorization: Bearer $MONITORING_TOKEN"
+```
+
+### Did a request fail?
+
+See "Error reporting" below. That is the whole of it, and it only sees failures
+loud enough to produce an exception.
+
+### Is the data still true?
+
+`POST /api/cron/check-invariants`, hourly. This is the part that did not exist,
+and it watches the failures nobody would otherwise notice.
+
+```bash
+curl -fsS -X POST https://<host>/api/cron/check-invariants \
+  -H "Authorization: Bearer $CRON_SECRET"
+# {"healthy":true,"checksRun":9,"findings":[]}
+```
+
+Read-only, so it is safe to run by hand at any time. It returns **200 even when
+it finds something** — the check ran and worked; the database is what is
+unhealthy. A 500 means the monitoring itself broke, which is a different
+problem and alerts differently.
+
+Every finding is logged, and a `critical` one is additionally reported as a
+fault, so it reaches whatever is already watching faults rather than needing a
+second integration nobody has set up. Warnings stay in the log: they are a queue
+to work through, and paging on a queue trains whoever is on call to ignore the
+channel.
+
+#### What it checks, and what to do
+
+| Key | Severity | Means | Do |
+| --- | --- | --- | --- |
+| `inventory.oversold` | critical | `booked + held > capacity` | A CHECK constraint makes this unreachable through the app. Either something wrote to the database directly, or this database is missing its constraints — `npm run db:constraints`. Stop selling that slot |
+| `inventory.negative_counter` | critical | A counter below zero | Capacity returned more times than taken. `returnCapacity` throws rather than clamping (ADR-020) precisely so this shows. **Find the double cancellation before correcting the number** |
+| `money.order_split_unreconciled` | critical | A confirmed order's split ≠ its total | Somebody is owed the difference. Do not adjust the split to match — find which of the four numbers is wrong |
+| `money.payout_unbalanced` | critical | A payout ≠ the sum of its lines | **Do not pay it.** A deferred constraint trigger enforces this, so its absence means a direct write or a restore without constraints |
+| `money.entry_claimed_twice` | critical | A ledger entry on two payouts | A partner may be paid twice. `PayoutLine.ledgerEntryId` is unique, so this requires that index to be missing |
+| `money.orphaned_ledger_entry` | warning | An entry points at a missing order | Most likely a partial restore. The ledger no longer reconstructs from the orders |
+| `commerce.order_pending` | warning | An order stuck `PENDING` | There should be none: checkout writes an order only after its payment succeeded (ADR-026). Each is capacity held against an unaccountable payment |
+| `commerce.reversal_undecided` | warning | A refund or chargeback reported over a day ago with no decision | Work `/owner/approvals`. The money has gone back; the guest may still hold the seat (ADR-033) |
+| `partners.verification_lapsed` | warning | A verified partner's insurance expired | Get the renewal — `docs/supplier-verification.md`. Guests already stopped seeing a verified badge |
+
+Findings carry **ids only**, never guest names, emails or notes, and a test
+asserts it. These go into a log and possibly into Sentry, and an error report is
+a copy of your database in somebody else's SaaS.
+
+### Alerting rules
+
+Four rules. More than that and nobody reads any of them.
+
+| Alert | Condition | Urgency |
+| --- | --- | --- |
+| **Down** | `/api/health` non-200 for 3 consecutive checks at 1 min | Wake someone |
+| **Invariant violated** | A fault whose message starts `Invariant violation:` | Wake someone |
+| **Fault rate** | More than 10 reported faults in 15 min | Working hours |
+| **Scheduled job silent** | No `[sweep-holds]` line in 45 min, or no `[check-invariants]` line in 2 h | Working hours |
+
+The last one matters more than it looks. A cron that silently stops running
+produces no errors at all, so every other alert here keeps saying everything is
+fine while holds accumulate and nothing checks the data.
+
+**Deliberately not alerts:** 4xx `AppError`s (the system working), a guest
+failing to pay, `swept` being large on one run, a lapsed verification.
+
+### Service levels, for a pilot
+
+Not commitments this build makes — it runs in demo mode on a hobby plan. Written
+down because a pilot conversation will ask, and these are the numbers the
+architecture can defend:
+
+| | Target | Why that one |
+| --- | --- | --- |
+| Availability | 99.5% monthly, business hours | ~3.6 h a month. A hotel's own PMS does not do better, and ARC is not life-safety |
+| Checkout success | > 99% of attempts with a confirmed payment produce an order | ADR-026 closed the window where a payment could succeed without one. A miss here is money taken for nothing |
+| Invariant findings | Zero `critical`, always | Not a percentage. One oversold slot is one guest standing on a beach |
+| Hold release | < 20 min after TTL | TTL is 15 min, the sweep runs every 15 |
+| Payout accuracy | 100%, and provable | The ledger is the record. "Roughly right" is not a target a partner can accept |
+| Restore | Within 4 h, losing < 1 h | What `npm run restore-drill` actually takes, plus the time to notice |
+
+Availability is business hours because the guest surfaces are used in Puerto
+Escondido's daytime and the owner surfaces in its morning. A 3am outage costs a
+pilot nothing and pretending otherwise would mean staffing a rota for it.
 
 ---
 
@@ -330,10 +443,11 @@ than none:
   forward-only. Undoing one means writing the inverse by hand, and a migration
   that drops a column cannot be undone at all once the column is gone. Take a
   backup before deploying a migration that drops or narrows anything.
-- **No alerting rules.** Faults reach Sentry; nothing pages anyone. Who gets
-  woken, and for what, is a pilot decision.
-- **No uptime monitoring** beyond `/admin/health`, which requires a signed-in
-  platform admin and so cannot be polled by a checker.
+- **Nothing actually wired to a pager.** The rules are written above and the
+  signals exist — `/api/health` is pollable and a critical invariant finding is
+  reported as a fault. What is missing is a monitoring service configured to
+  watch them and a person on a rota, both of which are pilot decisions and
+  neither of which is in this repository.
 - **No log retention policy.** Logs go wherever the host puts them.
 - **No restore drill on a schedule.** `npm run restore-drill` exists and has
   been run; nothing runs it for you. Putting it in CI needs a scratch database

@@ -53,6 +53,15 @@ const envSchema = z.object({
    */
   ARC_ALLOW_OPEN_DEMO: booleanish.default(false),
 
+  /**
+   * Bearer token for the detailed form of `GET /api/health`.
+   *
+   * Unset means the detailed form is unavailable, never that it is open — the
+   * same rule as `CRON_SECRET`. The anonymous form always answers, with almost
+   * nothing in it.
+   */
+  MONITORING_TOKEN: z.string().optional(),
+
   AI_PROVIDER: z.enum(['mock', 'anthropic']).default('mock'),
   ANTHROPIC_API_KEY: z.string().optional(),
   AI_MODEL: z.string().default('claude-sonnet-5-5'),

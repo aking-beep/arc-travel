@@ -192,6 +192,8 @@ Two E2E habits, learned the hard way and recorded in the specs:
 | `LOCAL_SEED_TOKEN_SECRET` lives in `src/lib/env.ts`, not in `demo-portals.ts` where it is used | ADR-035. `demo-portals` needs `node:crypto`; `env` is reached from middleware, which runs on the edge runtime where that module does not exist |
 | A VERIFIED partner can read as `lapsed`, and the guest surfaces ask `isCurrentlyVerified` rather than the column | ADR-036. `insuranceOnFile` was a boolean and liability insurance expires. The stored decision was right when it was made; it is not current now |
 | New CHECK constraints go in a NEW `*_constraints` migration, never appended to an applied one | ADR-036. `migrate deploy` never re-runs a recorded migration, so an edit lands on fresh databases and misses every running deployment |
+| `/api/cron/check-invariants` returns 200 when it finds a violation | ADR-037. The check ran and worked; the database is what is unhealthy. A 500 would re-alert every few minutes and hide a real monitoring failure |
+| `/api/health` exists as well as `/admin/health` and tells an anonymous caller almost nothing | ADR-037. The admin page cannot be polled, and an unauthenticated endpoint is reconnaissance for whoever finds it |
 
 ## Review
 

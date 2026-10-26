@@ -1184,3 +1184,79 @@ database and was missing from the hosted demo: the schema and the repository
 would agree and the live database would disagree with both.
 `tests/unit/migrations.test.ts` now checks `prisma/constraints.sql` against every
 `*_constraints` migration, so the convention is enforced rather than noted.
+
+## ADR-037 — Monitoring watches the data, not only the requests
+
+**Status:** accepted · 2026-10-26
+
+**Context.** Item 10 was "monitoring and alerts". The build had error reporting
+and nothing else, and error reporting only sees failures loud enough to produce
+an exception.
+
+Almost nothing this product can get seriously wrong is that loud. A slot whose
+`booked + held` exceeds `capacity`. A counter gone negative. A confirmed order
+whose three-account split does not add up to its total. A payout that does not
+equal the sum of its lines. A ledger entry claimed by two payouts. An order left
+`PENDING` after ADR-026 said none could be. A refund reported at Stripe with
+nobody deciding what to do about it. A partner's insurance certificate expiring
+while nobody looks.
+
+None of those throws. None produces a 500. A guest does not notice and an owner
+does not notice. The ledger bug in `cancelOrderItem` — a cancelled line whose
+supplier payable stayed at full value for ever — was found by writing a test,
+not by anything watching production, and the first real-world symptom would have
+been a partner asking why their payout was short.
+
+There was also no uptime monitoring, for a specific reason: `/admin/health`
+requires a signed-in platform admin, so nothing could poll it, and handing a
+monitoring service an admin session is worse than not monitoring.
+
+**Decision.** Three signals, because they fail separately.
+
+`GET /api/health` is unauthenticated and says almost nothing: status, the time,
+and 503 when the database does not answer. An uptime checker alerts on a
+non-200. With `MONITORING_TOKEN` presented it also returns the data mode, the
+providers, whether outbound messaging is on and whether the demo's front door is
+locked — a deployment that quietly became a live-payments one is worth an alert.
+Nothing more: an unauthenticated endpoint is reconnaissance for whoever finds
+it.
+
+`POST /api/cron/check-invariants`, hourly, runs the nine checks above. Each one
+watches a state that a CHECK constraint or a unique index makes unreachable
+through the application — which is the point. If one fires, something wrote to
+the database directly or a restore came back without its constraints, and that
+is precisely the failure nobody would otherwise see.
+
+And a documented set of four alerting rules with thresholds, plus service levels
+a pilot conversation can use.
+
+**Consequences.**
+
+The check reports and never repairs. Every finding is either
+impossible-through-the-application or a decision for a person; repairing one
+automatically would mean ARC writing to money or inventory with nobody having
+decided to (non-negotiable 6), and would destroy the evidence of how it
+happened. The same judgement as `returnCapacity` throwing instead of clamping:
+the clamp kept the counter tidy while hiding the double-cancellation.
+
+It returns 200 when it finds something. The check ran and worked; the database is
+what is unhealthy. A 500 would make the scheduler retry, re-alerting every few
+minutes, and would make a monitoring failure indistinguishable from a finding.
+
+A `critical` finding is reported as a fault, so it reaches whatever already
+watches faults instead of needing a second integration nobody configured.
+Warnings stay in the log, because paging on a queue trains whoever is on call to
+ignore the channel — the same reasoning that keeps 4xx `AppError`s out of error
+reporting.
+
+Findings carry ids only, and a test asserts no guest data appears in a report.
+
+The fourth alerting rule is "a scheduled job has gone quiet", which matters more
+than it looks: a cron that silently stops produces no errors, so every other
+alert keeps saying everything is fine while holds accumulate and nothing checks
+the data.
+
+**What this still does not have:** anything actually wired to a pager. The
+signals exist and the rules are written; a monitoring service configured to
+watch them and a person on a rota are pilot decisions, and neither lives in this
+repository. `docs/operations.md` says so rather than implying coverage.
