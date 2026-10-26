@@ -300,7 +300,8 @@ export const dictionary = {
   // safety, because the prototype's did.
   'explore.brand': 'ARC Travel',
   'explore.tagline': 'Go beyond the destination',
-  'explore.nav.home': 'Puerto Escondido',
+  'explore.nav.home': 'Home',
+  'explore.nav.destinations': 'Destinations',
   'explore.nav.stay': 'Where to stay',
   'explore.nav.experiences': 'Experiences',
   'explore.nav.guide': 'Local guide',
@@ -496,7 +497,7 @@ export const dictionary = {
   'explore.footer.demoSurfaces': 'The four product surfaces',
   'explore.notFound.title': 'There is nothing at this address',
   'explore.notFound.body': 'The link may be stale, or it may never have pointed anywhere.',
-  'explore.notFound.cta': 'Back to Puerto Escondido',
+  'explore.notFound.cta': 'Back to the home page',
   },
 
   es: {
@@ -787,7 +788,8 @@ export const dictionary = {
   // La superficie pública del destino.
   'explore.brand': 'ARC Travel',
   'explore.tagline': 'Más allá del destino',
-  'explore.nav.home': 'Puerto Escondido',
+  'explore.nav.home': 'Inicio',
+  'explore.nav.destinations': 'Destinos',
   'explore.nav.stay': 'Dónde alojarse',
   'explore.nav.experiences': 'Experiencias',
   'explore.nav.guide': 'Guía local',
@@ -984,7 +986,7 @@ export const dictionary = {
   'explore.footer.demoSurfaces': 'Las cuatro superficies del producto',
   'explore.notFound.title': 'No hay nada en esta dirección',
   'explore.notFound.body': 'El enlace puede estar caducado, o puede que nunca llevara a nada.',
-  'explore.notFound.cta': 'Volver a Puerto Escondido',
+  'explore.notFound.cta': 'Volver al inicio',
   },
 } as const
 

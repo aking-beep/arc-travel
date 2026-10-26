@@ -25,7 +25,7 @@ export default async function DestinationsPage() {
   return (
     <Shell className="pt-10 pb-20 md:pt-16">
       <header className="mb-12 max-w-2xl">
-        <h1 className="text-4xl tracking-tight md:text-5xl">{t('explore.nav.home')}</h1>
+        <h1 className="text-4xl tracking-tight md:text-5xl">{t('explore.nav.destinations')}</h1>
         <p className="text-muted mt-4 leading-relaxed">
           {destinations.length} places, each with stays, hosts and culture notes.{' '}
           {t('explore.hero.demoNote')}

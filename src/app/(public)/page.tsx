@@ -108,7 +108,7 @@ export default async function ExploreHomePage() {
         <SectionHeading
           title="Places worth the long way round"
           kicker={`${featured.length} destinations, each with stays, hosts and culture notes.`}
-          action={{ href: '/destinations', label: t('explore.nav.home') }}
+          action={{ href: '/destinations', label: t('explore.nav.destinations') }}
         />
         <div className="grid gap-6 lg:grid-cols-[1.25fr_1fr] lg:gap-8">
           {lead ? <DestinationCard destination={lead} locale={locale} size="wide" /> : null}
