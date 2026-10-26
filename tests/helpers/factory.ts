@@ -40,7 +40,12 @@ export const TABLES_IN_DELETE_ORDER = [
   'PayoutLine', 'Payout',
   'LedgerEntry', 'OrderItem', 'Order', 'CartItem', 'Cart',
   'InventoryHold', 'AvailabilitySlot', 'Price', 'Amenity', 'Experience', 'Activity',
-  'IdempotencyKey', 'CommissionRule', 'SupplierAgreement', 'Supplier', 'Consent', 'Stay',
+  'IdempotencyKey', 'CommissionRule', 'SupplierAgreement',
+  // Before Supplier: an accepted request points at the supplier it created.
+  'SupplierJoinRequest', 'Supplier', 'Consent', 'Stay',
+  // Before User and Organization, which both cascade to these but are
+  // truncated in the same statement.
+  'EmailMessage', 'PasswordResetToken', 'Invitation',
   'Guest', 'RoomType', 'Membership', 'Property', 'User', 'Organization',
   'ConditionReport', 'TravelEdge', 'Place',
   // Not tenant data, but a counter left over from one test will refuse the

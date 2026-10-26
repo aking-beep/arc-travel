@@ -4,7 +4,7 @@ import { hashPassword } from '@/lib/password'
 import { assertWithinRateLimit, rateLimitSubject } from '@/lib/rate-limit'
 import { daysBetween, toDateKey, type DateKey } from '@/lib/dates'
 import { fromPrismaLocale, type AppLocale } from '@/lib/i18n'
-import { OrderStatus, Role, StayStatus } from '@/lib/prisma-types'
+import { OrderStatus, Role, StayKind, StayStatus } from '@/lib/prisma-types'
 import { recordAudit } from '@/modules/workflows/audit'
 import { PORTAL_GRACE_DAYS } from './portal'
 import { claimStaySchema, guestSignUpSchema, portalAccountSignUpSchema } from './schemas'
@@ -233,14 +233,14 @@ export interface GuestRegistrationResult {
  * every membership would refuse exactly the handover this feature exists for.
  * A `GUEST` membership confers nothing the claim is not itself establishing.
  */
-const PLACEHOLDER_SELECT = {
+export const PLACEHOLDER_SELECT = {
   id: true,
   passwordHash: true,
   memberships: { where: { role: { not: Role.GUEST } }, select: { id: true }, take: 1 },
   invitations: { select: { id: true }, take: 1 },
 } as const
 
-interface PlaceholderCandidate {
+export interface PlaceholderCandidate {
   passwordHash: string | null
   /** Already filtered to the privileged roles by `PLACEHOLDER_SELECT`. */
   memberships: { id: string }[]
@@ -253,7 +253,7 @@ interface PlaceholderCandidate {
  * True means a claim must be refused rather than take the row over: either a
  * password exists, or somebody else is expected to set one.
  */
-function isSpokenFor(user: PlaceholderCandidate): boolean {
+export function isSpokenFor(user: PlaceholderCandidate): boolean {
   return user.passwordHash !== null || user.memberships.length > 0 || user.invitations.length > 0
 }
 
@@ -283,7 +283,7 @@ function isSpokenFor(user: PlaceholderCandidate): boolean {
  * the race the whole claim exists to close. A lost race is a conflict, never
  * an overwrite.
  */
-async function establishAccount(
+export async function establishAccount(
   tx: Prisma.TransactionClient,
   stay: ClaimableStay,
   input: { name: string; email: string; passwordHash: string },
@@ -622,6 +622,13 @@ export interface AccountStay {
   checkOut: DateKey
   nights: number
   status: StayStatus
+  /**
+   * Whether this is a room booking or a trip somebody planned without one.
+   *
+   * The account surface shows both, and must not call a direct trip a stay:
+   * "check-in" and a room are things the person did not buy. See ADR-042.
+   */
+  kind: StayKind
   partySize: number
   locale: AppLocale
   intakeCompleted: boolean
@@ -685,6 +692,7 @@ export async function getGuestAccount(
       checkIn: true,
       checkOut: true,
       status: true,
+      kind: true,
       adults: true,
       children: true,
       portalToken: true,
@@ -755,6 +763,7 @@ export async function getGuestAccount(
       stayId: stay.id,
       guestId: stay.guest.id,
       reference: stay.reference,
+      kind: stay.kind,
       checkIn,
       checkOut,
       nights: Math.max(1, daysBetween(checkIn, checkOut)),

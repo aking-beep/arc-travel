@@ -300,7 +300,15 @@ export interface SupplierFixture {
   contactPhone: string
   /** Claimed only. Never rendered as confirmed until an admin records a check. */
   claimedCertifications: string[]
-  insuranceOnFile: boolean
+  /**
+   * Whether the business *says* it carries liability cover.
+   *
+   * Not `insuranceOnFile`, which is ARC's own record of having seen a
+   * certificate and is written only by the admin verification path. The seed
+   * creates unverified partners, so the only honest thing it can express is the
+   * claim — and a CHECK constraint now refuses the other reading (ADR-041).
+   */
+  claimsInsurance: boolean
   hotelCommissionBps: number
   platformCommissionBps: number
 }
@@ -318,7 +326,7 @@ export const SUPPLIERS: SupplierFixture[] = [
     contactEmail: 'mariana@olasverdes.demo',
     contactPhone: '+52 954 000 0101',
     claimedCertifications: ['ISA Level 1 instruction (claimed)', 'Open-water lifesaving (claimed)'],
-    insuranceOnFile: true,
+    claimsInsurance: true,
     hotelCommissionBps: 1500,
     platformCommissionBps: 500,
   },
@@ -334,7 +342,7 @@ export const SUPPLIERS: SupplierFixture[] = [
     contactEmail: 'diego@puntasurf.demo',
     contactPhone: '+52 954 000 0102',
     claimedCertifications: ['ISA Level 2 coaching (claimed)', 'Wilderness first responder (claimed)'],
-    insuranceOnFile: true,
+    claimsInsurance: true,
     hotelCommissionBps: 1200,
     platformCommissionBps: 500,
   },
@@ -350,7 +358,7 @@ export const SUPPLIERS: SupplierFixture[] = [
     contactEmail: 'lucia@costaserena.demo',
     contactPhone: '+52 954 000 0103',
     claimedCertifications: ['Yoga Alliance RYT-500 (claimed)'],
-    insuranceOnFile: false,
+    claimsInsurance: false,
     hotelCommissionBps: 2000,
     platformCommissionBps: 500,
   },
@@ -366,7 +374,7 @@ export const SUPPLIERS: SupplierFixture[] = [
     contactEmail: 'rafael@manialtepec.demo',
     contactPhone: '+52 954 000 0104',
     claimedCertifications: ['SEMARNAT wildlife-viewing permit (claimed)', 'Boat master licence (claimed)'],
-    insuranceOnFile: true,
+    claimsInsurance: true,
     hotelCommissionBps: 1500,
     platformCommissionBps: 500,
   },
@@ -382,7 +390,7 @@ export const SUPPLIERS: SupplierFixture[] = [
     contactEmail: 'mina@cocinatiamina.demo',
     contactPhone: '+52 954 000 0105',
     claimedCertifications: ['Municipal food-handling certificate (claimed)'],
-    insuranceOnFile: false,
+    claimsInsurance: false,
     hotelCommissionBps: 1800,
     platformCommissionBps: 500,
   },
@@ -397,7 +405,7 @@ export const SUPPLIERS: SupplierFixture[] = [
     contactEmail: 'oscar@costachica.demo',
     contactPhone: '+52 954 000 0106',
     claimedCertifications: ['Federal passenger-transport permit (claimed)'],
-    insuranceOnFile: true,
+    claimsInsurance: true,
     hotelCommissionBps: 1000,
     platformCommissionBps: 500,
   },

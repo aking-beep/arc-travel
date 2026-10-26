@@ -4,7 +4,12 @@ import { useActionState } from 'react'
 import { Field, Hint, Input, Select, Textarea } from '@/components/ui/field'
 import { FormFeedback, SubmitButton } from '@/components/ui/form-feedback'
 import { emptyFormState } from '@/lib/form-state'
-import { createStayAction, reissueTokenAction, setStayStatusAction } from './actions'
+import {
+  createStayAction,
+  reissueTokenAction,
+  sendPortalLinkAction,
+  setStayStatusAction,
+} from './actions'
 
 /**
  * The front desk's forms.
@@ -116,6 +121,27 @@ export function ReissueTokenForm({ stayId }: { stayId: string }) {
       <input type="hidden" name="stayId" value={stayId} />
       <SubmitButton size="sm" variant="outline" pendingLabel="Issuing…">
         Issue a new link
+      </SubmitButton>
+      <FormFeedback state={state} />
+    </form>
+  )
+}
+
+/**
+ * Emails the guest their portal link.
+ *
+ * Next to "Issue a new link" rather than replacing it: the two are different
+ * acts. Reissuing invalidates the old link, which is what you do when a key
+ * card gets photographed; this sends the link that exists.
+ */
+export function SendPortalLinkForm({ stayId }: { stayId: string }) {
+  const [state, formAction] = useActionState(sendPortalLinkAction, emptyFormState)
+
+  return (
+    <form action={formAction} className="space-y-2">
+      <input type="hidden" name="stayId" value={stayId} />
+      <SubmitButton size="sm" variant="outline" pendingLabel="Sending…">
+        Email them the link
       </SubmitButton>
       <FormFeedback state={state} />
     </form>

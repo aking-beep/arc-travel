@@ -237,6 +237,43 @@ describe('concurrency', () => {
     expect(slot.booked + slot.held).toBeLessThanOrEqual(slot.capacity)
     expect(slot.status).toBe(SlotStatus.FULL)
   })
+
+  it('sells every free place when there are exactly as many as there are guests', async () => {
+    /*
+     * The other way a race can fail. Nobody oversells above, and nobody is
+     * refused here: six guests, six places, six holds. A departure that sells
+     * none of its six free places satisfies the invariant and still fails
+     * everybody, and that is what happened — every contender read the counters
+     * and incremented them, Postgres cancelled all but one as pivots, and the
+     * retry budget ran out before the losers could win. `lockSlot` makes them
+     * queue for the row instead of racing for it.
+     */
+    const roomy = await createTenant({ capacity: 6 })
+    const carts = await Promise.all(
+      Array.from({ length: 6 }, (_, i) => makeCart(roomy, `exact-${i}`)),
+    )
+
+    const results = await Promise.allSettled(
+      carts.map((cartId) =>
+        placeHold({
+          organizationId: roomy.organizationId,
+          slotId: roomy.slotId,
+          cartId,
+          quantity: 1,
+        }),
+      ),
+    )
+
+    const refused = results.filter((r) => r.status === 'rejected')
+    expect(
+      refused.map((r) => String((r as PromiseRejectedResult).reason)),
+      'every guest should have got a place',
+    ).toEqual([])
+
+    const slot = await slotState(roomy.slotId)
+    expect(slot.held).toBe(6)
+    expect(slot.booked + slot.held).toBe(slot.capacity)
+  })
 })
 
 describe('expiry', () => {

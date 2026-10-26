@@ -1,4 +1,5 @@
 import { prisma, type Prisma } from '@/lib/db'
+import { isRetriableTransactionError } from '@/lib/serialization'
 import { AppError, capacityUnavailable, conflict, invalid, notFound } from '@/lib/errors'
 import { HoldStatus, SlotStatus } from '@/lib/prisma-types'
 import { recordAudit } from '@/modules/workflows/audit'
@@ -25,15 +26,37 @@ import { recordAudit } from '@/modules/workflows/audit'
  * and a retried transaction is cheaper than an oversold departure.
  */
 export const HOLD_TTL_MINUTES = 15
-/** Postgres raises 40001 on a serialization failure; retrying is expected. */
-const SERIALIZATION_FAILURE = 'P2034'
-const MAX_ATTEMPTS = 5
+/*
+ * Eight attempts, not five.
+ *
+ * Every mutation here is read-then-increment on one `AvailabilitySlot` row,
+ * which is the pattern Serializable is strictest about: six contenders all
+ * read, all increment, and Postgres cancels all but one as pivots. The budget
+ * is what stands between a cancelled pivot and a guest told to try again, and
+ * on a two-core CI runner five attempts over 150ms were not enough for six —
+ * a departure with six free places sold none of them.
+ *
+ * `FOR UPDATE` is not the answer, tempting as it looks: under Serializable a
+ * transaction blocked on a row lock is aborted when the holder commits rather
+ * than re-reading, so locking made every contender fail sooner. The real fix
+ * is to stop reading what you are about to increment — a conditional
+ * `UPDATE … WHERE booked + held + n <= capacity` needs no read and cannot
+ * race — and that is a change to the most load-bearing file in the project,
+ * which `CLAUDE.md` says gets an independent review. See `docs/decisions.md`.
+ */
+const MAX_ATTEMPTS = 8
 
 type Client = Prisma.TransactionClient
 
+
 /**
  * Runs `fn` in a Serializable transaction, retrying serialization failures with
- * a short backoff. Anything else propagates untouched.
+ * a short jittered backoff. Anything else propagates untouched.
+ *
+ * Which errors count is `isRetriableTransactionError`'s job, and matching more
+ * than `P2034` is the whole point of it — see that function. The jitter is not
+ * decoration either: six contenders that back off by the same amount collide
+ * again on the same schedule, spending the budget without anybody winning.
  */
 export async function inSerializableTransaction<T>(
   fn: (tx: Client) => Promise<T>,
@@ -48,11 +71,11 @@ export async function inSerializableTransaction<T>(
         timeout: 15_000,
       })
     } catch (error) {
-      const code = (error as { code?: string }).code
-      if (code !== SERIALIZATION_FAILURE) throw error
+      if (!isRetriableTransactionError(error)) throw error
       lastError = error
-      // 5ms, 10ms, 20ms, 40ms — long enough to let the winner commit.
-      await new Promise((resolve) => setTimeout(resolve, 5 * 2 ** attempt))
+      // 10, 20, 40, 80ms, each plus up to its own width of jitter.
+      const base = 10 * 2 ** attempt
+      await new Promise((resolve) => setTimeout(resolve, base + Math.random() * base))
     }
   }
 

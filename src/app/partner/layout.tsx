@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { CalendarClock, Inbox, LayoutDashboard, Wallet } from 'lucide-react'
+import { Building2, CalendarClock, Inbox, LayoutDashboard, Tags, Wallet } from 'lucide-react'
 import { DemoBanner } from '@/components/demo-banner'
 import { signOutAction } from '@/app/actions'
 import { isAppError } from '@/lib/errors'
@@ -12,9 +12,11 @@ export const metadata = { title: { default: 'Partner', template: '%s · ARC Stay
 
 const NAV = [
   { href: '/partner', label: 'Overview', icon: LayoutDashboard },
+  { href: '/partner/listings', label: 'Listings', icon: Tags },
   { href: '/partner/availability', label: 'Availability', icon: CalendarClock },
   { href: '/partner/bookings', label: 'Bookings', icon: Inbox },
   { href: '/partner/earnings', label: 'Earnings', icon: Wallet },
+  { href: '/partner/profile', label: 'Your business', icon: Building2 },
 ]
 
 export default async function PartnerLayout({ children }: { children: React.ReactNode }) {

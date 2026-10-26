@@ -96,3 +96,63 @@ export const portalAccountSignUpSchema = z
 export type GuestSignUpInput = z.infer<typeof guestSignUpSchema>
 export type PortalAccountSignUpInput = z.infer<typeof portalAccountSignUpSchema>
 export type ClaimStayInput = z.infer<typeof claimStaySchema>
+
+/**
+ * A direct trip: experiences without a room (ADR-042).
+ *
+ * The dates are the trip window, not a reservation. They exist because the
+ * whole guest surface reasons about days — the conditions gate, the itinerary,
+ * travel times, what is bookable — and a person planning "two days here" is
+ * giving the only input any of that needs.
+ */
+export const directTripSchema = z
+  .object({
+    name: z.string().trim().min(2, 'Tell us your name.').max(120),
+    email,
+    propertySlug: z
+      .string()
+      .trim()
+      .min(1, 'Choose where you want to book through.')
+      .max(120),
+    fromDate: z
+      .string()
+      .trim()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD.'),
+    toDate: z
+      .string()
+      .trim()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD.'),
+    partySize: z.coerce.number().int().min(1, 'At least one person.').max(12),
+    password,
+    confirmPassword: z.string(),
+    acceptedTerms: z.coerce.boolean(),
+  })
+  .strict()
+  .refine((v) => v.toDate >= v.fromDate, {
+    path: ['toDate'],
+    message: 'The last day cannot be before the first.',
+  })
+  .refine((v) => v.password === v.confirmPassword, {
+    path: ['confirmPassword'],
+    message: 'The two passwords do not match.',
+  })
+  .refine((v) => v.acceptedTerms, {
+    path: ['acceptedTerms'],
+    message: 'Accept the terms to continue.',
+  })
+
+export type DirectTripInput = z.infer<typeof directTripSchema>
+
+/** A further trip, added from an account that already exists. */
+export const additionalTripSchema = z
+  .object({
+    propertySlug: z.string().trim().min(1, 'Choose where you want to book through.').max(120),
+    fromDate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD.'),
+    toDate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD.'),
+    partySize: z.coerce.number().int().min(1).max(12),
+  })
+  .strict()
+  .refine((v) => v.toDate >= v.fromDate, {
+    path: ['toDate'],
+    message: 'The last day cannot be before the first.',
+  })

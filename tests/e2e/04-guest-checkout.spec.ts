@@ -42,18 +42,45 @@ test.describe('guest checkout', () => {
     const beforeJson = (await before.json()) as {
       slots: Array<{ id: string; capacity: number; booked: number; held: number }>
     }
+    /*
+     * This guest's party is two, so the departure has to have two free places.
+     * The page lists several departures and the first one is not always this
+     * one, so the add below is aimed at this slot rather than at whichever
+     * button happens to come first — a one-place departure refused the add and
+     * the test read it as a broken basket.
+     */
     const target = beforeJson.slots.find((s) => s.capacity - s.booked - s.held >= 2)
-    expect(target, 'a departure with at least two free places').toBeTruthy()
+    if (target === undefined) throw new Error('no departure with at least two free places')
 
     const context = await page.context()
     const guestPage = await context.newPage()
     await guestPage.goto(
       `/g/${GUEST_PORTAL_TOKENS.advancedSurfer}/experience/carrizalillo-cove-snorkel`,
     )
-    await guestPage.getByRole('button', { name: /add to basket/i }).first().click()
-    await expect(guestPage.getByText(/Added to your basket/i)).toBeVisible()
+    /*
+     * Wait for the action's own response before leaving the page. Navigating
+     * straight after the click aborted the in-flight POST often enough to look
+     * like a refused add.
+     */
+    await Promise.all([
+      guestPage.waitForResponse(
+        (response) => response.request().method() === 'POST' && response.status() < 400,
+      ),
+      guestPage
+        .locator('form', { has: guestPage.locator(`input[name="slotId"][value="${target.id}"]`) })
+        .getByRole('button', { name: /add to basket/i })
+        .click(),
+    ])
 
+    /*
+     * Confirm the add from the basket, not from the form message. `addToCart`
+     * calls `revalidatePath`, so the route remounts and the `useActionState`
+     * message is wiped — the habit `CLAUDE.md` records. The basket line is
+     * durable state and is what the rest of this test depends on anyway.
+     */
     await guestPage.goto(`/g/${GUEST_PORTAL_TOKENS.advancedSurfer}/basket`)
+    await expect(guestPage.getByText(/Carrizalillo cove snorkel/i).first()).toBeVisible()
+
     await guestPage.getByRole('button', { name: /complete simulated checkout/i }).click()
     await guestPage.waitForURL(/\/order\/ARC-/)
 

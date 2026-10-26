@@ -31,9 +31,9 @@ export const metadata = { title: 'Sign in' }
 export default async function SignInPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>
+  searchParams: Promise<{ next?: string; reset?: string }>
 }) {
-  const { next } = await searchParams
+  const { next, reset } = await searchParams
   // `safeNext`, not a local `startsWith('/')` check: the weaker form admitted
   // `//evil.example.com`, which the browser treats as an absolute URL.
   const target = safeNext(next)
@@ -59,6 +59,20 @@ export default async function SignInPage({
           <h1 className="font-display text-2xl font-semibold">Sign in</h1>
         </div>
 
+        {reset === '1' ? (
+          /*
+           * The one thing a completed reset gets: a line telling the person to
+           * use the password they just set. Not a session — see the note in
+           * `reset-password/[token]/actions.ts`.
+           */
+          <p
+            role="status"
+            className="border-jade-200 bg-jade-50 text-jade-900 mt-6 max-w-md rounded-lg border px-4 py-3 text-sm"
+          >
+            Your password is set. Sign in with it.
+          </p>
+        ) : null}
+
         <Card className="mt-6 max-w-md">
           <CardHeader>
             <CardTitle className="text-base">With your password</CardTitle>
@@ -82,6 +96,26 @@ export default async function SignInPage({
               being published here. The seed prints the demo links when it runs.
             </p>
             <p className="text-sand-500 mt-2 max-w-prose text-sm leading-relaxed">
+              Not staying at a hotel?{' '}
+              <Link
+                href="/sign-up/direct"
+                className="text-jade-800 underline underline-offset-4"
+              >
+                Plan a trip
+              </Link>{' '}
+              and book what you want to do. No room, no reference.
+            </p>
+            <p className="text-sand-500 mt-2 max-w-prose text-sm leading-relaxed">
+              Run something guests would want to book?{' '}
+              <Link
+                href="/sign-up/partner"
+                className="text-jade-800 underline underline-offset-4"
+              >
+                Ask a hotel to work with you
+              </Link>
+              . They decide, and their invitation is what creates your account.
+            </p>
+            <p className="text-sand-500 mt-2 max-w-prose text-sm leading-relaxed">
               Staying somewhere and want your bookings in one place?{' '}
               <Link
                 href="/sign-up/guest"
@@ -98,6 +132,20 @@ export default async function SignInPage({
               Running a boutique hotel and want to try ARC Stay?{' '}
               <Link href="/sign-up" className="text-jade-800 underline underline-offset-4">
                 Register your hotel
+              </Link>
+              .
+            </p>
+            <p>
+              Not staying at a hotel but want to book things to do?{' '}
+              <Link href="/sign-up/direct" className="text-jade-800 underline underline-offset-4">
+                Plan a trip
+              </Link>
+              .
+            </p>
+            <p>
+              Run surf lessons, a kitchen or a boat?{' '}
+              <Link href="/sign-up/partner" className="text-jade-800 underline underline-offset-4">
+                Ask a hotel to work with you
               </Link>
               .
             </p>

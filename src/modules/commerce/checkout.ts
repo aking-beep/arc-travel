@@ -17,6 +17,7 @@ import { getIntegrations } from '@/modules/integrations/defaults'
 import type { PaymentIntent, PaymentsProvider } from '@/modules/integrations/types'
 import { consumeHold, inSerializableTransaction, returnCapacity } from '@/modules/inventory/service'
 import { recordAudit } from '@/modules/workflows/audit'
+import { sendOrderConfirmation, sendOrderCancelled } from '@/modules/notifications/senders'
 import { track } from '@/modules/analytics/track'
 import { resolveCommission, splitEarnings, type CommissionRuleInput } from './commission'
 import { computeCartTotals, computeRefund } from './pricing'
@@ -639,6 +640,21 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
     },
   })
 
+  /*
+   * The confirmation, after the transaction and after the analytics.
+   *
+   * Last deliberately: this is the first thing in `checkout()` whose failure
+   * must not matter. The order is committed, the ledger is written and the
+   * capacity is consumed; a mail outage at this point is a guest who has to
+   * look at their portal to see what they booked, not a booking that did not
+   * happen. `sendOrderConfirmation` therefore never throws, and the one thing
+   * this code must not do is wrap it in anything that could. See ADR-040.
+   *
+   * Unreachable on a replay: an idempotent retry returns from the completion
+   * record far above, so a guest who double-submits gets one confirmation.
+   */
+  await sendOrderConfirmation(result.orderId)
+
   return result
 }
 
@@ -844,7 +860,7 @@ export async function cancelOrderItem(options: {
     now,
   })
 
-  return inSerializableTransaction(async (tx) => {
+  const result = await inSerializableTransaction(async (tx) => {
     /**
      * Re-read the status inside the transaction.
      *
@@ -1003,6 +1019,26 @@ export async function cancelOrderItem(options: {
       orderStatus,
     }
   })
+
+  /*
+   * Tell the guest, after the transaction.
+   *
+   * Inside it this would be a network call in a Serializable block that
+   * `inSerializableTransaction` may re-run on a serialization failure — which
+   * is exactly how a guest gets two cancellation emails for one cancellation.
+   * Outside it, the cancellation is committed and the message is best-effort.
+   *
+   * `refundMinor` is passed rather than re-read: `OrderItem.refundedMinor`
+   * accumulates, so a re-read on a line cancelled twice would report the total
+   * ever refunded instead of what this cancellation returned.
+   */
+  await sendOrderCancelled({
+    orderItemId: result.orderItemId,
+    refundedMinor: result.refundMinor,
+    cancelledByProperty: options.authority.kind === 'operator',
+  })
+
+  return result
 }
 
 /** Supplier-side manual confirmation. Required on every line in the POC. */

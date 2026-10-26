@@ -54,6 +54,13 @@ export default function SignUpPage() {
           </Link>{' '}
           instead.
         </p>
+        <p className="text-sand-600 mt-2 text-sm">
+          Running an experience you would like a hotel to offer?{' '}
+          <Link href="/sign-up/partner" className="text-jade-800 underline underline-offset-4">
+            Ask a hotel to work with you
+          </Link>{' '}
+          instead.
+        </p>
       </main>
     </div>
   )

@@ -43,7 +43,12 @@ them relaxed, that is a conversation, not a refactor.
    candidate, remove an exclusion or change a score.
 6. **No autonomous action.** A consequential action requires an `Approval` row
    naming the user who decided. `send_guest_message` throws while
-   `ARC_ENABLE_OUTBOUND_MESSAGING` is false.
+   `ARC_ENABLE_OUTBOUND_MESSAGING` is false — that switch is about ARC
+   *initiating* contact, and it stays off. Transactional mail (the invitation an
+   owner just sent, the confirmation of a booking just paid for, a password
+   reset just asked for) is a separate switch, `ARC_ENABLE_TRANSACTIONAL_EMAIL`,
+   with its own boundary: one recipient, taken from the record the action
+   touched, and never a body an agent composed. See ADR-040.
 7. **Demo mode is a guarantee.** While `ARC_DATA_MODE=demo`, a live payment
    provider is a startup error.
 8. **An advisory is never rendered as law.** A `LAW` culture rule needs a
@@ -71,7 +76,9 @@ Domain modules import Prisma enums and types from `@/lib/prisma-types`, not from
 ### Authorisation
 
 Every tenant-scoped operation starts with a call into
-`src/modules/tenancy/context.ts`. Never trust a client-supplied
+`src/modules/tenancy/context.ts`. On the partner surface, a *read* goes through
+`assertSupplierAccess` and a *write* through `assertActingAsSupplier`, which
+also requires the `SUPPLIER` membership for that supplier — see ADR-041. Never trust a client-supplied
 `organizationId`; never infer ownership from a URL. On the guest surface, start
 with `resolvePortalContext(token)` — no guest-surface action accepts a guest id
 from the client.
@@ -200,7 +207,30 @@ Two E2E habits, learned the hard way and recorded in the specs:
 | `/api/cron/check-invariants` returns 200 when it finds a violation | ADR-037. The check ran and worked; the database is what is unhealthy. A 500 would re-alert every few minutes and hide a real monitoring failure |
 | `/api/health` exists as well as `/admin/health` and tells an anonymous caller almost nothing | ADR-037. The admin page cannot be polled, and an unauthenticated endpoint is reconnaissance for whoever finds it |
 | The `--color-sand-*` lightness values look arbitrary | ADR-038. Each is set by measured contrast against the worst light surface it sits on. Changing one is a contrast decision; re-run the accessibility spec |
+| `isSerializationFailure` matches four error shapes rather than one | Prisma raises `P2034` only when Prisma itself detects the failure. Under the `PrismaPg` adapter the same failure is a `DriverAdapterError` carrying the SQLSTATE in its cause and no code at all, so matching `P2034` alone stopped the inventory retry loop and turned a race into a 500 |
 | The accessibility spec runs last in the E2E suite | ADR-038. One violation only existed once a guest had generated an itinerary. A clean-seed audit missed it |
+| Transactional email has its own switch, and `MESSAGING_PROVIDER` still refuses `resend` | ADR-040. Two different permissions. One is ARC initiating contact with a guest; the other is the reply to something a named person just did, which the product cannot work without |
+| `MAIL_PROVIDER=log` records a complete message, link included, rather than sending | ADR-040. A hotel has to read the real words before any of them reach a guest. `LOGGED` is deliberately not `SENT` |
+| A message is written inside the caller's transaction and sent after it commits | ADR-040. A `fetch` inside a Serializable block holds it open, and `inSerializableTransaction` re-runs its body on a retry — which is how one cancellation sends two emails |
+| A password reset answers identically for an address with no account | ADR-040. The accounts are a named list of boutique hotels; "is this hotel on ARC" is not information a public form should confirm |
+| Completing a password reset does not sign you in | ADR-040. A link in a mailbox is weaker proof than a password, and a session would make a readable inbox equivalent to a credential |
+| A guest's portal link is emailed only when an owner presses a button | ADR-040. The token is a bearer credential (ADR-035); mailing it automatically would send one to whatever address a front desk mistyped |
+| `Supplier` carries `claimedInsurer` *and* `insuranceOnFile` | ADR-041. The first is what the partner says; the second is ARC having seen a certificate. A partner may write the claim and never the check, and `supplier_insurance_on_file_is_checked` refuses the shortcut |
+| A partner's experience form has no status field and no supplier field | ADR-041. A partner drafts and the hotel publishes, and the supplier is whoever is signed in. A field that named either would eventually be set to the wrong one |
+| `updateOwnExperience` refuses while PUBLISHED but `setOwnPrice` does not | ADR-041. A basket holds the duration and meeting point a guest agreed to; it also holds the price it captured, and a new price is a new row for the next guest |
+| `assertActingAsSupplier` is stricter than `assertSupplierAccess` | ADR-041. An owner may *read* their partner's view. An owner writing a business's own description in that business's name is the problem the ADR starts from |
+| `acceptJoinRequest` reaches `invitePartner` through a dynamic import | ADR-041. That path already has ADR-021's refusal, the one transaction and the ADR-040 email. A second implementation would drift, and the refusal would drift first |
+| Declining a join request emails nobody | ADR-041. ARC writing to a business in the hotel's name, in wording the hotel never saw, is not ARC's to send. The note is the owner's own record |
+| A duplicate join request gets the same answer as the first | ADR-041. "You already asked" would let an unauthenticated form answer "is this address already working with this hotel" |
+| `supplier_insurance_on_file_is_checked` is added `NOT VALID` | ADR-041, for the ADR-036 reason: the rows it rejects are the pre-ADR verified ones that ADR deliberately keeps, and `migrate deploy` stops at the first failure |
+| The seed's fixture partners have no insurance on file, so every demo listing warns about it | ADR-041. They carried `insuranceOnFile: true` while unverified with no recorded check — the exact shortcut ADR-036 exists about. The warning is true, and it was true before |
+| `/sign-up/partner` takes no password and creates no account | ADR-041. It writes one `SupplierJoinRequest` and nothing else. The hotel accepting is what creates the supplier, the agreement and the login |
+| A direct customer's trip is a `Stay` | ADR-042. The guest surface reasons about days — the planner, the gate, travel times, dated departures — so a stay-less order meant a second code path through all of it, and the gate would have diverged first |
+| `Stay.kind` exists and four surfaces filter on it | ADR-042. A direct trip must never read as a room booking: not in arrivals, not in the briefing, not in occupancy, and not in the per-stay revenue figure |
+| A direct trip has no check-in control and no room type | ADR-042, and `direct_stay_has_no_room` enforces the second one in the database. "Checked in" is about a room |
+| The revenue headline excludes direct bookings from the numerator as well as the denominator | ADR-042. Otherwise a good month of direct business reads as the hotel's own guests spending more — ADR-007's instinct applied to a new pair of numbers |
+| A direct booking still pays the hotel its commission | ADR-042. The listing, the price and the agreement are the hotel's, and the storefront is what the person chose. A different share is a commission rule, not a code change |
+| `/sign-up/direct` hands over to `establishAccount` rather than creating a user | ADR-042. That path already takes over a front desk's placeholder, refuses an address somebody holds, and handles both races |
 
 ## Review
 

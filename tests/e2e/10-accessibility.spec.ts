@@ -110,6 +110,16 @@ test.describe('accessibility', () => {
     await page.goto('/owner/payouts')
     await audit(page, '/owner/payouts')
 
+    // The partners page, which now also carries the join-request panel: forms
+    // repeated per request, so every control needs its own id (ADR-041).
+    await page.goto('/owner/partners')
+    await audit(page, '/owner/partners')
+
+    // The mail log: a list with a loading, empty and error state, and a
+    // `details` disclosure per message (ADR-040).
+    await page.goto('/owner/messages')
+    await audit(page, '/owner/messages')
+
     await signOut(page)
   })
 
@@ -120,7 +130,30 @@ test.describe('accessibility', () => {
     await page.goto('/partner/availability')
     await audit(page, '/partner/availability')
 
+    // The self-service surfaces (ADR-041): a long form with a checkbox group
+    // and a legend, and a list with a loading, empty and error state.
+    await page.goto('/partner/profile')
+    await audit(page, '/partner/profile')
+
+    await page.goto('/partner/listings')
+    await audit(page, '/partner/listings')
+
+    await page.goto('/partner/listings/new')
+    await audit(page, '/partner/listings/new')
+
     await signOut(page)
+  })
+
+  test('the route in for a business nobody has invited', async ({ page }) => {
+    await page.goto('/sign-up/partner')
+    await audit(page, '/sign-up/partner')
+  })
+
+  test('the route in for somebody who is not staying anywhere', async ({ page }) => {
+    // A form with a select, two dates, a number and a checkbox whose label
+    // carries two links (ADR-042).
+    await page.goto('/sign-up/direct')
+    await audit(page, '/sign-up/direct')
   })
 
   test('the admin surfaces, including the verification form', async ({ page }) => {
@@ -131,6 +164,16 @@ test.describe('accessibility', () => {
     await audit(page, '/admin/health')
 
     await signOut(page)
+  })
+
+  test('the password reset surfaces', async ({ page }) => {
+    await page.goto('/forgot-password')
+    await audit(page, '/forgot-password')
+
+    // The refused-token state, which is what most visitors to this route see:
+    // it has to be legible as well as uninformative.
+    await page.goto('/reset-password/a-token-that-was-never-issued')
+    await audit(page, '/reset-password/[token] refused')
   })
 
   test('the guest account surfaces', async ({ page }) => {

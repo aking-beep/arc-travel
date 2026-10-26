@@ -192,6 +192,21 @@ enum StayStatus {
   NO_SHOW
 }
 
+/// How a `Stay` came to exist, and therefore what it may be rendered as.
+///
+/// `HOTEL_RESERVATION` is a room booked at the property: the thing arrivals
+/// lists, room revenue counts and the front desk hands a QR code for.
+///
+/// `DIRECT` is a trip somebody booked experiences for without booking a room —
+/// a resident, a day visitor, somebody staying elsewhere. It carries the same
+/// dates, party and portal token so the whole guest surface works unchanged,
+/// and it must never be rendered as a reservation: no arrival, no room, no room
+/// revenue. See ADR-042.
+enum StayKind {
+  HOTEL_RESERVATION
+  DIRECT
+}
+
 enum ItineraryStatus {
   DRAFT
   PROPOSED
@@ -291,123 +306,129 @@ enum RecommendationSurface {
 
 /// Top-level tenant. Every tenant-owned row traces back to exactly one of these.
 model Organization {
-  id          String       @id @default(uuid())
-  slug        String       @unique
-  name        String
-  legalName   String?
-  countryCode String       @default("MX")
-  status      EntityStatus @default(DRAFT)
+  id                           String       @id @default(uuid())
+  slug                         String       @unique
+  name                         String
+  legalName                    String?
+  countryCode                  String       @default("MX")
+  status                       EntityStatus @default(DRAFT)
   /// Hotel's commission in basis points when no CommissionRule matches,
   /// overridable per CommissionRule.
-  defaultCommissionBps Int  @default(1500)
+  defaultCommissionBps         Int          @default(1500)
   /// ARC's own share in basis points when no CommissionRule matches.
   ///
   /// This used to be hard-coded to zero inside `resolveCommission`, which meant
   /// a tenant with no rule produced ledger lines where the platform earned
   /// nothing: ARC's revenue depended on somebody remembering to write a rule.
   /// 500 bps matches the default written into every SupplierAgreement.
-  defaultPlatformCommissionBps Int @default(500)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  defaultPlatformCommissionBps Int          @default(500)
+  createdAt                    DateTime     @default(now())
+  updatedAt                    DateTime     @updatedAt
 
-  properties       Property[]
-  memberships      Membership[]
-  suppliers        Supplier[]
-  guests           Guest[]
-  carts            Cart[]
-  orders           Order[]
-  itineraries      Itinerary[]
-  commissionRules  CommissionRule[]
-  agentRuns        AgentRun[]
-  recommendations  Recommendation[]
-  proposals        Proposal[]
-  auditEvents      AuditEvent[]
-  analyticsEvents  AnalyticsEvent[]
-  idempotencyKeys  IdempotencyKey[]
-  invitations      Invitation[]
-  payouts          Payout[]
+  properties      Property[]
+  memberships     Membership[]
+  suppliers       Supplier[]
+  guests          Guest[]
+  carts           Cart[]
+  orders          Order[]
+  itineraries     Itinerary[]
+  commissionRules CommissionRule[]
+  agentRuns       AgentRun[]
+  recommendations Recommendation[]
+  proposals       Proposal[]
+  auditEvents     AuditEvent[]
+  analyticsEvents AnalyticsEvent[]
+  idempotencyKeys IdempotencyKey[]
+  invitations     Invitation[]
+  payouts         Payout[]
+  emailMessages   EmailMessage[]
+  joinRequests    SupplierJoinRequest[]
 
   @@index([status])
 }
 
 /// A single boutique hotel. The unit a guest experiences and an owner manages.
 model Property {
-  id             String       @id @default(uuid())
+  id             String             @id @default(uuid())
   organizationId String
-  slug           String       @unique
+  slug           String             @unique
   name           String
   tagline        String?
   description    String?
   /// Short free-text house notes shown to guests in the portal.
   houseNotes     String?
-  roomCount      Int          @default(0)
-  checkInTime    String       @default("15:00")
-  checkOutTime   String       @default("11:00")
-  timezone       String       @default("America/Mexico_City")
-  currency       String       @default("MXN")
-  defaultLocale  Locale       @default(EN)
+  roomCount      Int                @default(0)
+  checkInTime    String             @default("15:00")
+  checkOutTime   String             @default("11:00")
+  timezone       String             @default("America/Mexico_City")
+  currency       String             @default("MXN")
+  defaultLocale  Locale             @default(EN)
   /// Brand palette used by the guest portal (hex strings).
-  brandPrimary   String       @default("#1F3A34")
-  brandAccent    String       @default("#C97B4A")
+  brandPrimary   String             @default("#1F3A34")
+  brandAccent    String             @default("#C97B4A")
   heroImageUrl   String?
-  status         EntityStatus @default(DRAFT)
+  status         EntityStatus       @default(DRAFT)
   verification   VerificationStatus @default(UNVERIFIED)
-  onboardingStep Int          @default(0)
+  onboardingStep Int                @default(0)
   /// The destination place this property sits in (neighborhood or beach).
   placeId        String?
   latitude       Float?
   longitude      Float?
   contactEmail   String?
   contactPhone   String?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   place        Place?       @relation(fields: [placeId], references: [id], onDelete: SetNull)
 
-  roomTypes         RoomType[]
-  stays             Stay[]
-  guests            Guest[]
-  experiences       Experience[]
+  roomTypes          RoomType[]
+  stays              Stay[]
+  guests             Guest[]
+  experiences        Experience[]
   supplierAgreements SupplierAgreement[]
-  itineraries       Itinerary[]
-  carts             Cart[]
-  orders            Order[]
-  payouts           Payout[]
-  commissionRules   CommissionRule[]
-  amenities         Amenity[]
-  proposals         Proposal[]
-  recommendations   Recommendation[]
-  memberships       Membership[]
+  itineraries        Itinerary[]
+  carts              Cart[]
+  orders             Order[]
+  payouts            Payout[]
+  commissionRules    CommissionRule[]
+  amenities          Amenity[]
+  proposals          Proposal[]
+  recommendations    Recommendation[]
+  memberships        Membership[]
+  joinRequests       SupplierJoinRequest[]
 
   @@index([organizationId, status])
   @@index([placeId])
 }
 
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  name         String
-  phone        String?
-  locale       Locale   @default(EN)
+  id              String    @id @default(uuid())
+  email           String    @unique
+  name            String
+  phone           String?
+  locale          Locale    @default(EN)
   /// Argon/bcrypt hash. Null for the seeded demo accounts, which sign in via the
   /// explicitly dev-only account switcher (see src/modules/auth).
-  passwordHash String?
-  isPlatformAdmin Boolean @default(false)
-  lastSeenAt   DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  passwordHash    String?
+  isPlatformAdmin Boolean   @default(false)
+  lastSeenAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  memberships Membership[]
-  guests      Guest[]
-  approvals   Approval[]
-  auditEvents AuditEvent[]
-  agentRuns   AgentRun[]
-  supplierContacts Supplier[]
+  memberships          Membership[]
+  guests               Guest[]
+  approvals            Approval[]
+  auditEvents          AuditEvent[]
+  agentRuns            AgentRun[]
+  supplierContacts     Supplier[]
   cultureChangeReviews CultureSourceChange[]
-  invitations      Invitation[] @relation("InvitationUser")
-  invitationsSent  Invitation[] @relation("InvitationSender")
-  payoutsSettled   Payout[]
+  invitations          Invitation[]          @relation("InvitationUser")
+  invitationsSent      Invitation[]          @relation("InvitationSender")
+  payoutsSettled       Payout[]
+  passwordResets       PasswordResetToken[]  @relation("PasswordResetUser")
+  emailsCaused         EmailMessage[]        @relation("EmailCausedBy")
+  joinRequestsDecided  SupplierJoinRequest[] @relation("JoinRequestDecider")
 }
 
 /// Binds a user to an organization with a role. The sole source of authority.
@@ -433,19 +454,19 @@ model Membership {
 }
 
 model RoomType {
-  id          String   @id @default(uuid())
+  id             String   @id @default(uuid())
   organizationId String
-  propertyId  String
-  code        String
-  name        String
-  description String?
-  maxOccupancy Int     @default(2)
-  roomCount   Int      @default(1)
+  propertyId     String
+  code           String
+  name           String
+  description    String?
+  maxOccupancy   Int      @default(2)
+  roomCount      Int      @default(1)
   /// Published nightly rate in minor units. Demo data only.
-  baseRateMinor Int    @default(0)
-  currency    String   @default("MXN")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  baseRateMinor  Int      @default(0)
+  currency       String   @default("MXN")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   stays    Stay[]
@@ -456,17 +477,17 @@ model RoomType {
 
 /// A hotel amenity. Amenities are the raw material ARC turns into experiences.
 model Amenity {
-  id          String   @id @default(uuid())
+  id             String             @id @default(uuid())
   organizationId String
-  propertyId  String
-  name        String
-  category    ExperienceCategory
-  description String?
-  isIncluded  Boolean  @default(true)
+  propertyId     String
+  name           String
+  category       ExperienceCategory
+  description    String?
+  isIncluded     Boolean            @default(true)
   /// Set when the amenity has been productised into a sellable experience.
-  experienceId String? @unique
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  experienceId   String?            @unique
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
 
   property   Property    @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   experience Experience? @relation(fields: [experienceId], references: [id], onDelete: SetNull)
@@ -477,33 +498,33 @@ model Amenity {
 // === Guests & stays ==========================================================
 
 model Guest {
-  id             String   @id @default(uuid())
-  organizationId String
-  propertyId     String
+  id                 String               @id @default(uuid())
+  organizationId     String
+  propertyId         String
   /// The person's ARC account, once they have claimed this booking. Not
   /// unique: one person can be a guest at more than one property, and each
   /// property keeps its own guest record. See ADR-039.
-  userId         String?
-  firstName      String
-  lastName       String
-  email          String
-  phone          String?
-  locale         Locale   @default(EN)
-  countryCode    String?
-  partySize      Int      @default(2)
+  userId             String?
+  firstName          String
+  lastName           String
+  email              String
+  phone              String?
+  locale             Locale               @default(EN)
+  countryCode        String?
+  partySize          Int                  @default(2)
   /// Preference intake. Null until the guest completes the portal intake.
-  surfAbility    AbilityLevel?
-  pace           Pace?
+  surfAbility        AbilityLevel?
+  pace               Pace?
   /// Daily per-person experience budget in minor units, guest-declared.
-  budgetPerDayMinor Int?
-  currency       String   @default("MXN")
-  interests      ExperienceCategory[] @default([])
-  dietaryNotes   String?
-  mobilityNotes  String?
-  preferredTransport TransportMode[]  @default([])
-  intakeCompletedAt DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  budgetPerDayMinor  Int?
+  currency           String               @default("MXN")
+  interests          ExperienceCategory[] @default([])
+  dietaryNotes       String?
+  mobilityNotes      String?
+  preferredTransport TransportMode[]      @default([])
+  intakeCompletedAt  DateTime?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   property     Property     @relation(fields: [propertyId], references: [id], onDelete: Cascade)
@@ -522,25 +543,27 @@ model Guest {
 }
 
 model Stay {
-  id             String     @id @default(uuid())
-  organizationId String
-  propertyId     String
-  guestId        String
-  roomTypeId     String?
-  reference      String     @unique
-  checkIn        DateTime   @db.Date
-  checkOut       DateTime   @db.Date
-  adults         Int        @default(2)
-  children       Int        @default(0)
-  status         StayStatus @default(BOOKED)
+  id               String     @id @default(uuid())
+  organizationId   String
+  propertyId       String
+  guestId          String
+  roomTypeId       String?
+  reference        String     @unique
+  /// Whether this is a room booking or a direct trip. See ADR-042.
+  kind             StayKind   @default(HOTEL_RESERVATION)
+  checkIn          DateTime   @db.Date
+  checkOut         DateTime   @db.Date
+  adults           Int        @default(2)
+  children         Int        @default(0)
+  status           StayStatus @default(BOOKED)
   /// Room revenue for the stay, minor units. Demo data only.
-  roomRevenueMinor Int      @default(0)
-  currency       String     @default("MXN")
+  roomRevenueMinor Int        @default(0)
+  currency         String     @default("MXN")
   /// Single-use token behind the QR code that opens the guest portal.
-  portalToken    String     @unique
-  arrivalNotes   String?
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
+  portalToken      String     @unique
+  arrivalNotes     String?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
 
   property Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   guest    Guest     @relation(fields: [guestId], references: [id], onDelete: Cascade)
@@ -552,6 +575,7 @@ model Stay {
 
   @@index([organizationId, propertyId, checkIn])
   @@index([propertyId, status])
+  @@index([propertyId, kind, status])
   @@index([guestId])
 }
 
@@ -577,41 +601,57 @@ model Consent {
 // === Suppliers ===============================================================
 
 model Supplier {
-  id             String       @id @default(uuid())
-  organizationId String
-  slug           String       @unique
-  name           String
-  legalName      String?
-  description    String?
-  categories     ExperienceCategory[] @default([])
-  contactUserId  String?
-  contactEmail   String?
-  contactPhone   String?
-  placeId        String?
-  status         EntityStatus @default(PENDING_VERIFICATION)
-  verification   VerificationStatus @default(UNVERIFIED)
-  verifiedAt     DateTime?
-  verifiedById   String?
+  id                    String               @id @default(uuid())
+  organizationId        String
+  slug                  String               @unique
+  name                  String
+  legalName             String?
+  description           String?
+  categories            ExperienceCategory[] @default([])
+  contactUserId         String?
+  contactEmail          String?
+  contactPhone          String?
+  placeId               String?
+  status                EntityStatus         @default(PENDING_VERIFICATION)
+  verification          VerificationStatus   @default(UNVERIFIED)
+  verifiedAt            DateTime?
+  verifiedById          String?
   /// Free-text notes from the verification check. Shown to admins only.
-  verificationNotes String?
+  verificationNotes     String?
   /// Certifications the supplier CLAIMS. Unverified until an admin records a
   /// check — the UI must never render these as confirmed.
-  claimedCertifications String[] @default([])
+  claimedCertifications String[]             @default([])
   /// Which verification checks an admin has actually recorded, from
   /// `VERIFICATION_CHECKS` in src/modules/admin/verification.ts. VERIFIED
   /// requires every required one; the list is kept so a later reviewer can see
   /// what was and was not looked at, rather than inferring it from a note.
-  verifiedChecks String[]   @default([])
-  insuranceOnFile Boolean     @default(false)
+  verifiedChecks        String[]             @default([])
+  insuranceOnFile       Boolean              @default(false)
   /// When the insurance certificate on file expires.
   ///
   /// A boolean cannot expire, and liability insurance does. Without this,
   /// `insuranceOnFile = true` meant "somebody saw a certificate once", which is
   /// not the same claim and gets less true every month.
-  insuranceExpiresOn DateTime? @db.Date
-  payoutsEnabled  Boolean     @default(false)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  insuranceExpiresOn    DateTime?            @db.Date
+  payoutsEnabled        Boolean              @default(false)
+
+  /// What the partner has told ARC about their own insurance.
+  ///
+  /// Deliberately separate columns from `insuranceOnFile` and
+  /// `insuranceExpiresOn`, which are ARC's record of having *checked*. A
+  /// partner may edit their claims and may never touch their standing: these
+  /// are what they submit, those are what an admin writes after looking at the
+  /// certificate. Collapsing the two would make "insured" a self-assertion,
+  /// which is precisely what non-negotiable 2 forbids. See ADR-041.
+  claimedInsurer            String?
+  claimedInsurancePolicyRef String?
+  claimedInsuranceExpiresOn DateTime? @db.Date
+  /// The partner's own note to whoever reviews their evidence.
+  evidenceNotes             String?
+  /// When the partner last submitted evidence for review. Null means never.
+  evidenceSubmittedAt       DateTime?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   contactUser  User?        @relation(fields: [contactUserId], references: [id], onDelete: SetNull)
@@ -628,23 +668,23 @@ model Supplier {
 
 /// The commercial relationship between one property and one supplier.
 model SupplierAgreement {
-  id             String   @id @default(uuid())
-  organizationId String
-  propertyId     String
-  supplierId     String
+  id                         String       @id @default(uuid())
+  organizationId             String
+  propertyId                 String
+  supplierId                 String
   /// Share of gross retained by the hotel, in basis points.
-  hotelCommissionBps Int  @default(1500)
+  hotelCommissionBps         Int          @default(1500)
   /// Share of gross retained by ARC, in basis points.
-  platformCommissionBps Int @default(500)
+  platformCommissionBps      Int          @default(500)
   /// Hours before start that a booking can still be cancelled without penalty.
-  cancellationWindowHours Int @default(24)
+  cancellationWindowHours    Int          @default(24)
   /// POC: suppliers confirm by hand. Automated payouts are explicitly out.
-  requiresManualConfirmation Boolean @default(true)
-  status         EntityStatus @default(PENDING_VERIFICATION)
-  signedAt       DateTime?
-  notes          String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  requiresManualConfirmation Boolean      @default(true)
+  status                     EntityStatus @default(PENDING_VERIFICATION)
+  signedAt                   DateTime?
+  notes                      String?
+  createdAt                  DateTime     @default(now())
+  updatedAt                  DateTime     @updatedAt
 
   property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
@@ -659,41 +699,41 @@ model SupplierAgreement {
 /// or transport hub. Places are shared reference data, NOT tenant-owned, and
 /// carry no commercial claims.
 model Place {
-  id          String    @id @default(uuid())
-  slug        String    @unique
-  name        String
-  kind        PlaceKind
-  destination String    @default("puerto-escondido")
-  region      String    @default("Oaxaca, Mexico")
-  parentId    String?
-  summaryEn   String?
-  summaryEs   String?
-  latitude    Float
-  longitude   Float
+  id             String             @id @default(uuid())
+  slug           String             @unique
+  name           String
+  kind           PlaceKind
+  destination    String             @default("puerto-escondido")
+  region         String             @default("Oaxaca, Mexico")
+  parentId       String?
+  summaryEn      String?
+  summaryEs      String?
+  latitude       Float
+  longitude      Float
   /// Baseline ocean character, used when no fresh report exists. Never a
   /// safety guarantee — see `safetyNotesEn`.
-  typicalRisk ConditionsRisk @default(MODERATE)
-  safetyNotesEn String?
-  safetyNotesEs String?
-  provenance  Provenance @default(SEED_FIXTURE)
-  sourceUrl   String?
-  verification VerificationStatus @default(UNVERIFIED)
+  typicalRisk    ConditionsRisk     @default(MODERATE)
+  safetyNotesEn  String?
+  safetyNotesEs  String?
+  provenance     Provenance         @default(SEED_FIXTURE)
+  sourceUrl      String?
+  verification   VerificationStatus @default(UNVERIFIED)
   /// When the underlying facts were last reviewed. Surfaced to users.
-  factsUpdatedAt DateTime @default(now())
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  factsUpdatedAt DateTime           @default(now())
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
 
   parent   Place?  @relation("PlaceHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
   children Place[] @relation("PlaceHierarchy")
 
-  properties      Property[]
-  suppliers       Supplier[]
-  activities      Activity[]
-  experiences     Experience[]
+  properties       Property[]
+  suppliers        Supplier[]
+  activities       Activity[]
+  experiences      Experience[]
   conditionReports ConditionReport[]
-  travelFrom      TravelEdge[] @relation("TravelFrom")
-  travelTo        TravelEdge[] @relation("TravelTo")
-  itineraryItems  ItineraryItem[]
+  travelFrom       TravelEdge[]      @relation("TravelFrom")
+  travelTo         TravelEdge[]      @relation("TravelTo")
+  itineraryItems   ItineraryItem[]
 
   @@index([destination, kind])
   @@index([parentId])
@@ -702,38 +742,38 @@ model Place {
 /// A kind of thing a guest can do at a place, independent of who sells it.
 /// Suitability rules live here so they apply to every supplier's version.
 model Activity {
-  id          String   @id @default(uuid())
-  slug        String   @unique
-  name        String
-  category    ExperienceCategory
-  placeId     String?
-  descriptionEn String?
-  descriptionEs String?
-  minAbility  AbilityLevel @default(BEGINNER)
-  maxAbility  AbilityLevel @default(EXPERT)
+  id                     String             @id @default(uuid())
+  slug                   String             @unique
+  name                   String
+  category               ExperienceCategory
+  placeId                String?
+  descriptionEn          String?
+  descriptionEs          String?
+  minAbility             AbilityLevel       @default(BEGINNER)
+  maxAbility             AbilityLevel       @default(EXPERT)
   /// Whether a certified guide is mandatory. Enforced, not advisory.
-  guideRequired Boolean @default(false)
+  guideRequired          Boolean            @default(false)
   /// Whether ocean or weather conditions govern this activity. Lives here
   /// rather than being derived from the place's kind: a surf lesson depends on
   /// the water wherever it is held, and an owner choosing the wrong place must
   /// not be able to switch the conditions gate off. Defaults to true so a new
   /// activity is gated until someone decides otherwise.
-  conditionsSensitive Boolean @default(true)
+  conditionsSensitive    Boolean            @default(true)
   /// Highest ocean/terrain risk at which this may be recommended at all.
-  maxSafeRisk ConditionsRisk @default(MODERATE)
-  minAgeYears Int?
-  typicalDurationMinutes Int @default(120)
+  maxSafeRisk            ConditionsRisk     @default(MODERATE)
+  minAgeYears            Int?
+  typicalDurationMinutes Int                @default(120)
   /// Months (1-12) in which the activity is normally viable.
-  seasonMonths Int[]   @default([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+  seasonMonths           Int[]              @default([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
   /// Earliest / latest sensible local start time, "HH:MM".
-  earliestStart String @default("06:00")
-  latestStart   String @default("18:00")
-  physicalIntensity Int @default(2)
-  safetyNotesEn String?
-  safetyNotesEs String?
-  provenance  Provenance @default(SEED_FIXTURE)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  earliestStart          String             @default("06:00")
+  latestStart            String             @default("18:00")
+  physicalIntensity      Int                @default(2)
+  safetyNotesEn          String?
+  safetyNotesEs          String?
+  provenance             Provenance         @default(SEED_FIXTURE)
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
 
   place       Place?       @relation(fields: [placeId], references: [id], onDelete: SetNull)
   experiences Experience[]
@@ -745,43 +785,43 @@ model Activity {
 /// A sellable product: one supplier's version of one activity, sold through one
 /// property's storefront.
 model Experience {
-  id             String   @id @default(uuid())
-  organizationId String
-  propertyId     String
-  supplierId     String
-  activityId     String
-  placeId        String?
-  slug           String
-  titleEn        String
-  titleEs        String?
-  summaryEn      String?
-  summaryEs      String?
-  descriptionEn  String?
-  descriptionEs  String?
-  category       ExperienceCategory
-  status         ExperienceStatus @default(DRAFT)
-  durationMinutes Int     @default(120)
-  minAbility     AbilityLevel @default(BEGINNER)
-  maxAbility     AbilityLevel @default(EXPERT)
-  minParty       Int      @default(1)
-  maxParty       Int      @default(8)
-  minAgeYears    Int?
+  id                      String             @id @default(uuid())
+  organizationId          String
+  propertyId              String
+  supplierId              String
+  activityId              String
+  placeId                 String?
+  slug                    String
+  titleEn                 String
+  titleEs                 String?
+  summaryEn               String?
+  summaryEs               String?
+  descriptionEn           String?
+  descriptionEs           String?
+  category                ExperienceCategory
+  status                  ExperienceStatus   @default(DRAFT)
+  durationMinutes         Int                @default(120)
+  minAbility              AbilityLevel       @default(BEGINNER)
+  maxAbility              AbilityLevel       @default(EXPERT)
+  minParty                Int                @default(1)
+  maxParty                Int                @default(8)
+  minAgeYears             Int?
   /// Capacity of a single departure, before any slot-level override.
-  defaultCapacity Int     @default(6)
-  includesTransfer Boolean @default(false)
-  guideIncluded  Boolean  @default(true)
-  meetingPoint   String?
-  whatToBringEn  String?
-  whatToBringEs  String?
-  cancellationPolicyHours Int @default(24)
-  imageUrl       String?
-  imageCredit    String?
+  defaultCapacity         Int                @default(6)
+  includesTransfer        Boolean            @default(false)
+  guideIncluded           Boolean            @default(true)
+  meetingPoint            String?
+  whatToBringEn           String?
+  whatToBringEs           String?
+  cancellationPolicyHours Int                @default(24)
+  imageUrl                String?
+  imageCredit             String?
   /// Set only by an admin verification action.
-  verification   VerificationStatus @default(UNVERIFIED)
-  provenance     Provenance @default(PARTNER_SUBMITTED)
-  publishedAt    DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  verification            VerificationStatus @default(UNVERIFIED)
+  provenance              Provenance         @default(PARTNER_SUBMITTED)
+  publishedAt             DateTime?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
 
   property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
@@ -806,22 +846,22 @@ model Experience {
 /// Versioned price for an experience. Prices are never edited in place: a new
 /// row supersedes the old one so historical orders stay explainable.
 model Price {
-  id           String    @id @default(uuid())
-  organizationId String
-  experienceId String
-  kind         PriceKind @default(BASE)
+  id              String    @id @default(uuid())
+  organizationId  String
+  experienceId    String
+  kind            PriceKind @default(BASE)
   /// Per-person price in minor units.
-  amountMinor  Int
-  currency     String    @default("MXN")
+  amountMinor     Int
+  currency        String    @default("MXN")
   /// Optional per-booking surcharge (e.g. private transfer), minor units.
-  bookingFeeMinor Int    @default(0)
-  minParty     Int       @default(1)
-  validFrom    DateTime  @default(now())
-  validTo      DateTime?
-  isActive     Boolean   @default(true)
-  note         String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  bookingFeeMinor Int       @default(0)
+  minParty        Int       @default(1)
+  validFrom       DateTime  @default(now())
+  validTo         DateTime?
+  isActive        Boolean   @default(true)
+  note            String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   experience Experience @relation(fields: [experienceId], references: [id], onDelete: Cascade)
 
@@ -832,24 +872,24 @@ model Price {
 /// A single bookable departure. `capacity` is the truth; `booked` and `held` are
 /// maintained only inside serialized transactions (see modules/inventory).
 model AvailabilitySlot {
-  id           String     @id @default(uuid())
-  organizationId String
-  experienceId String
+  id                 String     @id @default(uuid())
+  organizationId     String
+  experienceId       String
   /// Local start instant for the departure.
-  startsAt     DateTime
-  endsAt       DateTime
-  capacity     Int
-  booked       Int        @default(0)
-  held         Int        @default(0)
-  status       SlotStatus @default(OPEN)
+  startsAt           DateTime
+  endsAt             DateTime
+  capacity           Int
+  booked             Int        @default(0)
+  held               Int        @default(0)
+  status             SlotStatus @default(OPEN)
   /// Per-slot override of the experience price, minor units. Null = use Price.
   priceOverrideMinor Int?
-  currency     String     @default("MXN")
-  note         String?
+  currency           String     @default("MXN")
+  note               String?
   /// Conditions snapshot taken when the slot was last evaluated.
-  lastRiskCheckedAt DateTime?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  lastRiskCheckedAt  DateTime?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
 
   experience Experience @relation(fields: [experienceId], references: [id], onDelete: Cascade)
 
@@ -866,18 +906,18 @@ model AvailabilitySlot {
 /// A short-lived capacity reservation. Expiry is enforced on read AND by the
 /// sweeper in modules/inventory; nothing relies on a background job alone.
 model InventoryHold {
-  id          String     @id @default(uuid())
+  id             String     @id @default(uuid())
   organizationId String
-  slotId      String
-  cartId      String?
-  orderItemId String?    @unique
-  quantity    Int
-  status      HoldStatus @default(ACTIVE)
-  expiresAt   DateTime
-  releasedAt  DateTime?
-  consumedAt  DateTime?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  slotId         String
+  cartId         String?
+  orderItemId    String?    @unique
+  quantity       Int
+  status         HoldStatus @default(ACTIVE)
+  expiresAt      DateTime
+  releasedAt     DateTime?
+  consumedAt     DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
 
   slot      AvailabilitySlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
   cart      Cart?            @relation(fields: [cartId], references: [id], onDelete: SetNull)
@@ -891,21 +931,21 @@ model InventoryHold {
 // === Commerce ================================================================
 
 model Cart {
-  id             String     @id @default(uuid())
-  organizationId String
-  propertyId     String
-  guestId        String?
-  stayId         String?
-  status         CartStatus @default(OPEN)
-  currency       String     @default("MXN")
+  id               String     @id @default(uuid())
+  organizationId   String
+  propertyId       String
+  guestId          String?
+  stayId           String?
+  status           CartStatus @default(OPEN)
+  currency         String     @default("MXN")
   /// Server-computed totals, minor units. Clients never send money values.
-  subtotalMinor  Int        @default(0)
-  feesMinor      Int        @default(0)
-  totalMinor     Int        @default(0)
-  expiresAt      DateTime?
-  convertedOrderId String?  @unique
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
+  subtotalMinor    Int        @default(0)
+  feesMinor        Int        @default(0)
+  totalMinor       Int        @default(0)
+  expiresAt        DateTime?
+  convertedOrderId String?    @unique
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   property     Property     @relation(fields: [propertyId], references: [id], onDelete: Cascade)
@@ -920,20 +960,20 @@ model Cart {
 }
 
 model CartItem {
-  id           String   @id @default(uuid())
-  organizationId String
-  cartId       String
-  experienceId String
-  slotId       String
-  quantity     Int      @default(1)
+  id               String   @id @default(uuid())
+  organizationId   String
+  cartId           String
+  experienceId     String
+  slotId           String
+  quantity         Int      @default(1)
   /// Price captured at add-to-cart time and re-validated at checkout.
-  unitPriceMinor Int
-  bookingFeeMinor Int   @default(0)
-  lineTotalMinor Int
-  currency     String   @default("MXN")
+  unitPriceMinor   Int
+  bookingFeeMinor  Int      @default(0)
+  lineTotalMinor   Int
+  currency         String   @default("MXN")
   participantNotes String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   cart       Cart             @relation(fields: [cartId], references: [id], onDelete: Cascade)
   experience Experience       @relation(fields: [experienceId], references: [id], onDelete: Restrict)
@@ -944,53 +984,53 @@ model CartItem {
 }
 
 model Order {
-  id             String      @id @default(uuid())
-  organizationId String
-  propertyId     String
-  guestId        String?
-  stayId         String?
-  reference      String      @unique
-  status         OrderStatus @default(PENDING)
-  currency       String      @default("MXN")
-  subtotalMinor  Int         @default(0)
-  feesMinor      Int         @default(0)
-  totalMinor     Int         @default(0)
-  refundedMinor  Int         @default(0)
+  id                    String                @id @default(uuid())
+  organizationId        String
+  propertyId            String
+  guestId               String?
+  stayId                String?
+  reference             String                @unique
+  status                OrderStatus           @default(PENDING)
+  currency              String                @default("MXN")
+  subtotalMinor         Int                   @default(0)
+  feesMinor             Int                   @default(0)
+  totalMinor            Int                   @default(0)
+  refundedMinor         Int                   @default(0)
   /// Earnings split, minor units, computed server-side at confirmation.
-  hotelEarningsMinor    Int  @default(0)
-  platformEarningsMinor Int  @default(0)
-  supplierPayableMinor  Int  @default(0)
+  hotelEarningsMinor    Int                   @default(0)
+  platformEarningsMinor Int                   @default(0)
+  supplierPayableMinor  Int                   @default(0)
   /// POC marker: no real money moved. Always true while ARC_DATA_MODE=demo.
-  isSimulated    Boolean     @default(true)
-  paymentProvider String     @default("simulated")
-  paymentReference String?
-  confirmedAt    DateTime?
-  cancelledAt    DateTime?
-  refundedAt     DateTime?
-  cancellationReason String?
+  isSimulated           Boolean               @default(true)
+  paymentProvider       String                @default("simulated")
+  paymentReference      String?
+  confirmedAt           DateTime?
+  cancelledAt           DateTime?
+  refundedAt            DateTime?
+  cancellationReason    String?
   /// Set when the provider reported a refund or chargeback against this
   /// order's payment. The order is NOT cancelled by that report: reversing a
   /// guest's booking is a consequential action and needs an Approval row
   /// naming who decided (non-negotiable 6). This field is what stops the order
   /// being treated as good money in the meantime — a payout excludes it. See
   /// ADR-033.
-  reversalReportedAt DateTime?
-  reversalCause  PaymentReversalCause?
+  reversalReportedAt    DateTime?
+  reversalCause         PaymentReversalCause?
   /// The provider's own event id, so the report can be traced and so a
   /// redelivery is recognisable.
-  reversalEventId String?
+  reversalEventId       String?
   /// What the provider said was reversed, minor units. Not necessarily the
   /// order total: a partial refund is a partial reversal.
-  reversedMinor  Int         @default(0)
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  reversedMinor         Int                   @default(0)
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   property     Property     @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   guest        Guest?       @relation(fields: [guestId], references: [id], onDelete: SetNull)
   stay         Stay?        @relation(fields: [stayId], references: [id], onDelete: SetNull)
 
-  items        OrderItem[]
+  items         OrderItem[]
   ledgerEntries LedgerEntry[]
 
   /// One order per payment, enforced by the database.
@@ -1008,29 +1048,29 @@ model Order {
 }
 
 model OrderItem {
-  id           String          @id @default(uuid())
-  organizationId String
-  orderId      String
-  experienceId String
-  slotId       String
-  supplierId   String
-  quantity     Int
-  unitPriceMinor Int
-  bookingFeeMinor Int          @default(0)
-  lineTotalMinor Int
-  currency     String          @default("MXN")
-  status       OrderItemStatus @default(PENDING)
+  id                    String          @id @default(uuid())
+  organizationId        String
+  orderId               String
+  experienceId          String
+  slotId                String
+  supplierId            String
+  quantity              Int
+  unitPriceMinor        Int
+  bookingFeeMinor       Int             @default(0)
+  lineTotalMinor        Int
+  currency              String          @default("MXN")
+  status                OrderItemStatus @default(PENDING)
   /// Earnings split for this line, minor units.
-  hotelEarningsMinor    Int    @default(0)
-  platformEarningsMinor Int    @default(0)
-  supplierPayableMinor  Int    @default(0)
+  hotelEarningsMinor    Int             @default(0)
+  platformEarningsMinor Int             @default(0)
+  supplierPayableMinor  Int             @default(0)
   /// Supplier-side manual confirmation (POC: always required).
-  supplierConfirmedAt DateTime?
-  cancelledAt  DateTime?
-  refundedMinor Int            @default(0)
-  participantNotes String?
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  supplierConfirmedAt   DateTime?
+  cancelledAt           DateTime?
+  refundedMinor         Int             @default(0)
+  participantNotes      String?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
 
   order      Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
   experience Experience       @relation(fields: [experienceId], references: [id], onDelete: Restrict)
@@ -1048,21 +1088,21 @@ model OrderItem {
 /// Configurable commission split. Most specific match wins:
 /// experience > supplier-category > property > organization default.
 model CommissionRule {
-  id             String   @id @default(uuid())
+  id             String              @id @default(uuid())
   organizationId String
   propertyId     String?
   experienceId   String?
   category       ExperienceCategory?
-  basis          CommissionBasis @default(PERCENT_OF_GROSS)
+  basis          CommissionBasis     @default(PERCENT_OF_GROSS)
   /// Hotel share in basis points (PERCENT_OF_GROSS) or minor units (FIXED).
   hotelShare     Int
   platformShare  Int
-  currency       String   @default("MXN")
-  priority       Int      @default(0)
-  isActive       Boolean  @default(true)
+  currency       String              @default("MXN")
+  priority       Int                 @default(0)
+  isActive       Boolean             @default(true)
   note           String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   property     Property?    @relation(fields: [propertyId], references: [id], onDelete: Cascade)
@@ -1086,7 +1126,7 @@ model LedgerEntry {
   memo           String?
   createdAt      DateTime @default(now())
 
-  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order     Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
   /// Optional, because the column is: a future entry might belong to an order
   /// rather than a line. Declared as a relation so a payout can scope entries
   /// by supplier in the query rather than by fetching and filtering, which is
@@ -1122,31 +1162,31 @@ model LedgerEntry {
 ///
 /// See ADR-032.
 model Payout {
-  id             String   @id @default(uuid())
-  organizationId String
-  propertyId     String
-  supplierId     String
+  id                  String       @id @default(uuid())
+  organizationId      String
+  propertyId          String
+  supplierId          String
   /// Human reference for a remittance advice, e.g. "PO-20261025-0001".
-  reference      String   @unique
+  reference           String       @unique
   /// The window whose entries this run claimed, inclusive.
-  periodStart    DateTime @db.Date
-  periodEnd      DateTime @db.Date
-  currency       String   @default("MXN")
+  periodStart         DateTime     @db.Date
+  periodEnd           DateTime     @db.Date
+  currency            String       @default("MXN")
   /// Sum of this payout's lines. Equal to the sum by construction, and
   /// re-asserted by a CHECK the application cannot bypass.
-  netMinor       Int
-  status         PayoutStatus @default(DRAFT)
+  netMinor            Int
+  status              PayoutStatus @default(DRAFT)
   /// The proposal whose approval authorises settlement. Null only on a DRAFT.
-  proposalId     String?  @unique
+  proposalId          String?      @unique
   /// How the money actually moved, recorded by whoever moved it.
   settlementReference String?
   settlementMethod    String?
-  settledAt      DateTime?
-  settledById    String?
-  cancelledAt    DateTime?
-  note           String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  settledAt           DateTime?
+  settledById         String?
+  cancelledAt         DateTime?
+  note                String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   property     Property     @relation(fields: [propertyId], references: [id], onDelete: Cascade)
@@ -1192,15 +1232,15 @@ model PayoutLine {
 
 /// Guarantees a retried mutation (checkout, approval) produces one effect.
 model IdempotencyKey {
-  id             String   @id @default(uuid())
+  id             String    @id @default(uuid())
   organizationId String
   key            String
   scope          String
   /// Serialized response of the first successful execution, replayed verbatim.
   responseJson   Json?
-  lockedAt       DateTime @default(now())
+  lockedAt       DateTime  @default(now())
   completedAt    DateTime?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -1213,34 +1253,34 @@ model IdempotencyKey {
 /// A dated conditions reading for a place. ALWAYS rendered with `observedAt`
 /// and `source`; the product states conditions, it never promises safety.
 model ConditionReport {
-  id        String   @id @default(uuid())
-  placeId   String
+  id                 String         @id @default(uuid())
+  placeId            String
   /// Local calendar day the report describes.
-  forDate   DateTime @db.Date
-  waveHeightMinM Float
-  waveHeightMaxM Float
-  swellPeriodS   Float?
-  windKph        Float?
-  windDirection  String?
-  waterTempC     Float?
-  airTempC       Float?
+  forDate            DateTime       @db.Date
+  waveHeightMinM     Float
+  waveHeightMaxM     Float
+  swellPeriodS       Float?
+  windKph            Float?
+  windDirection      String?
+  waterTempC         Float?
+  airTempC           Float?
   /// Free-text current/rip description, e.g. "strong lateral rip at north end".
-  currentNotesEn String?
-  currentNotesEs String?
-  highTideLocal  String?
-  lowTideLocal   String?
-  risk           ConditionsRisk
+  currentNotesEn     String?
+  currentNotesEs     String?
+  highTideLocal      String?
+  lowTideLocal       String?
+  risk               ConditionsRisk
   /// Lowest ability the day demands: a guest must be at least this able for a
   /// water activity at this place on this date. LOW conditions admit
   /// BEGINNER; EXTREME conditions admit only EXPERT.
   minAbilityRequired AbilityLevel
-  guideRecommended Boolean @default(true)
-  provenance     Provenance @default(SEED_FIXTURE)
-  source         String   @default("ARC demo fixture")
+  guideRecommended   Boolean        @default(true)
+  provenance         Provenance     @default(SEED_FIXTURE)
+  source             String         @default("ARC demo fixture")
   /// Freshness. The UI must show this next to every reading.
-  observedAt     DateTime @default(now())
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  observedAt         DateTime       @default(now())
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
   place Place @relation(fields: [placeId], references: [id], onDelete: Cascade)
 
@@ -1251,19 +1291,19 @@ model ConditionReport {
 /// Directed travel time between two places, by mode. Used for the itinerary's
 /// geographic feasibility check.
 model TravelEdge {
-  id          String        @id @default(uuid())
-  fromPlaceId String
-  toPlaceId   String
-  mode        TransportMode
-  minutes     Int
-  distanceKm  Float?
+  id               String        @id @default(uuid())
+  fromPlaceId      String
+  toPlaceId        String
+  mode             TransportMode
+  minutes          Int
+  distanceKm       Float?
   /// Typical one-way cost in minor units, for budget feasibility.
-  typicalCostMinor Int      @default(0)
-  currency    String        @default("MXN")
-  provenance  Provenance    @default(SEED_FIXTURE)
-  observedAt  DateTime      @default(now())
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  typicalCostMinor Int           @default(0)
+  currency         String        @default("MXN")
+  provenance       Provenance    @default(SEED_FIXTURE)
+  observedAt       DateTime      @default(now())
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 
   fromPlace Place @relation("TravelFrom", fields: [fromPlaceId], references: [id], onDelete: Cascade)
   toPlace   Place @relation("TravelTo", fields: [toPlaceId], references: [id], onDelete: Cascade)
@@ -1275,29 +1315,29 @@ model TravelEdge {
 // === Itinerary ===============================================================
 
 model Itinerary {
-  id             String          @id @default(uuid())
-  organizationId String
-  propertyId     String
-  guestId        String
-  stayId         String?
-  title          String
-  status         ItineraryStatus @default(DRAFT)
-  locale         Locale          @default(EN)
-  startDate      DateTime        @db.Date
-  endDate        DateTime        @db.Date
-  partySize      Int             @default(2)
-  pace           Pace            @default(BALANCED)
-  budgetPerDayMinor Int?
-  currency       String          @default("MXN")
+  id                  String          @id @default(uuid())
+  organizationId      String
+  propertyId          String
+  guestId             String
+  stayId              String?
+  title               String
+  status              ItineraryStatus @default(DRAFT)
+  locale              Locale          @default(EN)
+  startDate           DateTime        @db.Date
+  endDate             DateTime        @db.Date
+  partySize           Int             @default(2)
+  pace                Pace            @default(BALANCED)
+  budgetPerDayMinor   Int?
+  currency            String          @default("MXN")
   /// Deterministic generator version, so a plan can be reproduced exactly.
-  generatorVersion String        @default("v1")
+  generatorVersion    String          @default("v1")
   /// Which AgentRun, if any, produced the natural-language rationale.
-  agentRunId     String?
+  agentRunId          String?
   /// Constraint violations the generator could not satisfy, surfaced to guests.
-  unmetConstraints Json?
-  estimatedTotalMinor Int        @default(0)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  unmetConstraints    Json?
+  estimatedTotalMinor Int             @default(0)
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   property     Property     @relation(fields: [propertyId], references: [id], onDelete: Cascade)
@@ -1312,33 +1352,33 @@ model Itinerary {
 }
 
 model ItineraryItem {
-  id           String   @id @default(uuid())
-  organizationId String
-  itineraryId  String
-  kind         ItineraryItemKind @default(EXPERIENCE)
-  dayIndex     Int
+  id                    String            @id @default(uuid())
+  organizationId        String
+  itineraryId           String
+  kind                  ItineraryItemKind @default(EXPERIENCE)
+  dayIndex              Int
   /// Local date and "HH:MM" window the item occupies.
-  date         DateTime @db.Date
-  startTime    String
-  endTime      String
-  experienceId String?
-  slotId       String?
-  placeId      String?
-  orderItemId  String?
-  titleEn      String
-  titleEs      String?
+  date                  DateTime          @db.Date
+  startTime             String
+  endTime               String
+  experienceId          String?
+  slotId                String?
+  placeId               String?
+  orderItemId           String?
+  titleEn               String
+  titleEs               String?
   /// Deterministic match score (0-100) from modules/itinerary/scoring.
-  score        Int      @default(0)
+  score                 Int               @default(0)
   /// Human-readable, deterministic reasons. The AI layer may rephrase these but
   /// may not add to them.
-  rationale    String[] @default([])
-  estimatedCostMinor Int @default(0)
-  currency     String   @default("MXN")
-  travelMinutesFromPrev Int @default(0)
-  travelModeFromPrev TransportMode?
-  isLocked     Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  rationale             String[]          @default([])
+  estimatedCostMinor    Int               @default(0)
+  currency              String            @default("MXN")
+  travelMinutesFromPrev Int               @default(0)
+  travelModeFromPrev    TransportMode?
+  isLocked              Boolean           @default(false)
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
 
   itinerary  Itinerary         @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
   experience Experience?       @relation(fields: [experienceId], references: [id], onDelete: SetNull)
@@ -1355,30 +1395,30 @@ model ItineraryItem {
 /// One invocation of the AI layer. Recorded for every call, mock or live, with
 /// token and cost telemetry. Tool access is read-only by default.
 model AgentRun {
-  id             String         @id @default(uuid())
-  organizationId String
+  id              String         @id @default(uuid())
+  organizationId  String
   /// "itinerary.rationale" | "briefing.compose" | "guide.answer" | ...
-  task           String
-  provider       String         @default("mock")
-  model          String         @default("mock-deterministic")
-  status         AgentRunStatus @default(PENDING)
-  requestedById  String?
+  task            String
+  provider        String         @default("mock")
+  model           String         @default("mock-deterministic")
+  status          AgentRunStatus @default(PENDING)
+  requestedById   String?
   /// Sanitized, PII-redacted prompt payload. Never store raw guest contact data.
-  inputJson      Json?
-  outputJson     Json?
+  inputJson       Json?
+  outputJson      Json?
   /// Set when the Zod output contract rejected the model response.
   validationError String?
   /// Set when prompt-injection or rate-limit defenses blocked the run.
-  blockedReason  String?
-  inputTokens    Int            @default(0)
-  outputTokens   Int            @default(0)
+  blockedReason   String?
+  inputTokens     Int            @default(0)
+  outputTokens    Int            @default(0)
   /// Estimated cost in USD micro-dollars (1e-6 USD), integer.
-  costMicroUsd   Int            @default(0)
-  latencyMs      Int            @default(0)
-  startedAt      DateTime       @default(now())
-  finishedAt     DateTime?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  costMicroUsd    Int            @default(0)
+  latencyMs       Int            @default(0)
+  startedAt       DateTime       @default(now())
+  finishedAt      DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   requestedBy  User?        @relation(fields: [requestedById], references: [id], onDelete: SetNull)
@@ -1394,7 +1434,7 @@ model AgentRun {
 /// A scored suggestion produced by the deterministic matcher. The AI layer can
 /// only attach an explanation to one of these — never create one.
 model Recommendation {
-  id             String   @id @default(uuid())
+  id             String                @id @default(uuid())
   organizationId String
   propertyId     String
   guestId        String?
@@ -1402,16 +1442,16 @@ model Recommendation {
   agentRunId     String?
   surface        RecommendationSurface
   score          Int
-  reasons        String[] @default([])
+  reasons        String[]              @default([])
   /// Deterministic hard-filter failures, e.g. ["ability_above_max"].
-  exclusions     String[] @default([])
+  exclusions     String[]              @default([])
   /// AI-generated prose, if any. Always optional and always labelled.
   explanation    String?
   shownAt        DateTime?
   clickedAt      DateTime?
   convertedAt    DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   property     Property     @relation(fields: [propertyId], references: [id], onDelete: Cascade)
@@ -1426,27 +1466,27 @@ model Recommendation {
 /// A draft action awaiting a human decision. Nothing in ARC acts on a property's
 /// behalf without an Approval row pointing at one of these.
 model Proposal {
-  id             String         @id @default(uuid())
-  organizationId String
-  propertyId     String
-  agentRunId     String?
-  kind           ProposalKind
-  status         ProposalStatus @default(DRAFT)
-  title          String
+  id                  String         @id @default(uuid())
+  organizationId      String
+  propertyId          String
+  agentRunId          String?
+  kind                ProposalKind
+  status              ProposalStatus @default(DRAFT)
+  title               String
   /// What the owner is being asked to agree to, in plain language.
-  summary        String
+  summary             String
   /// The exact, machine-readable action that executes on approval.
-  actionJson     Json
+  actionJson          Json
   /// Facts from the database that justify the proposal. No model opinions.
-  evidenceJson   Json?
+  evidenceJson        Json?
   /// Upside if accepted, minor units. Explicitly POTENTIAL, never earned.
-  potentialValueMinor Int       @default(0)
-  currency       String         @default("MXN")
-  expiresAt      DateTime?
-  executedAt     DateTime?
+  potentialValueMinor Int            @default(0)
+  currency            String         @default("MXN")
+  expiresAt           DateTime?
+  executedAt          DateTime?
   executionResultJson Json?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   property     Property     @relation(fields: [propertyId], references: [id], onDelete: Cascade)
@@ -1460,14 +1500,14 @@ model Proposal {
 }
 
 model Approval {
-  id         String           @id @default(uuid())
+  id             String           @id @default(uuid())
   organizationId String
-  proposalId String
-  decidedById String
-  decision   ApprovalDecision
-  note       String?
-  decidedAt  DateTime         @default(now())
-  createdAt  DateTime         @default(now())
+  proposalId     String
+  decidedById    String
+  decision       ApprovalDecision
+  note           String?
+  decidedAt      DateTime         @default(now())
+  createdAt      DateTime         @default(now())
 
   proposal  Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
   decidedBy User     @relation(fields: [decidedById], references: [id], onDelete: Restrict)
@@ -1637,7 +1677,7 @@ model Invitation {
   /// The organization the invitation is on behalf of, for the audit trail.
   organizationId String?
   /// Who sent it. Null for one created by a system path.
-  invitedById String?
+  invitedById    String?
 
   expiresAt  DateTime
   acceptedAt DateTime?
@@ -1660,4 +1700,181 @@ enum InvitationKind {
   SUPPLIER
   /// A staff member invited to an existing property.
   STAFF
+}
+
+/// A transactional email: queued inside the transaction that caused it, then
+/// delivered after that transaction commits. See ADR-040.
+///
+/// The row exists whether or not anything was delivered. `LOGGED` is a
+/// deliberate, visible outcome rather than a failure: with `MAIL_PROVIDER=log`
+/// the message is recorded in full, including its link, and `/owner/messages`
+/// shows what would have gone out. A demo that quietly sends nothing and a
+/// demo that records what it would have sent look the same from the code and
+/// completely different to a hotel deciding whether to trust the copy.
+model EmailMessage {
+  id             String      @id @default(uuid())
+  /// Null for a message that belongs to no tenant — a password reset, which is
+  /// about an account rather than an organization.
+  organizationId String?
+  kind           EmailKind
+  status         EmailStatus @default(QUEUED)
+
+  /// The recipient address, as it was on the record this message is about.
+  ///
+  /// Stored in the clear, because this is a mail log and the question it has to
+  /// answer is "did it go to the right address". The PII rule that keeps values
+  /// out of `AuditEvent` metadata is about a trail that does not need them; a
+  /// mail log does.
+  toAddress String
+  toName    String?
+  locale    Locale  @default(EN)
+  subject   String
+  /// Plain text. Every message is readable without HTML, and the text body is
+  /// what is stored and shown; the HTML sent is generated from it.
+  body      String
+
+  /// Which entity this is about, for the log and for the owner surface.
+  /// Deliberately loose strings rather than foreign keys: the message outlives
+  /// a cancelled stay or a withdrawn invitation, and a mail log that disappears
+  /// when the thing it was about is deleted cannot answer a dispute.
+  entityType String?
+  entityId   String?
+
+  /// Who caused it. Null only for a path with no signed-in actor, which is the
+  /// password reset — nobody is signed in when they ask for one.
+  causedByUserId String?
+
+  /// Attempts made. Bounded, so a permanently-bad address stops being retried.
+  attempts          Int       @default(0)
+  provider          String?
+  /// The provider's own id for the delivered message.
+  providerReference String?
+  /// Why the last attempt failed. Provider text, kept for support.
+  lastError         String?
+  queuedAt          DateTime  @default(now())
+  sentAt            DateTime?
+  failedAt          DateTime?
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  causedBy     User?         @relation("EmailCausedBy", fields: [causedByUserId], references: [id], onDelete: SetNull)
+
+  /// The dispatcher's claim: oldest queued first, bounded attempts.
+  @@index([status, queuedAt])
+  @@index([organizationId, queuedAt])
+  @@index([entityType, entityId])
+}
+
+enum EmailKind {
+  /// A hotel invited a local partner. The link is the invitation.
+  PARTNER_INVITATION
+  /// A hotel invited a staff member to a property.
+  STAFF_INVITATION
+  /// A guest's booking was confirmed and paid for.
+  ORDER_CONFIRMATION
+  /// A booking the guest or the hotel cancelled, with what was refunded.
+  ORDER_CANCELLED
+  /// The link to a guest's own portal, sent by the property that holds the stay.
+  GUEST_PORTAL_LINK
+  /// Somebody asked to reset the password on their own account.
+  PASSWORD_RESET
+}
+
+enum EmailStatus {
+  /// Written, not yet attempted. The dispatcher's queue.
+  QUEUED
+  /// Delivered to the provider, which accepted it.
+  SENT
+  /// Recorded and deliberately not delivered (`MAIL_PROVIDER=log`).
+  LOGGED
+  /// Attempted and refused enough times to stop trying.
+  FAILED
+}
+
+/// A single-use, short-lived permission to set a new password on one account.
+///
+/// Only the hash is stored, for the same reason a password's is: a leaked
+/// database must not yield working reset links. Separate from `Invitation`,
+/// which hands over an account somebody else created and lasts fourteen days;
+/// a reset is for an account its owner already holds and lasts an hour.
+model PasswordResetToken {
+  id        String @id @default(uuid())
+  userId    String
+  /// SHA-256 of the token. The token itself exists only in the emailed link.
+  tokenHash String @unique
+
+  expiresAt         DateTime
+  usedAt            DateTime?
+  /// Set when a later request superseded this one, so an old link in an inbox
+  /// stops working as soon as a newer one is asked for.
+  supersededAt      DateTime?
+  /// Coarse origin of the request, for abuse investigation. Not a session.
+  requestedFromHash String?
+  createdAt         DateTime  @default(now())
+
+  user User @relation("PasswordResetUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
+  @@index([expiresAt])
+}
+
+/// A business asking a property to take them on as a local partner.
+///
+/// The cold route in, for an operator with no invitation. It creates **no**
+/// commercial relationship: a request is a request, and only an owner
+/// accepting it creates the `Supplier`, the membership and the
+/// `SupplierAgreement`. Inventing the relationship from the request alone is
+/// exactly what non-negotiable 2 forbids, and it would also mean anybody with
+/// the form could appear in a hotel's partner list. See ADR-041.
+model SupplierJoinRequest {
+  id             String @id @default(uuid())
+  /// The property being asked. A request is to one hotel, not to the platform:
+  /// the agreement, the commission and the storefront are all per property.
+  propertyId     String
+  /// Denormalised so the request survives a property moving organization, and
+  /// so the owner query can scope on it directly.
+  organizationId String
+
+  businessName          String
+  contactName           String
+  contactEmail          String
+  contactPhone          String?
+  categories            ExperienceCategory[] @default([])
+  /// What they do, in their own words. Rendered as their claim, never as fact.
+  pitch                 String?
+  /// Certifications they say they hold. Claims (non-negotiable 2).
+  claimedCertifications String[]             @default([])
+  locale                Locale               @default(ES)
+
+  status            JoinRequestStatus @default(PENDING)
+  decidedAt         DateTime?
+  decidedById       String?
+  /// Why it was declined, for the owner's own record. Never emailed: a
+  /// decline is the hotel's commercial decision and ARC does not editorialise.
+  decisionNote      String?
+  /// The supplier created when it was accepted, so the request shows what
+  /// became of it.
+  createdSupplierId String?
+
+  /// Coarse origin, for abuse investigation. Not a session.
+  requestedFromHash String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  property     Property     @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  decidedBy    User?        @relation("JoinRequestDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  /// One live request per business per property. A second one while the first
+  /// is pending is a duplicate, not a new ask.
+  @@unique([propertyId, contactEmail])
+  @@index([organizationId, status, createdAt])
+  @@index([propertyId, status])
+}
+
+enum JoinRequestStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  /// Withdrawn by the business before anyone decided.
+  WITHDRAWN
 }

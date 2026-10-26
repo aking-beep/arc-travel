@@ -44,6 +44,9 @@ export async function ExploreFooter() {
               ['/trips', t('explore.nav.saved')],
               ['/culture/puerto-escondido', t('explore.guide.heading')],
               ['/search', t('explore.experiences.search')],
+              // The route in for somebody who is not staying anywhere
+              // (ADR-042): the planner, with no room booked.
+              ['/sign-up/direct', t('explore.footer.bookDirect')],
             ]}
           />
           <FooterColumn
