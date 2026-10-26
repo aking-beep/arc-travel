@@ -1,4 +1,5 @@
 import { prisma, type Prisma } from '@/lib/db'
+import { isSerializationFailure } from '@/lib/serialization'
 import { AppError, capacityUnavailable, conflict, invalid, notFound } from '@/lib/errors'
 import { HoldStatus, SlotStatus } from '@/lib/prisma-types'
 import { recordAudit } from '@/modules/workflows/audit'
@@ -25,15 +26,18 @@ import { recordAudit } from '@/modules/workflows/audit'
  * and a retried transaction is cheaper than an oversold departure.
  */
 export const HOLD_TTL_MINUTES = 15
-/** Postgres raises 40001 on a serialization failure; retrying is expected. */
-const SERIALIZATION_FAILURE = 'P2034'
 const MAX_ATTEMPTS = 5
 
 type Client = Prisma.TransactionClient
 
 /**
  * Runs `fn` in a Serializable transaction, retrying serialization failures with
- * a short backoff. Anything else propagates untouched.
+ * a short jittered backoff. Anything else propagates untouched.
+ *
+ * Which errors count is `isSerializationFailure`'s job, and matching more than
+ * `P2034` is the whole point of it — see that function. The jitter is not
+ * decoration either: six contenders that back off by the same amount collide
+ * again on the same schedule, spending the budget without anybody winning.
  */
 export async function inSerializableTransaction<T>(
   fn: (tx: Client) => Promise<T>,
@@ -48,11 +52,11 @@ export async function inSerializableTransaction<T>(
         timeout: 15_000,
       })
     } catch (error) {
-      const code = (error as { code?: string }).code
-      if (code !== SERIALIZATION_FAILURE) throw error
+      if (!isSerializationFailure(error)) throw error
       lastError = error
-      // 5ms, 10ms, 20ms, 40ms — long enough to let the winner commit.
-      await new Promise((resolve) => setTimeout(resolve, 5 * 2 ** attempt))
+      // 10, 20, 40, 80ms, each plus up to its own width of jitter.
+      const base = 10 * 2 ** attempt
+      await new Promise((resolve) => setTimeout(resolve, base + Math.random() * base))
     }
   }
 

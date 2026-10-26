@@ -1,4 +1,5 @@
 import { prisma, type Prisma } from '@/lib/db'
+import { isSerializationFailure } from '@/lib/serialization'
 import { conflict, invalid, notFound } from '@/lib/errors'
 import { SourceClass, VerificationStatus } from '@/lib/prisma-types'
 import { getIntegrations } from '@/modules/integrations/defaults'
@@ -49,7 +50,6 @@ export interface SourceCheckResult {
   failureReason: string | null
 }
 
-const SERIALIZATION_FAILURE = 'P2034'
 
 /**
  * Checks the travel-advice source for one destination and records the result.
@@ -202,7 +202,7 @@ export async function checkTravelAdviceSource(options: {
       { isolationLevel: 'Serializable', timeout: 15_000 },
     )
   } catch (error) {
-    if ((error as { code?: string }).code === SERIALIZATION_FAILURE) {
+    if (isSerializationFailure(error)) {
       throw conflict('Another check of this source is running. Try again in a moment.')
     }
     throw error
