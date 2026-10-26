@@ -114,7 +114,13 @@ test.describe('partner self-service', () => {
      * error and no field to point at.
      */
     await page.getByLabel('Where you meet').fill('By the second boat ramp, past the palapas')
-    await page.getByRole('button', { name: /^Save$/ }).click()
+
+    // Wait for the action's own response: a reload mid-flight loses the POST
+    // and the assertion below reads the old row.
+    await Promise.all([
+      page.waitForResponse((r) => r.request().method() === 'POST' && r.status() < 400),
+      page.getByRole('button', { name: /^Save$/ }).click(),
+    ])
 
     await page.reload()
     await expect(page.getByLabel('Where you meet')).toHaveValue(
