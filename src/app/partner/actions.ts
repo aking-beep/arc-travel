@@ -162,8 +162,15 @@ export async function submitEvidenceAction(
   }
 }
 
-/** Everything `partnerExperienceSchema` takes, read off the form. */
-function ownExperiencePayload(formData: FormData) {
+/**
+ * Everything `partnerExperienceUpdateSchema` takes, read off the form.
+ *
+ * No price: an update has no business carrying one, the schema is `.strict()`
+ * and omits it, and the edit form does not offer the field. Sending it anyway
+ * failed validation with nothing to point at, so no partner could save an
+ * edit at all.
+ */
+function ownExperienceFields(formData: FormData) {
   return {
     propertyId: String(formData.get('propertyId') ?? ''),
     activityId: String(formData.get('activityId') ?? ''),
@@ -185,6 +192,13 @@ function ownExperiencePayload(formData: FormData) {
     whatToBringEn: String(formData.get('whatToBringEn') ?? '') || null,
     whatToBringEs: String(formData.get('whatToBringEs') ?? '') || null,
     cancellationPolicyHours: formData.get('cancellationPolicyHours'),
+  }
+}
+
+/** The same fields plus the opening price, which only a new listing carries. */
+function newExperiencePayload(formData: FormData) {
+  return {
+    ...ownExperienceFields(formData),
     priceMinor: pesosToMinor(formData.get('price')),
   }
 }
@@ -198,7 +212,7 @@ export async function createOwnExperienceAction(
 
   let created: { id: string; slug: string; adjustments: string[] }
   try {
-    created = await createOwnExperience(actor, supplierId, ownExperiencePayload(formData))
+    created = await createOwnExperience(actor, supplierId, newExperiencePayload(formData))
   } catch (error) {
     return toFormState(error)
   }
@@ -220,7 +234,7 @@ export async function updateOwnExperienceAction(
       actor,
       supplierId,
       experienceId,
-      ownExperiencePayload(formData),
+      ownExperienceFields(formData),
     )
 
     revalidatePath(`/partner/listings/${experienceId}`)

@@ -139,7 +139,7 @@ describe('the queue', () => {
     expect((await prisma.emailMessage.findUniqueOrThrow({ where: { id } })).locale).toBe(Locale.ES)
   })
 
-  it('stops retrying a message that has used up its attempts', async () => {
+  it('fails a message that has used up its attempts rather than leaving it queued', async () => {
     const id = await queueEmail(message())
     await prisma.emailMessage.update({ where: { id }, data: { attempts: MAX_ATTEMPTS } })
 
@@ -147,10 +147,21 @@ describe('the queue', () => {
     resetEnvCache()
     resetMailer()
 
-    // Not claimed at all: the dispatcher's `where` excludes it, so a
-    // permanently-bad address cannot be retried for ever.
+    /*
+     * Never sent again — a permanently-bad address cannot be retried for ever.
+     * But not left QUEUED either: the attempt is spent before the send, so a
+     * worker that died on the last permitted attempt left a row the finder
+     * would never look at again, still queued, with nobody told. A row with no
+     * attempts left has nothing to try, which is what FAILED means.
+     */
     const outcome = await dispatchQueued({ limit: 10 })
-    expect(outcome).toMatchObject({ sent: 0, logged: 0, failed: 0, deferred: 0 })
+    expect(outcome).toMatchObject({ sent: 0, logged: 0, failed: 1, deferred: 0 })
+
+    const reaped = await prisma.emailMessage.findUniqueOrThrow({ where: { id } })
+    expect(reaped.status).toBe(EmailStatus.FAILED)
+    expect(reaped.failedAt).not.toBeNull()
+    expect(reaped.sentAt).toBeNull()
+    expect(reaped.lastError).toMatch(/attempt/i)
   })
 
   it('takes the oldest first, and only queued ones', async () => {
