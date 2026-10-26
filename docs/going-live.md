@@ -185,6 +185,22 @@ Honest list, so none of it is a surprise:
   independent review before it lands. Do it before the first promotion, not
   before the first guest.
 
+- **Accepting a join request is two commits, not one.** `acceptJoinRequest`
+  creates the supplier, the membership, the agreement and the invitation email
+  through `invitePartner`, and only then marks the request `ACCEPTED`. A crash
+  between the two leaves a live partner whose request still reads `PENDING`.
+  Nothing duplicates — a retried Accept is refused by ADR-021's rule about an
+  address that already has an account, and a concurrent second Accept is
+  refused by the claim's own `where` clause — so the symptom is a stale row an
+  owner can see, not a second supplier.
+
+  Making it one commit means moving `invitePartner` inside the claim's
+  transaction, which drags the ADR-040 send into a Serializable block. That is
+  exactly what ADR-040 keeps out, because the transaction's body re-runs on a
+  retry and the invitation goes twice. So it needs a decision about where the
+  send sits, not a quick edit. Until then: if a partner appears with a
+  `PENDING` request, the partner is real and the row is the thing to fix.
+
 - **A real identity provider.** `/sign-in` is a password form with per-account
   and per-caller rate limiting. It has no second factor, no SSO and no device
   management. Fine for a first hotel; not fine at ten.
