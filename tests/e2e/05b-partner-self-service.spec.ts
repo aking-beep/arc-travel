@@ -87,6 +87,41 @@ test.describe('partner self-service', () => {
     await expect(page.getByRole('button', { name: /publish/i })).toHaveCount(0)
   })
 
+  test('a partner edits a draft listing and the change sticks', async ({ page }) => {
+    await signInAs(page, PARTNER_EMAIL, '/partner/listings')
+    await page.getByRole('link', { name: /new listing/i }).click()
+
+    await page.getByLabel('Which hotel').selectOption({ index: 1 })
+    await page.getByLabel('Kind of activity').selectOption({ index: 1 })
+    await page.getByLabel('Title (English)').fill('Sunset paddle at Manzanillo')
+    await page.getByLabel('How long (minutes)').fill('90')
+    await page.getByLabel('Smallest party').fill('1')
+    await page.getByLabel('Largest party').fill('3')
+    await page.getByLabel('Places per departure').fill('3')
+    await page.getByLabel('Where you meet').fill('By the boat ramp')
+    await page.getByLabel('Price per person (pesos)').fill('600')
+    await page.getByRole('button', { name: /save as a draft/i }).click()
+
+    await expect(
+      page.getByRole('heading', { name: 'Sunset paddle at Manzanillo', level: 1 }),
+    ).toBeVisible()
+
+    /*
+     * The edit the form offers, saved through the same action a partner uses.
+     * The update schema is `.strict()` and has no price, and the form has no
+     * price field while editing — so the payload the action builds must not
+     * carry one either. It did, and every save was refused with a validation
+     * error and no field to point at.
+     */
+    await page.getByLabel('Where you meet').fill('By the second boat ramp, past the palapas')
+    await page.getByRole('button', { name: /^Save$/ }).click()
+
+    await page.reload()
+    await expect(page.getByLabel('Where you meet')).toHaveValue(
+      'By the second boat ramp, past the palapas',
+    )
+  })
+
   test('a published listing locks its details and keeps its price open', async ({ page }) => {
     await signInAs(page, PARTNER_EMAIL, '/partner/listings')
 

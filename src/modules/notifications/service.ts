@@ -103,6 +103,33 @@ export async function dispatchQueued(options?: { ids?: string[]; limit?: number 
   const env = getEnv()
   const mailer = getMailer()
 
+  /*
+   * Reap a claim its worker never finished.
+   *
+   * The claim below spends the attempt before the send, so a worker that dies
+   * mid-send leaves the row QUEUED with one fewer attempt left — deliberate.
+   * But the finder only takes rows under the attempt ceiling, so a worker that
+   * died on the *last* permitted attempt left a row that no run would ever
+   * look at again: still QUEUED, never FAILED, nobody told. An invitation or a
+   * password reset could sit there for good.
+   *
+   * A row that is QUEUED with no attempts left has nothing left to try, which
+   * is what FAILED means. It is marked here, where the hotel sees it on
+   * `/owner/messages` and can send it again.
+   */
+  const abandoned = await prisma.emailMessage.updateMany({
+    where: {
+      status: EmailStatus.QUEUED,
+      attempts: { gte: MAX_ATTEMPTS },
+      ...(options?.ids ? { id: { in: options.ids } } : {}),
+    },
+    data: {
+      status: EmailStatus.FAILED,
+      failedAt: new Date(),
+      lastError: 'Every attempt was spent without a result from the mail provider.',
+    },
+  })
+
   const candidates = await prisma.emailMessage.findMany({
     where: {
       status: EmailStatus.QUEUED,
@@ -121,7 +148,7 @@ export async function dispatchQueued(options?: { ids?: string[]; limit?: number 
     },
   })
 
-  const outcome = { sent: 0, logged: 0, failed: 0, deferred: 0 }
+  const outcome = { sent: 0, logged: 0, failed: abandoned.count, deferred: 0 }
 
   for (const message of candidates) {
     /*
