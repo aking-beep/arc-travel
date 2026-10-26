@@ -141,6 +141,42 @@ fine while holds accumulate and nothing checks the data.
 **Deliberately not alerts:** 4xx `AppError`s (the system working), a guest
 failing to pay, `swept` being large on one run, a lapsed verification.
 
+### Load
+
+`node scripts/load-test.mjs` — read-only, so it is safe to point at anything
+you are allowed to generate traffic against. 24 concurrent clients for 15
+seconds over the public and guest read paths, reporting p50/p95/p99 per route.
+
+```
+path                  n     p50     p95     p99     max   errors
+/                    168     702    1243    1344    1387        0
+/experiences         168     581     671     724     736        0
+/stays               168     394     513     530     545        0
+/sign-in             160     386     518     545     564        0
+/api/health          145      74     425     536     541        0
+876 requests, 58/s, 0 failed
+```
+
+Those numbers are from a single sandbox container that was also running
+Postgres, so read them as "nothing fell over and nothing errored", not as a
+capacity figure for Vercel. The useful part is the zero in the last column and
+the shape of the tail.
+
+It does **not** test writes, deliberately: an HTTP client cannot drive a Next
+server action, and a hand-crafted POST that silently 404s would report a
+passing oversell race. That question is answered where it can actually be
+driven — `tests/integration/inventory.test.ts` races `placeHold` at the service
+level, and `tests/e2e/11-concurrency.spec.ts` races six real browsers at one
+departure through the real UI and then asserts `booked + held <= capacity`. The
+second one is the one that would catch a transaction-mode pooler, which breaks
+interactive transactions while passing every integration test.
+
+### Accessibility
+
+WCAG 2.1 AA, checked on every acceptance run across nine surfaces. See
+`docs/accessibility.md`, including what an automated check cannot tell you —
+which is most of it.
+
 ### Service levels, for a pilot
 
 Not commitments this build makes — it runs in demo mode on a hobby plan. Written

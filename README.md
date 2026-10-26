@@ -130,10 +130,11 @@ The seed prints the full list each time it runs.
 | `npm run lint` | ESLint |
 | `npm test` | Unit + integration (needs `TEST_DATABASE_URL`) |
 | `npm run test:unit` | Unit only — no database |
-| `npm run test:e2e` | Playwright (builds and serves, reseeds the demo database first) |
+| `npm run test:e2e` | Playwright (builds and serves, reseeds the demo database first) — includes the WCAG audit and the concurrency race |
+| `npm run load-test` | Read-only load test against a running server (`docs/operations.md`) |
 | `npm run build` | Production build |
 | `npm run verify` | typecheck → lint → test → build |
-| `npm run vercel-build` | Hosted build: schema push → constraints → seed-if-empty → build. See [`docs/deployment.md`](docs/deployment.md) |
+| `npm run vercel-build` | Hosted build: generate → `migrate deploy` → seed-if-empty → build. See [`docs/deployment.md`](docs/deployment.md) |
 
 ## Testing
 

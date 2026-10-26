@@ -194,6 +194,8 @@ Two E2E habits, learned the hard way and recorded in the specs:
 | New CHECK constraints go in a NEW `*_constraints` migration, never appended to an applied one | ADR-036. `migrate deploy` never re-runs a recorded migration, so an edit lands on fresh databases and misses every running deployment |
 | `/api/cron/check-invariants` returns 200 when it finds a violation | ADR-037. The check ran and worked; the database is what is unhealthy. A 500 would re-alert every few minutes and hide a real monitoring failure |
 | `/api/health` exists as well as `/admin/health` and tells an anonymous caller almost nothing | ADR-037. The admin page cannot be polled, and an unauthenticated endpoint is reconnaissance for whoever finds it |
+| The `--color-sand-*` lightness values look arbitrary | ADR-038. Each is set by measured contrast against the worst light surface it sits on. Changing one is a contrast decision; re-run the accessibility spec |
+| The accessibility spec runs last in the E2E suite | ADR-038. One violation only existed once a guest had generated an itinerary. A clean-seed audit missed it |
 
 ## Review
 

@@ -67,7 +67,7 @@ export default async function PropertyPage() {
                 <li key={rt.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
                   <div className="min-w-0">
                     <p className="font-medium">
-                      {rt.name} <span className="text-sand-400 font-mono text-xs">{rt.code}</span>
+                      {rt.name} <span className="text-sand-500 font-mono text-xs">{rt.code}</span>
                     </p>
                     <p className="text-sand-500 text-xs">
                       {rt.roomCount} rooms · sleeps {rt.maxOccupancy}

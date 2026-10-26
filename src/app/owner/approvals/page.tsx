@@ -94,11 +94,11 @@ export default async function ApprovalsPage() {
                       On approval: {action.type ?? 'unknown'}
                     </p>
                     {proposal.agentRun ? (
-                      <p className="text-sand-400 mt-1 text-xs">
+                      <p className="text-sand-500 mt-1 text-xs">
                         Drafted with {proposal.agentRun.model} ({proposal.agentRun.provider}).
                       </p>
                     ) : (
-                      <p className="text-sand-400 mt-1 text-xs">
+                      <p className="text-sand-500 mt-1 text-xs">
                         Drafted from database facts with no model involved.
                       </p>
                     )}

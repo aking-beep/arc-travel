@@ -55,7 +55,7 @@ export default async function DestinationPage() {
                       <p className="text-sand-500 text-xs">in {place.parent.name}</p>
                     ) : null}
                     {place.safetyNotesEn ? (
-                      <p className="text-sand-400 mt-0.5 max-w-xs truncate text-xs">
+                      <p className="text-sand-500 mt-0.5 max-w-xs truncate text-xs">
                         {place.safetyNotesEn}
                       </p>
                     ) : null}
@@ -89,7 +89,7 @@ export default async function DestinationPage() {
                       <>
                         {place.conditionsCount} reports
                         <br />
-                        <span className="text-sand-400">
+                        <span className="text-sand-500">
                           latest{' '}
                           {place.conditionsLatestAt
                             ? place.conditionsLatestAt.toISOString().slice(0, 10)
@@ -97,7 +97,7 @@ export default async function DestinationPage() {
                         </span>
                       </>
                     ) : (
-                      <span className="text-sand-400">none</span>
+                      <span className="text-sand-500">none</span>
                     )}
                   </td>
                   <td className="text-sand-600 px-3 py-2.5 text-xs tabular-nums">
@@ -140,7 +140,7 @@ export default async function DestinationPage() {
                   <td className="px-5 py-2.5">
                     <p className="font-medium">{activity.name}</p>
                     {activity.safetyNotesEn ? (
-                      <p className="text-sand-400 mt-0.5 max-w-sm truncate text-xs">
+                      <p className="text-sand-500 mt-0.5 max-w-sm truncate text-xs">
                         {activity.safetyNotesEn}
                       </p>
                     ) : null}

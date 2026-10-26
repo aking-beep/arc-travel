@@ -67,7 +67,13 @@ function LocaleToggle({
                 ? transparent
                   ? 'bg-ivory/20'
                   : 'bg-ink text-ivory'
-                : 'opacity-60 hover:opacity-100',
+                : // Not `opacity-60`: opacity multiplies against whatever is
+                  // behind it, so the resulting contrast is not something
+                  // anyone can state, and here it came out below 4.5:1. An
+                  // explicit colour is checkable. ADR-038.
+                  transparent
+                  ? 'text-ivory/80 hover:text-ivory'
+                  : 'text-muted hover:text-ink',
             )}
           >
             {code}
@@ -122,7 +128,14 @@ export function ExploreNav({ locale }: { locale: AppLocale }) {
         <Link
           href="/"
           className="flex shrink-0 items-baseline gap-2"
-          aria-label={t('explore.brand')}
+          /*
+           * No `aria-label`. It read "ARC Travel — destination commerce" or its
+           * Spanish equivalent, which does not contain the link's visible text
+           * in the order it appears, so a voice-control user saying "click ARC
+           * Travel" could not activate it (WCAG 2.5.3, and axe's
+           * `label-content-name-mismatch`). The two spans already read "ARC
+           * Travel"; naming it again, differently, only broke it.
+           */
         >
           <span className="text-2xl tracking-tight">ARC</span>
           <span

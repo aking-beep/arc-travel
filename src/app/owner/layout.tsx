@@ -65,7 +65,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
             <Link href="/owner" className="font-display text-jade-900 font-semibold tracking-tight">
               ARC Stay
             </Link>
-            <span className="text-sand-400">/</span>
+            <span className="text-sand-500">/</span>
             <span className="text-sand-700 text-sm">{propertyName}</span>
           </div>
           <div className="flex items-center gap-3">

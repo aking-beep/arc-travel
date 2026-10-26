@@ -321,7 +321,7 @@ export default async function HealthPage() {
                       {event.actor ? ` · ${event.actor.name}` : ` · ${event.actorKind}`}
                     </span>
                   </span>
-                  <span className="text-sand-400 shrink-0 text-xs tabular-nums">
+                  <span className="text-sand-500 shrink-0 text-xs tabular-nums">
                     {event.createdAt.toISOString().slice(0, 16).replace('T', ' ')}
                   </span>
                 </li>

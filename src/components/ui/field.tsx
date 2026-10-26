@@ -2,7 +2,7 @@ import type { InputHTMLAttributes, LabelHTMLAttributes, SelectHTMLAttributes, Te
 import { cn } from '@/lib/cn'
 
 const control =
-  'w-full rounded-xl border border-sand-300 bg-white px-3.5 py-2.5 text-[0.9375rem] text-sand-900 placeholder:text-sand-400 focus:border-jade-600 focus:ring-0 disabled:bg-sand-100 disabled:text-sand-500'
+  'w-full rounded-xl border border-sand-300 bg-white px-3.5 py-2.5 text-[0.9375rem] text-sand-900 placeholder:text-sand-500 focus:border-jade-600 focus:ring-0 disabled:bg-sand-100 disabled:text-sand-500'
 
 export function Label({ className, ...props }: LabelHTMLAttributes<HTMLLabelElement>) {
   return <label className={cn('text-sand-800 block text-sm font-medium', className)} {...props} />

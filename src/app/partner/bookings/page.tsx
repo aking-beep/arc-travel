@@ -73,7 +73,7 @@ export default async function BookingsPage() {
                         currency={booking.currency}
                         className="font-semibold"
                       />
-                      <span className="text-sand-400 text-[0.6875rem]">your share, simulated</span>
+                      <span className="text-sand-500 text-[0.6875rem]">your share, simulated</span>
                       <ConfirmBookingForm orderItemId={booking.id} />
                     </div>
                   </CardContent>

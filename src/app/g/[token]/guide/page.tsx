@@ -156,7 +156,7 @@ export default async function GuidePage({ params }: { params: Promise<{ token: s
                   </p>
                 ) : null}
 
-                <p className="text-sand-400 mt-2.5 flex items-start gap-1.5 text-xs">
+                <p className="text-sand-500 mt-2.5 flex items-start gap-1.5 text-xs">
                   <Info className="mt-px size-3 shrink-0" aria-hidden />
                   {place.provenance.replace('_', ' ').toLowerCase()} ·{' '}
                   {place.verification === 'VERIFIED' ? t('common.verified') : t('common.unverified')}{' '}

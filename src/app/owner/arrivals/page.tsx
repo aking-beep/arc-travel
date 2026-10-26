@@ -130,7 +130,7 @@ export default async function ArrivalsPage({
                           <p className="text-sand-600 text-sm">Nothing booked yet.</p>
                         )}
 
-                        <p className="text-sand-400 font-mono text-xs">
+                        <p className="text-sand-500 font-mono text-xs">
                           Portal link: /g/{stay.portalToken}
                         </p>
                       </CardContent>

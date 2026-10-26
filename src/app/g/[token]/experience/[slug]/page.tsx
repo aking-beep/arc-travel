@@ -93,17 +93,17 @@ export default async function ExperienceDetailPage({
 
       <div className="text-sand-700 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
         <span className="flex items-center gap-1.5">
-          <Clock className="text-sand-400 size-4" aria-hidden />
+          <Clock className="text-sand-500 size-4" aria-hidden />
           {experience.durationMinutes} {t('common.minutes')}
         </span>
         {experience.place ? (
           <span className="flex items-center gap-1.5">
-            <MapPin className="text-sand-400 size-4" aria-hidden />
+            <MapPin className="text-sand-500 size-4" aria-hidden />
             {experience.place.name}
           </span>
         ) : null}
         <span className="flex items-center gap-1.5">
-          <Users className="text-sand-400 size-4" aria-hidden />
+          <Users className="text-sand-500 size-4" aria-hidden />
           {experience.minParty}–{experience.maxParty} {t('common.people')}
         </span>
       </div>

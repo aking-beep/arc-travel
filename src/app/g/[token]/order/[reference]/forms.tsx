@@ -27,7 +27,7 @@ export function CancelBookingForm({
       <SubmitButton variant="ghost" size="sm" pendingLabel="Cancelling…">
         {t('common.cancel')}
       </SubmitButton>
-      <span className="text-sand-400 text-[0.6875rem]">
+      <span className="text-sand-500 text-[0.6875rem]">
         Free up to {cancellationHours}h before
       </span>
       <FormFeedback state={state} />

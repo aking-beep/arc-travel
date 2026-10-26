@@ -122,7 +122,7 @@ export default async function HomePage() {
               <surface.icon className="text-jade-700 size-6" aria-hidden />
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-semibold">{surface.title}</h2>
-                <ArrowRight className="text-sand-400 group-hover:text-jade-700 size-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
+                <ArrowRight className="text-sand-500 group-hover:text-jade-700 size-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
               </div>
               <p className="text-sand-600 text-sm leading-relaxed">{surface.body}</p>
             </Link>

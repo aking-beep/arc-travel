@@ -1260,3 +1260,70 @@ the data.
 signals exist and the rules are written; a monitoring service configured to
 watch them and a person on a rota are pilot decisions, and neither lives in this
 repository. `docs/operations.md` says so rather than implying coverage.
+
+## ADR-038 — The dark end of the palette is set by contrast
+
+**Status:** accepted · 2026-10-26
+
+**Context.** Item 9 asked for an accessibility audit. The first run failed on
+every surface in the product, and almost all of it was one colour.
+
+`text-sand-500` was the subtle-text token — 166 uses, every one of them text —
+and at L 0.672 it scored 2.98:1 against white. WCAG 2.1 AA wants 4.5:1 for body
+text. It was the timestamp on every row, the caption under every figure and the
+hint under every form field, which is to say the product was readable and its
+explanations were not.
+
+**Decision.** The fix is the palette, not 166 files. `sand-400` through
+`sand-700` are set by measured contrast against the *worst* light surface they
+appear on, which is `sand-100` (`--surface-sunken`) rather than white. `sand-500`
+now scores 4.92:1 there, `sand-600` 6.64:1, `sand-700` 8.76:1.
+
+`sand-400` went from 1.99:1 to 3.07:1 — WCAG 1.4.11 wants 3:1 for the boundary
+of a UI component, which no automated check verifies and which a 1.99:1 border
+was quietly failing. It is a border colour, not a text colour: the dozen
+`text-sand-400` usages are `text-sand-500` now, because 3.07:1 is right for a
+border and wrong for a timestamp.
+
+Changing one of these values is therefore a contrast decision, and the comment
+in `globals.css` says so.
+
+**Four other findings, each its own lesson.**
+
+`--color-gold-deep` passed on white and failed on `--color-ivory`, the explore
+surface's own background: a colour that passes where it was chosen and fails
+where it is used.
+
+`opacity-60` on the locale switcher. Opacity multiplies against whatever is
+behind it, so the resulting contrast is not a number anyone can state — and this
+one came out under 4.5:1. Explicit colours are checkable; alpha on text is not.
+
+The brand link's `aria-label` did not contain its own visible text, so a
+voice-control user saying "click ARC Travel" could not activate it (WCAG 2.5.3).
+The spans already read "ARC Travel". Naming it again, differently, only broke
+it.
+
+And `text-jade-700/70` on the AI provenance line — "Written by … It can
+rephrase them; it cannot add to them" — at 3.1:1. The disclosure that exists
+because non-negotiable 5 says the AI explains and never decides was the least
+readable text on the page. A label saying so in grey-on-grey is not the
+disclosure it appears to be.
+
+**Consequences.**
+
+The audit is `tests/e2e/10-accessibility.spec.ts`, not a report. A report is a
+snapshot of a branch; a spec makes a regression a failing test. Axe's
+`best-practice` rules are excluded: they are advice, some of it contested, and a
+failing test that reports advice gets suppressed and takes the real failures
+with it.
+
+The `jade-700/70` finding was invisible from a clean seed — it needs a guest to
+have generated an itinerary first — and was caught only because the spec runs
+after the rest of the suite has used the app. Ordering the accessibility spec
+last is load-bearing, not tidiness.
+
+Nine passing surfaces means "no machine-detectable failures", not "accessible".
+Axe finds perhaps a third of what a real audit finds; `docs/accessibility.md`
+lists what still needs a person, including a screen reader in both languages and
+the conditions card in particular, which is the surface where a
+misunderstanding has physical consequences.

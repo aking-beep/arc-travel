@@ -46,7 +46,7 @@ export default async function BriefingPage() {
               {paragraph}
             </p>
           ))}
-          <p className="text-jade-700/70 mt-2 text-xs">
+          <p className="text-jade-700 mt-2 text-xs">
             Prose only. Every figure below was counted from the database before this was written.
           </p>
         </div>
