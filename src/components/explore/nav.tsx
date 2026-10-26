@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { BedDouble, Compass, Heart, Home, Menu, Sparkles, X } from 'lucide-react'
 import { cn } from '@/lib/cn'
@@ -108,7 +108,16 @@ export function ExploreNav({
 }) {
   const t = createTranslator(locale)
   const pathname = usePathname()
+  const search = useSearchParams().toString()
   const { count, ready } = useSaved()
+  /*
+   * Where to come back to. `usePathname` drops the query string, and the
+   * views most worth returning to are the ones that have one —
+   * `/stays?destination=`, `/search?q=`. Both the locale forms and the
+   * sign-in link post it as `next`, and both are read back through
+   * `safeNext`, which keeps the params and refuses an absolute URL.
+   */
+  const here = search ? `${pathname}?${search}` : pathname
   const [scrolled, setScrolled] = useState(false)
   // The drawer remembers which path it was opened on rather than carrying a
   // boolean an effect has to clear: a navigation changes `pathname`, so the
@@ -184,7 +193,7 @@ export function ExploreNav({
         </nav>
 
         <div className="flex items-center gap-2 md:gap-3">
-          <LocaleToggle locale={locale} next={pathname} transparent={transparent} />
+          <LocaleToggle locale={locale} next={here} transparent={transparent} />
           <Link
             href="/trips"
             className={cn(
@@ -266,7 +275,7 @@ export function ExploreNav({
               </>
             ) : (
               <Link
-                href={`/sign-in?next=${encodeURIComponent(pathname)}`}
+                href={`/sign-in?next=${encodeURIComponent(here)}`}
                 className="border-line block border-b py-4 text-2xl"
               >
                 {t('common.signIn')}
@@ -275,7 +284,7 @@ export function ExploreNav({
           </div>
 
           <div className="pt-6">
-            <LocaleToggle locale={locale} next={pathname} transparent={false} inDrawer />
+            <LocaleToggle locale={locale} next={here} transparent={false} inDrawer />
           </div>
         </nav>
       ) : null}
