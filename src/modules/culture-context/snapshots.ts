@@ -1,5 +1,5 @@
 import { prisma, type Prisma } from '@/lib/db'
-import { isSerializationFailure } from '@/lib/serialization'
+import { isRetriableTransactionError } from '@/lib/serialization'
 import { conflict, invalid, notFound } from '@/lib/errors'
 import { SourceClass, VerificationStatus } from '@/lib/prisma-types'
 import { getIntegrations } from '@/modules/integrations/defaults'
@@ -202,7 +202,7 @@ export async function checkTravelAdviceSource(options: {
       { isolationLevel: 'Serializable', timeout: 15_000 },
     )
   } catch (error) {
-    if (isSerializationFailure(error)) {
+    if (isRetriableTransactionError(error)) {
       throw conflict('Another check of this source is running. Try again in a moment.')
     }
     throw error

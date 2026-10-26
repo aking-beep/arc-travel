@@ -103,7 +103,7 @@ export async function dispatchQueued(options?: { ids?: string[]; limit?: number 
   const env = getEnv()
   const mailer = getMailer()
 
-  const claimed = await prisma.emailMessage.findMany({
+  const candidates = await prisma.emailMessage.findMany({
     where: {
       status: EmailStatus.QUEUED,
       attempts: { lt: MAX_ATTEMPTS },
@@ -123,7 +123,7 @@ export async function dispatchQueued(options?: { ids?: string[]; limit?: number 
 
   const outcome = { sent: 0, logged: 0, failed: 0, deferred: 0 }
 
-  for (const message of claimed) {
+  for (const message of candidates) {
     /*
      * The switch is read per message, not per run.
      *
@@ -136,6 +136,27 @@ export async function dispatchQueued(options?: { ids?: string[]; limit?: number 
       outcome.deferred += 1
       continue
     }
+
+    /*
+     * Claim the row before sending it, or let the other worker have it.
+     *
+     * The query above is a read, and two workers do run at once: every caller
+     * dispatches straight after its own commit while `/api/cron/dispatch-email`
+     * runs on a schedule, and a send can take seconds. Both read the same
+     * QUEUED row and both deliver it, so a guest gets two confirmations — or
+     * two copies of a portal link, which is a bearer credential (ADR-035).
+     *
+     * The claim is the attempt counter doing double duty: `attempts` is part
+     * of the predicate, so exactly one worker's update matches and the other
+     * sees no rows and moves on. It needs no new status and no migration. A
+     * worker that dies mid-send leaves the row QUEUED with the attempt spent,
+     * which is what an attempt is for.
+     */
+    const taken = await prisma.emailMessage.updateMany({
+      where: { id: message.id, status: EmailStatus.QUEUED, attempts: message.attempts },
+      data: { attempts: message.attempts + 1 },
+    })
+    if (taken.count !== 1) continue
 
     const result = await mailer.send({
       to: { address: message.toAddress, name: message.toName },
@@ -255,6 +276,17 @@ export const canSendEmail = (): boolean => {
  * records everything and delivers nothing.
  */
 export const canComposeEmail = (): boolean => Boolean(getEnv().ARC_PUBLIC_URL)
+
+/**
+ * Whether a message queued now will actually reach somebody.
+ *
+ * Stricter than both of the above, and the only honest basis for telling a
+ * person to check their inbox. `canComposeEmail` is true as soon as
+ * `ARC_PUBLIC_URL` is set, which the docs recommend doing while delivery is
+ * still off — so the password-reset page, which asked that question, promised
+ * a link that `dispatchQueued` was deferring or recording as `LOGGED`.
+ */
+export const canDeliverEmail = (): boolean => canSendEmail() && getMailer().canDeliver
 
 export interface EmailLogRow {
   id: string

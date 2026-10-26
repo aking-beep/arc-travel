@@ -293,6 +293,18 @@ describe('a partner drafting their own listing', () => {
   })
 })
 
+/**
+ * The same listing without its price.
+ *
+ * An update carries no price: a price is a `Price` row and `setOwnPrice` is
+ * the only thing that writes one. The schema is `.strict()`, so sending one
+ * here is refused rather than quietly dropped — which is what it used to be.
+ */
+function updateInput(t: { propertyId: string; activityId: string }) {
+  const { priceMinor: _priceMinor, ...rest } = experienceInput(t)
+  return rest
+}
+
 describe('a partner editing a listing', () => {
   it('saves a draft', async () => {
     const t = await createTenant()
@@ -300,7 +312,7 @@ describe('a partner editing a listing', () => {
     const created = await createOwnExperience(actor, t.supplierId, experienceInput(t))
 
     await updateOwnExperience(actor, t.supplierId, created.id, {
-      ...experienceInput(t),
+      ...updateInput(t),
       titleEn: 'Dawn patrol, two hours',
     })
 
@@ -318,7 +330,7 @@ describe('a partner editing a listing', () => {
     })
 
     await expectCode(
-      updateOwnExperience(actor, t.supplierId, created.id, experienceInput(t)),
+      updateOwnExperience(actor, t.supplierId, created.id, updateInput(t)),
       'CONFLICT',
     )
   })
@@ -332,7 +344,7 @@ describe('a partner editing a listing', () => {
         await actorFor(b.supplierUserId),
         b.supplierId,
         a.experienceId,
-        experienceInput(b),
+        updateInput(b),
       ),
       'NOT_FOUND',
     )

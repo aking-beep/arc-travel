@@ -373,7 +373,15 @@ describe('asking for a password reset', () => {
     const userId = await accountWithPassword('owner@example.com')
 
     const outcome = await requestPasswordReset({ email: 'owner@example.com' })
-    expect(outcome).toMatchObject({ accepted: true, deliveryConfigured: true })
+
+    /*
+     * Recorded, and honest about not being delivered.
+     *
+     * `MAIL_PROVIDER=log` builds the link and writes the message; it sends
+     * nothing. `willDeliver` is what the page reads, so the person is told
+     * this deployment cannot send rather than to check an inbox.
+     */
+    expect(outcome).toMatchObject({ accepted: true, deliveryConfigured: true, willDeliver: false })
 
     const [message] = await prisma.emailMessage.findMany({ where: { kind: EmailKind.PASSWORD_RESET } })
     expect(message?.toAddress).toBe('owner@example.com')
@@ -402,7 +410,7 @@ describe('asking for a password reset', () => {
      * list of boutique hotels and their partners, so "is this hotel on ARC" is
      * commercially interesting information to hand to whoever asks a form.
      */
-    expect(outcome).toMatchObject({ accepted: true, deliveryConfigured: true })
+    expect(outcome).toMatchObject({ accepted: true, deliveryConfigured: true, willDeliver: false })
     expect(await prisma.emailMessage.count()).toBe(0)
     expect(await prisma.passwordResetToken.count()).toBe(0)
   })
@@ -474,7 +482,7 @@ describe('asking for a password reset', () => {
     const outcome = await requestPasswordReset({ email: 'owner@example.com' })
     // Said out loud, because silently dropping it leaves somebody waiting for
     // a link that is never coming.
-    expect(outcome).toMatchObject({ accepted: true, deliveryConfigured: false })
+    expect(outcome).toMatchObject({ accepted: true, deliveryConfigured: false, willDeliver: false })
     expect(await prisma.passwordResetToken.count()).toBe(0)
   })
 })

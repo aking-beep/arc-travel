@@ -346,24 +346,32 @@ export function ExperienceForm({
           </label>
         </div>
 
-        <Field
-          label="Price per person (pesos)"
-          htmlFor="price"
-          hint={
-            mode === 'create'
-              ? 'What you charge. ARC and the hotel take their share out of this, and your earnings page shows what reaches you.'
-              : 'Changing the price here is the same as the price form below.'
-          }
-          error={errors.price ?? errors.priceMinor}
-        >
-          <Input
-            id="price"
-            name="price"
-            inputMode="decimal"
-            required
-            defaultValue={defaults.price}
-          />
-        </Field>
+        {/*
+          * Price is asked for once, and only when there is no price yet.
+          *
+          * On edit this field used to appear with a hint saying it was the
+          * same as the price form below. It was not: `updateOwnExperience`
+          * never wrote it, so a partner who changed the price here was told
+          * the listing was saved while the live price row stayed as it was.
+          * The price form is the one that works, in every state including
+          * published, so on edit this is its job alone.
+          */}
+        {mode === 'create' ? (
+          <Field
+            label="Price per person (pesos)"
+            htmlFor="price"
+            hint="What you charge. ARC and the hotel take their share out of this, and your earnings page shows what reaches you."
+            error={errors.price ?? errors.priceMinor}
+          >
+            <Input
+              id="price"
+              name="price"
+              inputMode="decimal"
+              required
+              defaultValue={defaults.price}
+            />
+          </Field>
+        ) : null}
       </fieldset>
 
       {disabled ? null : (

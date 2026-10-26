@@ -87,8 +87,8 @@ export async function reissueTokenAction(_prev: FormState, formData: FormData): 
  * it in, and an address a front desk mistyped would send it to a stranger.
  *
  * So it is an owner looking at a stay and choosing to send it. The service
- * records who pressed it, and `assertPropertyAccess` inside the service's
- * `where` clause is what stops a button press reaching another hotel's guest.
+ * records who pressed it, and the property in the service's `where` clause is
+ * what stops a button press reaching another property's guest.
  */
 export async function sendPortalLinkAction(
   _prev: FormState,
@@ -98,11 +98,12 @@ export async function sendPortalLinkAction(
 
   try {
     const stayId = String(formData.get('stayId') ?? '')
-    const { organizationId } = await resolveOperatingProperty(actor)
+    const { organizationId, propertyId } = await resolveOperatingProperty(actor)
 
     const outcome = await sendGuestPortalLink({
       stayId,
       organizationId,
+      propertyId,
       byUserId: actor.userId,
     })
     revalidatePath('/owner/guests')

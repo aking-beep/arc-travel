@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isSerializationFailure } from '@/lib/serialization'
+import { isRetriableTransactionError } from '@/lib/serialization'
 
 /*
  * The predicate every Serializable retry loop hinges on.
@@ -11,13 +11,13 @@ import { isSerializationFailure } from '@/lib/serialization'
  * failed with nobody added, which reads as a deadlock and is really a missed
  * retry. One shape per test, so a regression says which shape came back.
  */
-describe('isSerializationFailure', () => {
+describe('isRetriableTransactionError', () => {
   it("recognises Prisma's own P2034", () => {
-    expect(isSerializationFailure({ code: 'P2034' })).toBe(true)
+    expect(isRetriableTransactionError({ code: 'P2034' })).toBe(true)
   })
 
   it('recognises the raw SQLSTATE', () => {
-    expect(isSerializationFailure({ code: '40001' })).toBe(true)
+    expect(isRetriableTransactionError({ code: '40001' })).toBe(true)
   })
 
   it('recognises the driver-adapter error that has no code at all', () => {
@@ -30,37 +30,38 @@ describe('isSerializationFailure', () => {
     })
 
     expect((error as { code?: string }).code).toBeUndefined()
-    expect(isSerializationFailure(error)).toBe(true)
+    expect(isRetriableTransactionError(error)).toBe(true)
   })
 
   it('recognises the adapter kind on its own', () => {
-    expect(isSerializationFailure({ kind: 'TransactionWriteConflict' })).toBe(true)
+    expect(isRetriableTransactionError({ kind: 'TransactionWriteConflict' })).toBe(true)
   })
 
   it('walks a nested cause chain', () => {
     const error = { cause: { cause: { cause: { code: 'P2034' } } } }
 
-    expect(isSerializationFailure(error)).toBe(true)
+    expect(isRetriableTransactionError(error)).toBe(true)
   })
 
   it('stops walking rather than following a cycle forever', () => {
     const error: { cause?: unknown } = {}
     error.cause = error
 
-    expect(isSerializationFailure(error)).toBe(false)
+    expect(isRetriableTransactionError(error)).toBe(false)
   })
 
   it('does not claim a unique-constraint violation', () => {
-    expect(isSerializationFailure({ code: 'P2002' })).toBe(false)
+    expect(isRetriableTransactionError({ code: 'P2002' })).toBe(false)
   })
 
-  it('does not claim a deadlock, which is not a serialization failure', () => {
-    expect(isSerializationFailure({ code: '40P01' })).toBe(false)
+  it('recognises a deadlock, whose victim is aborted whole and may be re-run', () => {
+    expect(isRetriableTransactionError({ code: '40P01' })).toBe(true)
+    expect(isRetriableTransactionError({ originalCode: '40P01' })).toBe(true)
   })
 
   it('tolerates a thrown non-object', () => {
-    expect(isSerializationFailure('P2034')).toBe(false)
-    expect(isSerializationFailure(null)).toBe(false)
-    expect(isSerializationFailure(undefined)).toBe(false)
+    expect(isRetriableTransactionError('P2034')).toBe(false)
+    expect(isRetriableTransactionError(null)).toBe(false)
+    expect(isRetriableTransactionError(undefined)).toBe(false)
   })
 })

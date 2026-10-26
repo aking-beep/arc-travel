@@ -7,6 +7,7 @@ import { assertWithinRateLimit, rateLimitSubject } from '@/lib/rate-limit'
 import { EmailKind } from '@/lib/prisma-types'
 import {
   canComposeEmail,
+  canDeliverEmail,
   publicUrl,
   queueAndDispatch,
 } from '@/modules/notifications/service'
@@ -61,6 +62,8 @@ export interface ResetRequestOutcome {
    * email" or "this deployment does not send mail; ask an administrator".
    */
   deliveryConfigured: boolean
+  /** Whether the recipient will actually receive it, not merely that it was recorded. */
+  willDeliver: boolean
 }
 
 /**
@@ -97,7 +100,21 @@ export async function requestPasswordReset(
     now,
   })
 
+  /*
+   * Two different questions, and the page used to be answered with the wrong
+   * one.
+   *
+   * `deliveryConfigured` is whether a link can be built and recorded at all,
+   * which is what decides whether minting a token is worth anything — with
+   * `MAIL_PROVIDER=log` it is, because the recorded message is how a
+   * deployment reads its own mail before a person does. `willDeliver` is
+   * whether this person will actually receive it. Telling them "we have sent
+   * you a link" on the strength of the first meant promising mail on a
+   * deployment whose delivery was off, and a password reset carries no
+   * `organizationId`, so it does not even surface on `/owner/messages`.
+   */
   const deliveryConfigured = canComposeEmail()
+  const willDeliver = canDeliverEmail()
 
   const user = await prisma.user.findUnique({
     where: { email: input.email },
@@ -115,7 +132,7 @@ export async function requestPasswordReset(
    * people have a route in already, and it is not this one.
    */
   if (!user || !user.passwordHash || !deliveryConfigured) {
-    return { accepted: true, deliveryConfigured }
+    return { accepted: true, deliveryConfigured, willDeliver }
   }
 
   const token = randomBytes(32).toString('base64url')
@@ -157,7 +174,7 @@ export async function requestPasswordReset(
     causedByUserId: null,
   })
 
-  return { accepted: true, deliveryConfigured }
+  return { accepted: true, deliveryConfigured, willDeliver }
 }
 
 export interface ResetTokenView {
@@ -248,9 +265,9 @@ export async function completePasswordReset(
 }
 
 /** Copy for the page, so both locales say the same careful thing. */
-export function resetRequestedMessage(locale: AppLocale, deliveryConfigured: boolean): string {
+export function resetRequestedMessage(locale: AppLocale, willDeliver: boolean): string {
   const t = createTranslator(locale)
-  return deliveryConfigured ? t('auth.reset.sent') : t('auth.reset.notConfigured')
+  return willDeliver ? t('auth.reset.sent') : t('auth.reset.notConfigured')
 }
 
 /** Normalises an `Accept-Language` header for a page with no session yet. */

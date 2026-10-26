@@ -81,7 +81,14 @@ export type VerificationEvidenceInput = z.infer<typeof verificationEvidenceSchem
  * one hotel and an experience sells through exactly one storefront. The service
  * checks the agreement exists.
  */
-export const partnerExperienceSchema = z
+/*
+ * The listing's fields, before the cross-field rules.
+ *
+ * Split out so the update schema can drop `priceMinor` and still carry the
+ * same two refinements — `.omit()` refuses to work on a refined schema, and a
+ * second hand-written copy of the fields would drift from this one.
+ */
+const partnerExperienceFields = z
   .object({
     propertyId: z.string().uuid('Choose which hotel this is for.'),
     activityId: z.string().uuid('Choose an activity type.'),
@@ -107,14 +114,39 @@ export const partnerExperienceSchema = z
     priceMinor: z.coerce.number().int().min(0).max(100_000_000),
   })
   .strict()
-  .refine((v) => v.minParty <= v.maxParty, {
-    message: 'The minimum party size cannot exceed the maximum.',
-    path: ['minParty'],
-  })
-  .refine((v) => v.defaultCapacity >= v.minParty, {
-    message: 'Capacity must be at least the minimum party size.',
-    path: ['defaultCapacity'],
-  })
+
+interface PartySizeFields {
+  minParty: number
+  maxParty: number
+  defaultCapacity: number
+}
+
+/** The cross-field rules, applied to whichever set of fields is being parsed. */
+function withPartySizeRules<T extends z.ZodType<PartySizeFields>>(schema: T) {
+  return schema
+    .refine((v) => v.minParty <= v.maxParty, {
+      message: 'The minimum party size cannot exceed the maximum.',
+      path: ['minParty'],
+    })
+    .refine((v) => v.defaultCapacity >= v.minParty, {
+      message: 'Capacity must be at least the minimum party size.',
+      path: ['defaultCapacity'],
+    })
+}
+
+export const partnerExperienceSchema = withPartySizeRules(partnerExperienceFields)
+
+/**
+ * The same listing, without a price.
+ *
+ * A price is a new `Price` row, never a column on the experience, so an update
+ * has no business carrying one — and when it did, the service dropped it
+ * silently and the partner was told their change had been saved. `setOwnPrice`
+ * is the only path that moves a price.
+ */
+export const partnerExperienceUpdateSchema = withPartySizeRules(
+  partnerExperienceFields.omit({ priceMinor: true }),
+)
 
 export type PartnerExperienceInput = z.infer<typeof partnerExperienceSchema>
 

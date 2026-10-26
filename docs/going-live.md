@@ -167,6 +167,24 @@ the demo tests the demo's deliberately open front door and tells you nothing.
 
 Honest list, so none of it is a surprise:
 
+- **Inventory holds lose races under real contention.** Every mutation in
+  `src/modules/inventory/service.ts` reads a departure's counters and then
+  increments them, inside a Serializable transaction. That is the pattern
+  Postgres is strictest about: when several guests commit to the same departure
+  within the same moment, it cancels all but one and the rest are refused —
+  correctly, but they are refused with places still free. Measured: six
+  simultaneous guests, a departure with six seats, none sold. Nothing oversells
+  and no figure is wrong; people are simply told to try again.
+
+  It does not bite a boutique hotel's traffic, where two people booking the same
+  boat in the same millisecond is rare. It will bite a popular departure the
+  moment one is promoted. The fix is to stop reading what you increment — a
+  conditional `UPDATE … WHERE booked + held + n <= capacity`, which cannot race
+  because the condition is evaluated on the row itself — and it is a change to
+  the most load-bearing file in the project, so `CLAUDE.md` asks for an
+  independent review before it lands. Do it before the first promotion, not
+  before the first guest.
+
 - **A real identity provider.** `/sign-in` is a password form with per-account
   and per-caller rate limiting. It has no second factor, no SSO and no device
   management. Fine for a first hotel; not fine at ten.

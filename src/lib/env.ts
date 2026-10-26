@@ -269,13 +269,32 @@ export const LOCAL_SEED_TOKEN_SECRET = 'arc-stay-local-demo-tokens-not-for-any-d
 const DEV_AUTH_SECRET = 'arc-stay-development-only-secret-do-not-use-in-production'
 const DEV_ANALYTICS_SALT = 'arc-stay-development-only-analytics-salt-not-for-production'
 
+/**
+ * A blank value means unset.
+ *
+ * `.env.example` documents the optional variables as `NAME=""`, which is the
+ * normal way to show one exists without giving it a value — and dotenv then
+ * supplies an empty string, which is *present*. `ARC_PUBLIC_URL=""` therefore
+ * failed `z.string().url()` and a copied example file refused to boot, with
+ * the fix being to delete the line the file had just recommended. Strip the
+ * blanks before parsing instead, so the documented way of writing "not set"
+ * and the schema's idea of it are the same thing.
+ */
+function withoutBlanks(source: NodeJS.ProcessEnv): Record<string, string> {
+  const kept: Record<string, string> = {}
+  for (const [key, value] of Object.entries(source)) {
+    if (value !== undefined && value.trim() !== '') kept[key] = value
+  }
+  return kept
+}
+
 export function getEnv(): Env {
   if (cached) return cached
 
   applyDatabaseUrl()
   assertProvidersAreImplemented(process.env)
 
-  const parsed = envSchema.safeParse(process.env)
+  const parsed = envSchema.safeParse(withoutBlanks(process.env))
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n')
     throw new Error(`Invalid environment configuration:\n${issues}`)

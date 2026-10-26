@@ -24,6 +24,7 @@ import {
   joinDecisionSchema,
   joinRequestSchema,
   partnerExperienceSchema,
+  partnerExperienceUpdateSchema,
   partnerPriceSchema,
   supplierProfileSchema,
   verificationEvidenceSchema,
@@ -458,7 +459,7 @@ export async function updateOwnExperience(
   raw: unknown,
 ): Promise<{ adjustments: string[] }> {
   const { organizationId } = await assertActingAsSupplier(actor, supplierId)
-  const input = partnerExperienceSchema.parse(raw)
+  const input = partnerExperienceUpdateSchema.parse(raw)
 
   // Ownership in the `where` clause, not a check afterwards.
   const existing = await prisma.experience.findFirst({
@@ -1099,8 +1100,14 @@ export async function acceptJoinRequest(
       })
     }
 
-    // Single-decision, enforced by the `where` clause rather than by the read
-    // above: two owners pressing Accept must not create two suppliers.
+    /*
+     * Single-decision, enforced by the `where` clause rather than by the read
+     * at the top: a request is decided once, by one named owner.
+     *
+     * What stops a *second supplier* is not this clause — `invitePartner`
+     * commits before it — it is ADR-021's refusal of an email that already has
+     * an account. This clause is what stops a second decision record.
+     */
     const claimed = await tx.supplierJoinRequest.updateMany({
       where: { id: request.id, status: 'PENDING' },
       data: {

@@ -2,7 +2,7 @@ import { prisma } from '@/lib/db'
 import { conflict, invalid, notFound } from '@/lib/errors'
 import { fromDateKey, toDateKey, type DateKey } from '@/lib/dates'
 import { portalToken, stayReference } from '@/lib/ids'
-import { Role, StayStatus } from '@/lib/prisma-types'
+import { Role, StayKind, StayStatus } from '@/lib/prisma-types'
 import { assertPropertyAccess, type ActorContext } from '@/modules/tenancy/context'
 import { recordAudit } from '@/modules/workflows/audit'
 import { PORTAL_GRACE_DAYS } from '@/modules/guest/portal'
@@ -224,13 +224,20 @@ export async function reissuePortalToken(
   return { portalToken: token, reference: stay.reference }
 }
 
+/** The statuses that mean a room. A direct trip (ADR-042) has none of them. */
+const ROOM_STATUSES: StayStatus[] = [
+  StayStatus.IN_HOUSE,
+  StayStatus.CHECKED_OUT,
+  StayStatus.NO_SHOW,
+]
+
 /** Moves a stay through its lifecycle: booked → in house → checked out. */
 export async function setStayStatus(actor: ActorContext, raw: unknown): Promise<void> {
   const input = stayStatusSchema.parse(raw)
 
   const stay = await prisma.stay.findUnique({
     where: { id: input.stayId },
-    select: { id: true, propertyId: true, status: true, reference: true },
+    select: { id: true, propertyId: true, status: true, reference: true, kind: true },
   })
   if (!stay) throw notFound('Stay')
 
@@ -241,6 +248,20 @@ export async function setStayStatus(actor: ActorContext, raw: unknown): Promise<
     Role.STAFF,
     Role.ADMIN,
   )
+
+  /*
+   * A direct trip has no room, so it has no room lifecycle (ADR-042).
+   *
+   * `/owner/guests` already hides the control, which is not the same as the
+   * service refusing it: this takes a `stayId` from the client, and "checked
+   * in" on a trip that booked no room is exactly the reading ADR-042 exists to
+   * prevent. Cancelling stays available — a trip can be called off.
+   */
+  if (stay.kind === StayKind.DIRECT && ROOM_STATUSES.includes(input.status)) {
+    throw invalid(
+      'That is a direct booking with no room, so it has no check-in. It can be cancelled instead.',
+    )
+  }
 
   /*
    * Which transitions are allowed, stated rather than implied.

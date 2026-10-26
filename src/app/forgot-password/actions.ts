@@ -42,7 +42,7 @@ export async function requestResetAction(
      */
     return {
       ok: true,
-      message: outcome.deliveryConfigured ? t('auth.reset.sent') : t('auth.reset.notConfigured'),
+      message: outcome.willDeliver ? t('auth.reset.sent') : t('auth.reset.notConfigured'),
     }
   } catch (error) {
     /*

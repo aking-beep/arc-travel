@@ -209,13 +209,25 @@ export async function sendOrderCancelled(input: {
 export async function sendGuestPortalLink(input: {
   stayId: string
   organizationId: string
+  propertyId: string
   byUserId: string
 }): Promise<SendOutcome> {
   if (!canComposeEmail()) return 'unconfigured'
 
   const stay = await prisma.stay.findFirst({
-    // The tenancy predicate is in the `where` clause, not a check afterwards.
-    where: { id: input.stayId, organizationId: input.organizationId },
+    /*
+     * The tenancy predicate is in the `where` clause, not a check afterwards —
+     * and it names the *property*, not only the organization. It used to name
+     * only the organization while the comment above it claimed property access
+     * was what stopped a press reaching another hotel's guest. In an
+     * organization with two properties it did not: a stay id from the sibling
+     * property matched, and what this sender mails is a bearer credential.
+     */
+    where: {
+      id: input.stayId,
+      organizationId: input.organizationId,
+      propertyId: input.propertyId,
+    },
     select: {
       id: true,
       reference: true,
