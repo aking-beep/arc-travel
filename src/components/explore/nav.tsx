@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { BedDouble, Compass, Heart, Home, Menu, Sparkles, X } from 'lucide-react'
 import { cn } from '@/lib/cn'
-import { setLocaleAction } from '@/app/actions'
+import { setLocaleAction, signOutAction } from '@/app/actions'
 import { createTranslator, type AppLocale, type MessageKey } from '@/lib/i18n'
 import { useSaved } from './saved-store'
 
@@ -15,7 +15,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { href: '/destinations', key: 'explore.nav.home' },
+  { href: '/destinations', key: 'explore.nav.destinations' },
   { href: '/stays', key: 'explore.nav.stay' },
   { href: '/experiences', key: 'explore.nav.experiences' },
   { href: '/plan', key: 'explore.nav.plan' },
@@ -93,7 +93,19 @@ function LocaleToggle({
  * `useLocation`, and the saved count from the store rather than a prop, so the
  * badge updates the moment something is saved.
  */
-export function ExploreNav({ locale }: { locale: AppLocale }) {
+export function ExploreNav({
+  locale,
+  signedIn,
+}: {
+  locale: AppLocale
+  /**
+   * Resolved in the layout, not here: this is a client component and the
+   * session cookie is HttpOnly, so whether anyone is signed in is something
+   * only the server can answer. Passed as a prop rather than read during
+   * render.
+   */
+  signedIn: boolean
+}) {
   const t = createTranslator(locale)
   const pathname = usePathname()
   const { count, ready } = useSaved()
@@ -200,7 +212,7 @@ export function ExploreNav({ locale }: { locale: AppLocale }) {
           <button
             type="button"
             onClick={() => setOpenPath(open ? null : pathname)}
-            className="flex size-11 items-center justify-center rounded-full lg:hidden"
+            className="flex size-11 items-center justify-center rounded-full"
             aria-label={open ? t('explore.nav.closeMenu') : t('explore.nav.menu')}
             aria-expanded={open}
           >
@@ -210,9 +222,13 @@ export function ExploreNav({ locale }: { locale: AppLocale }) {
       </div>
 
       {open ? (
-        <nav className="bg-ivory text-ink border-line border-t px-5 pb-6 lg:hidden">
-          {[{ href: '/', key: 'explore.nav.home' as MessageKey }, ...NAV_ITEMS, { href: '/trips', key: 'explore.nav.saved' as MessageKey }].map(
-            (item) => (
+        <nav className="bg-ivory text-ink border-line border-t px-5 pb-6">
+          <div className="lg:hidden">
+            {[
+              { href: '/', key: 'explore.nav.home' as MessageKey },
+              ...NAV_ITEMS,
+              { href: '/trips', key: 'explore.nav.saved' as MessageKey },
+            ].map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
@@ -220,8 +236,44 @@ export function ExploreNav({ locale }: { locale: AppLocale }) {
               >
                 {t(item.key)}
               </Link>
-            ),
-          )}
+            ))}
+          </div>
+
+          {/*
+           * Account. The public surface had no way in or out of a session at
+           * all: `/me` and `/sign-in` existed and nothing linked to them.
+           *
+           * Signed out, the link carries the current path so sign-in returns
+           * the reader to where they were. Signed in, sign-out is a form
+           * posting to the server action, not a link — it mutates a session,
+           * and a GET that signs somebody out can be fired by anything that
+           * can make the browser follow a URL.
+           */}
+          <div className="pt-6">
+            {signedIn ? (
+              <>
+                <Link
+                  href="/me"
+                  className="border-line block border-b py-4 text-2xl"
+                >
+                  {t('account.title')}
+                </Link>
+                <form action={signOutAction}>
+                  <button type="submit" className="border-line block w-full border-b py-4 text-left text-2xl">
+                    {t('common.signOut')}
+                  </button>
+                </form>
+              </>
+            ) : (
+              <Link
+                href={`/sign-in?next=${encodeURIComponent(pathname)}`}
+                className="border-line block border-b py-4 text-2xl"
+              >
+                {t('common.signIn')}
+              </Link>
+            )}
+          </div>
+
           <div className="pt-6">
             <LocaleToggle locale={locale} next={pathname} transparent={false} inDrawer />
           </div>
@@ -233,7 +285,7 @@ export function ExploreNav({ locale }: { locale: AppLocale }) {
 
 const BOTTOM_ITEMS = [
   { href: '/', key: 'explore.nav.home' as MessageKey, icon: Home, exact: true },
-  { href: '/destinations', key: 'explore.nav.guide' as MessageKey, icon: Compass },
+  { href: '/destinations', key: 'explore.nav.destinations' as MessageKey, icon: Compass },
   { href: '/plan', key: 'explore.nav.plan' as MessageKey, icon: Sparkles },
   { href: '/stays', key: 'explore.nav.stay' as MessageKey, icon: BedDouble },
   { href: '/trips', key: 'explore.nav.saved' as MessageKey, icon: Heart },

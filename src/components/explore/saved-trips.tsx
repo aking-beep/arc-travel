@@ -83,7 +83,7 @@ export function SavedTrips({
               href="/destinations"
               className="bg-ink text-ivory inline-flex h-11 items-center rounded-full px-5 text-sm"
             >
-              {t('explore.nav.home')}
+              {t('explore.nav.destinations')}
             </Link>
           }
         />
