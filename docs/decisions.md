@@ -1417,17 +1417,16 @@ possibilities — no match, or already claimed — without saying which, because
 the person it most often reaches is somebody who signed up last week and
 forgot.
 
-*A passwordless user is nobody's account.* This is the part that nearly made
-the whole feature undemonstrable, and it is a real-deployment problem rather
-than a demo one. `createStay` creates a `User` for each guest so they have an
-identity to act under, and the seed does the same; neither sets a password.
-Reading `Guest.userId !== null` as "already claimed" would therefore have meant
-that **every guest the front desk had ever entered** — which is all of them —
-could never create an account, and the only guests who could were ones no hotel
-had recorded. So a credential-free `User` at the guest's own address is a
-placeholder, and claiming *takes it over*: the password is set on it by a
-conditional update on `passwordHash: null`, and the person keeps the identity
-their bookings already point at. That is exactly the handover
+*A passwordless user is almost nobody's account.* This is the part that nearly
+made the whole feature undemonstrable, and it is a real-deployment problem
+rather than a demo one. The seed creates a `User` for each seeded guest so they
+have an identity to act under, and sets no password on it. Reading
+`Guest.userId !== null` as "already claimed" would therefore have meant that
+every guest in the demo could never create an account, and the only guests who
+could were ones no hotel had recorded. So a credential-free `User` at the
+guest's own address is a placeholder, and claiming *takes it over*: the password
+is set on it by a conditional update on `passwordHash: null`, and the person
+keeps the identity their bookings already point at. That is exactly the handover
 `acceptInvitationFor` performs for an invited partner, and ADR-021's rule about
 never rewriting a stranger's profile holds because the claim has already proved
 the booking and the addresses have to match. A placeholder pointing at a
@@ -1435,6 +1434,22 @@ the booking and the addresses have to match. A placeholder pointing at a
 place that judgement lives — `resolvePortalContext.hasAccount` asks it from the
 other side, so the portal stops offering an account exactly when somebody holds
 one.
+
+*Amendment, same day: "almost".* `createStay` does **not** create a `User` — only
+the seed does — so in a real deployment `Guest.userId` is null and the claim
+reaches a passwordless row by *email* rather than through the guest record. That
+makes the by-email branch the normal path, not an edge case, and the first
+version of it asked only `passwordHash === null`. `invitePartner` creates
+precisely that shape: a passwordless contact carrying a `SUPPLIER` membership
+and an open invitation. A guest booking under a partner's address could
+therefore have absorbed the partner's account — setting a password on it,
+overwriting the profile, and signing in with the partner's access. So the
+question is not "has this row a password" but "is anybody else expected to set
+one": `isSpokenFor` refuses a row with a password, a membership in any role but
+`GUEST`, or an invitation. `GUEST` is excluded because a guest placeholder
+carries one already, and it confers nothing the claim is not itself
+establishing — which is why the predicate asks about the role rather than
+counting rows.
 
 *An index, not a second portal.* `/me` lists the person's stays and summarises
 each one — dates, the plan's size, what is booked, what is in the basket — and

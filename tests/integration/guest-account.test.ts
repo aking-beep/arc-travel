@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { isAppError, type AppError } from '@/lib/errors'
 import { stayReference } from '@/lib/ids'
 import { hashPassword, verifyPassword } from '@/lib/password'
-import { StayStatus } from '@/lib/prisma-types'
+import { InvitationKind, Role, StayStatus } from '@/lib/prisma-types'
 import { verifyCredentials } from '@/modules/auth/credentials'
 import {
   claimStayForAccount,
@@ -369,6 +369,77 @@ describe('registerGuestAccount', () => {
     )
     expect(error.code).toBe('CONFLICT')
     expect(await prisma.user.count({ where: { email: stay.email } })).toBe(1)
+  })
+
+  /**
+   * An invited partner's account is not a placeholder.
+   *
+   * `invitePartner` creates a passwordless `User` at the partner's address and
+   * attaches a `SUPPLIER` membership and an invitation to it, because ARC never
+   * invents a credential for somebody else. A guest who happens to book under
+   * that address must not absorb it: that would set a password on the
+   * partner's account, overwrite their profile and sign the guest in with the
+   * partner's access. `isSpokenFor` is what stops it, and these two tests pin
+   * each half of that predicate.
+   */
+  it('refuses to absorb a passwordless user that carries a membership', async () => {
+    const stay = await booking({ placeholder: false })
+    const partner = await prisma.user.create({
+      data: { email: stay.email, name: 'Surf Shop Contact' },
+      select: { id: true },
+    })
+    await prisma.membership.create({
+      data: {
+        organizationId: stay.organizationId,
+        userId: partner.id,
+        supplierId: stay.supplierId,
+        role: Role.SUPPLIER,
+      },
+    })
+
+    const error = await refusal(() =>
+      registerGuestAccount(signUp({ email: stay.email, reference: stay.reference })),
+    )
+    expect(error.code).toBe('CONFLICT')
+
+    // The partner's row is untouched: no password, no renamed profile, and no
+    // guest record pointing at it.
+    const after = await prisma.user.findUniqueOrThrow({
+      where: { id: partner.id },
+      select: { passwordHash: true, name: true, guests: { select: { id: true } } },
+    })
+    expect(after.passwordHash).toBeNull()
+    expect(after.name).toBe('Surf Shop Contact')
+    expect(after.guests).toHaveLength(0)
+  })
+
+  it('refuses to absorb a passwordless user that carries an open invitation', async () => {
+    const stay = await booking({ placeholder: false })
+    const invited = await prisma.user.create({
+      data: { email: stay.email, name: 'Invited Staff' },
+      select: { id: true },
+    })
+    await prisma.invitation.create({
+      data: {
+        userId: invited.id,
+        tokenHash: 'not-a-real-token-hash',
+        kind: InvitationKind.STAFF,
+        organizationId: stay.organizationId,
+        expiresAt: new Date(Date.now() + 86_400_000),
+      },
+    })
+
+    const error = await refusal(() =>
+      registerGuestAccount(signUp({ email: stay.email, reference: stay.reference })),
+    )
+    expect(error.code).toBe('CONFLICT')
+
+    const after = await prisma.user.findUniqueOrThrow({
+      where: { id: invited.id },
+      select: { passwordHash: true, name: true },
+    })
+    expect(after.passwordHash).toBeNull()
+    expect(after.name).toBe('Invited Staff')
   })
 })
 

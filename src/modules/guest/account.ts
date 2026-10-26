@@ -4,7 +4,7 @@ import { hashPassword } from '@/lib/password'
 import { assertWithinRateLimit, rateLimitSubject } from '@/lib/rate-limit'
 import { daysBetween, toDateKey, type DateKey } from '@/lib/dates'
 import { fromPrismaLocale, type AppLocale } from '@/lib/i18n'
-import { OrderStatus, StayStatus } from '@/lib/prisma-types'
+import { OrderStatus, Role, StayStatus } from '@/lib/prisma-types'
 import { recordAudit } from '@/modules/workflows/audit'
 import { PORTAL_GRACE_DAYS } from './portal'
 import { claimStaySchema, guestSignUpSchema, portalAccountSignUpSchema } from './schemas'
@@ -217,6 +217,47 @@ export interface GuestRegistrationResult {
 }
 
 /**
+ * The select a claim needs to judge whether a user row is a placeholder.
+ *
+ * Existence is not the question, and neither is `passwordHash` alone. A
+ * credential-free `User` that carries a privileged membership or an invitation
+ * is not nobody's account — it is an account ARC staged for a *named* person
+ * to take over by another route. `invitePartner` creates exactly that shape: a
+ * passwordless contact with a `SUPPLIER` membership and an open invitation.
+ * Absorbing one would hand a guest that partner's memberships, their portal
+ * and their profile, which is the cross-tenant write ADR-021 exists to forbid.
+ *
+ * `GUEST` is excluded deliberately, and is the whole reason this asks about the
+ * role rather than counting rows: a guest placeholder carries a `GUEST`
+ * membership already — the seed and the factory both give it one — so counting
+ * every membership would refuse exactly the handover this feature exists for.
+ * A `GUEST` membership confers nothing the claim is not itself establishing.
+ */
+const PLACEHOLDER_SELECT = {
+  id: true,
+  passwordHash: true,
+  memberships: { where: { role: { not: Role.GUEST } }, select: { id: true }, take: 1 },
+  invitations: { select: { id: true }, take: 1 },
+} as const
+
+interface PlaceholderCandidate {
+  passwordHash: string | null
+  /** Already filtered to the privileged roles by `PLACEHOLDER_SELECT`. */
+  memberships: { id: string }[]
+  invitations: { id: string }[]
+}
+
+/**
+ * Whether this user row belongs to somebody already.
+ *
+ * True means a claim must be refused rather than take the row over: either a
+ * password exists, or somebody else is expected to set one.
+ */
+function isSpokenFor(user: PlaceholderCandidate): boolean {
+  return user.passwordHash !== null || user.memberships.length > 0 || user.invitations.length > 0
+}
+
+/**
  * Creates or takes over the account for a proved claim, inside a transaction.
  *
  * Both sign-up paths end here, because the interesting part is the same for
@@ -230,7 +271,8 @@ export interface GuestRegistrationResult {
  *     earlier claim at another property repointed its guest record away from
  *     it. Nothing can sign into it and `User.email` is unique, so refusing
  *     here would mean refusing that address forever — there is no password
- *     reset to recover it with. Take it over on the same terms.
+ *     reset to recover it with. Take it over on the same terms, but only once
+ *     `isSpokenFor` says nobody else has a claim on it.
  *   * **No user.** Create one.
  *
  * Every write is conditional on what was read: `passwordHash: null` on the
@@ -251,24 +293,15 @@ async function establishAccount(
   // The placeholder this claim may take over, re-read inside the transaction.
   // Either the user the guest record points at, or — when it points at nobody
   // — an orphan at the same address.
-  const placeholder =
-    stay.guestUser ??
-    (await tx.user.findUnique({
-      where: { email: input.email },
-      select: { id: true, passwordHash: true },
-    }))
-
-  const hasPassword =
-    placeholder === null
-      ? false
-      : 'hasPassword' in placeholder
-        ? placeholder.hasPassword
-        : placeholder.passwordHash !== null
+  const placeholder = await tx.user.findUnique({
+    where: stay.guestUser ? { id: stay.guestUser.id } : { email: input.email },
+    select: PLACEHOLDER_SELECT,
+  })
 
   let userId: string
   let tookOver: boolean
 
-  if (placeholder && hasPassword) {
+  if (placeholder && isSpokenFor(placeholder)) {
     throw conflict('That email already has an ARC account. Sign in instead.')
   } else if (placeholder) {
     const taken = await tx.user.updateMany({
@@ -383,13 +416,14 @@ export async function registerGuestAccount(
   if (!stay.guestUser) {
     // Checked before the transaction for a readable message, and again inside
     // it, which is what actually makes it safe. A *passwordless* user at this
-    // address is not a reason to refuse — `establishAccount` takes it over —
-    // so only a real account stops the claim here.
+    // address is not on its own a reason to refuse — `establishAccount` takes
+    // a placeholder over — so only a row somebody has a claim on stops the
+    // claim here.
     const taken = await prisma.user.findUnique({
       where: { email: input.email },
-      select: { passwordHash: true },
+      select: PLACEHOLDER_SELECT,
     })
-    if (taken?.passwordHash) {
+    if (taken && isSpokenFor(taken)) {
       throw conflict(
         'That email already has an ARC account. Sign in instead, and add this booking from your account.',
       )
@@ -458,8 +492,8 @@ export async function registerGuestAccountFromPortal(
   }
 
   if (!stay.guestUser) {
-    const taken = await prisma.user.findUnique({ where: { email }, select: { passwordHash: true } })
-    if (taken?.passwordHash) {
+    const taken = await prisma.user.findUnique({ where: { email }, select: PLACEHOLDER_SELECT })
+    if (taken && isSpokenFor(taken)) {
       throw conflict(
         'That email already has an ARC account. Sign in, and add this booking from your account.',
       )
