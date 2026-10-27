@@ -18,6 +18,8 @@ npm test            # unit + integration (needs TEST_DATABASE_URL)
 npm run test:unit   # unit only, no database
 npm run test:e2e    # Playwright; reseeds the demo database first
 npm run db:seed     # reseed (truncates; deterministic and idempotent)
+npm run pressure-test # the six written persona journeys, as a readout
+npm run simulate    # the same six, improvising, against a demo URL (ADR-043)
 ```
 
 ## Non-negotiables
@@ -232,6 +234,12 @@ Two E2E habits, learned the hard way and recorded in the specs:
 | The revenue headline excludes direct bookings from the numerator as well as the denominator | ADR-042. Otherwise a good month of direct business reads as the hotel's own guests spending more — ADR-007's instinct applied to a new pair of numbers |
 | A direct booking still pays the hotel its commission | ADR-042. The listing, the price and the agreement are the hotel's, and the storefront is what the person chose. A different share is a commission rule, not a code change |
 | `/sign-up/direct` hands over to `establishAccount` rather than creating a user | ADR-042. That path already takes over a front desk's placeholder, refuses an address somebody holds, and handles both races |
+| An agent decides what a simulated person clicks, when non-negotiable 5 says the AI never decides | ADR-043. Non-negotiable 5 governs the *product's* AI, which still has no tools and no write path. The simulation's model decides what a simulated *person* does in a browser, from outside, through one authenticated route — it is a user, not a second path in |
+| The simulation runner is a process somebody starts, not a route or a cron job | ADR-043. It drives a real browser, which no serverless function hosts; and a simulation that could be started from inside the deployment would be a privileged path into it |
+| The spend meter is not a `<Money>` figure | ADR-043. `<Money>` is for the product's money, with an `earned` or `potential` intent. This is what a run cost, in US dollars, and dressing a cost as revenue is the confusion ADR-007 exists to prevent |
+| `/admin/simulation` polls instead of streaming | ADR-043. A held-open event stream dies at the platform's function-duration ceiling and reconnects on a timer, so the live panel blinks. A cursor and two seconds is the same latency without that |
+| Three separate things refuse a simulation against non-demo data | ADR-043. The runner's preflight, `SIMULATION_TOKEN` being refused outside `ARC_DATA_MODE=demo`, and `simulation_run_is_demo_only`. Each would be sufficient; none is trusted alone, because the personas invent guests and race for seats |
+| A simulated persona may propose a harness amendment but never a relaxation | ADR-043. The agent writing the proposal is also the thing the guardrail refused, and the cheapest way to stop failing a check is to propose that the check go away. The attempt is recorded as a `GUARD` event rather than dropped |
 
 ## Review
 
@@ -252,6 +260,9 @@ path-to-reviewer table.
 - `.claude/agents/` — the six reviewers, plus `release-captain` and three
   read-only operators (`ops-triage`, `conditions-steward`,
   `verification-diary`).
+- `scripts/simulation/` — the live simulation: six improvising personas and the
+  `/admin/simulation` dashboard they report into. `scripts/simulation/README.md`
+  is the short version; ADR-043 is why it is shaped that way.
 - `.claude/hooks/deny-dangerous.mjs` — the non-negotiables that cannot be taken
   back, as a refused tool call rather than prose somebody might not read:
   Prisma's destructive-action consent, a schema reset or push, SQL that writes a

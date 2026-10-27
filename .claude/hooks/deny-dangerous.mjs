@@ -63,6 +63,17 @@ const RULES = [
     why: 'Destructive SQL. If this is a local test database, say so to a person and let them run it.',
   },
   {
+    // ADR-043: the simulation invents guests, races for inventory and probes
+    // refusals. The runner asks the target what it is and refuses anything but
+    // a demo; this refuses the command before it gets that far.
+    pattern: /SIMULATION_BASE_URL\s*=\s*\S*(?<!demo)(arc-stay\.|arc-stay-live|\/\/stay\.)/i,
+    why: 'ADR-043: a simulation runs against the demo deployment only. The personas invent guests, race for seats and probe refusals, and the live hotel\'s data is not somewhere that may happen. Point SIMULATION_BASE_URL at the demo.',
+  },
+  {
+    pattern: /ARC_DATA_MODE\s*=\s*(pilot|live)[\s\S]{0,120}\b(simulate|simulation)\b|\b(simulate|simulation)\b[\s\S]{0,120}ARC_DATA_MODE\s*=\s*(pilot|live)/i,
+    why: 'ADR-043: `SIMULATION_TOKEN` is refused outside `ARC_DATA_MODE=demo`, and `simulation_run_is_demo_only` refuses the row. Running the simulation against anything but synthetic data is the one thing it must never do.',
+  },
+  {
     pattern: /gh\s+pr\s+(merge|review)|gh\s+api[\s\S]*\/(merge|reviews)\b/,
     why: 'No agent in this repository merges or approves a pull request. `settings.json` denies the MCP tools that would; this covers the command line.',
   },

@@ -1850,3 +1850,103 @@ two hotels has two guest records.
 
 **Bounded, because it is open.** Five sign-ups per caller per hour and sixty per
 property per hour. A sign-up writes rows into a real hotel's guest list.
+
+## ADR-043 — A live simulation is a user of the product, bounded by a budget and confined to the demo
+
+**Status:** accepted · 2026-10-27
+
+**Context.** The product has no real users yet, and the pressure-test harness
+(`scripts/pressure-test/`) answers a different question from the one an owner
+keeps asking: not "do the journeys we wrote still hold", but "what happens when
+somebody does something nobody wrote down". The ask was a dashboard that, while
+it is open, shows simulated people working through the product against
+synthetic data, with the harness's own checks and its proposed amendments
+visible as they happen.
+
+Three things had to be decided: where such a runner lives, what stops it, and
+what it is allowed to touch.
+
+**Decision.**
+
+**The personas improvise, and the improvising is a model call per step.** The
+briefs are written down — a goal, the few facts the person has, and the
+product's promises restated in that person's terms — and what the person does
+next is decided from the page in front of them. One call per step answers three
+things at once: whether the expectation it stated last step held, what the
+person does now, and what it expects next. Judging the previous expectation in
+the same call rather than a second one halves the bill and loses nothing, since
+the evidence is the page that call is already looking at.
+
+The two claims the product promises never to make are **not** left to the
+model. `safetyClaims` and `verificationClaims` run deterministically on every
+page the personas see. A judgement about the product's two load-bearing
+promises should not vary between runs, and the model's own watching is the
+wider net rather than the backstop.
+
+**The runner is a process, not a route.** It drives a real browser, which no
+serverless function hosts. It would have been possible to drive the services
+directly from inside the app and call that a simulation; that was rejected
+twice over. It would test a path no user takes, and a simulation that can be
+started from inside the deployment is a privileged path into the deployment.
+The only way in is a bearer token and two routes: one to open a run, one to
+report what was seen. The runner may write and may not read the feed; an
+operator may read everything and writes none of it.
+
+**The deployment holds the budget, the runner holds the tokens.** Spend is
+computed from the token counts the API reports, in integer nanodollars (a
+published price in dollars per million is exactly nanodollars per token, which
+keeps the cheapest model's $0.10/M from becoming a float), converted to cents
+once, at the edge, rounding **up**. The runner sends its running total and the
+deployment answers `stop`. One arbiter, and it is the one with the dashboard
+attached: a runner that decided its own stopping point from its own copy of the
+prices would be the only thing that knew it had passed the ceiling.
+
+**It runs against the demo or it does not run.** The personas invent guests,
+race three ways for one seat and probe refusals. There is one kind of data that
+may happen to, and "we point it at the demo" is a convention somebody
+eventually forgets. So three independent refusals, each of which would be
+sufficient and none of which is trusted alone:
+
+1. the runner asks the target what it is and accepts only `demo` — the
+   deployment's own statement rather than a flag or a URL pattern;
+2. `SIMULATION_TOKEN` is refused by `getEnv()` outside `ARC_DATA_MODE=demo`, so
+   the live hotel's deployment cannot hold a working token;
+3. `simulation_run_is_demo_only` refuses the row, so a run against real data
+   has nowhere to be recorded even if the first two were bypassed.
+
+**A persona proposes; nobody applies.** A failure may produce a proposed
+amendment to one `.claude/` file, which is the PR-#11 feedback loop with one
+extra hazard: the agent writing the proposal is also the thing the guardrail
+refused, and the cheapest way to stop failing a check is to propose that the
+check go away. `guardrails.ts` therefore refuses any suggestion that removes,
+loosens or bypasses a guard, turns outbound messaging on, claims safety, routes
+around `/admin` for a verification, lets an agent apply its own change, or
+points the simulation at anything but the demo — and records the attempt as a
+`GUARD` event, because a refusal nobody is told about looks exactly like a
+simulation that never tried. Accepting a proposal records that it should
+happen; it still becomes a pull request a person opens.
+
+**The dashboard polls.** A held-open `text/event-stream` dies at the platform's
+function-duration ceiling and reconnects on a timer, so the "live" panel
+blinks. A cursor and a two-second interval is the same latency with none of
+that, and it stops polling the moment there is nothing live to watch. A run
+whose heartbeat has gone quiet reads as **stalled**, derived on the server:
+a browser tab that has been asleep has a clock with its own opinions, and a
+panel that cannot tell "still working" from "dead" is the blank panel
+`CLAUDE.md` forbids wearing a different costume.
+
+**Consequences.**
+
+- Simulation rows live in the demo database and `db:seed` truncates them.
+  That is correct: they are telemetry about a demo, not records of anything.
+- One runner at a time. Two would race each other for the same inventory and
+  neither feed would describe what happened.
+- The spend figure is in US dollars and is deliberately **not** rendered with
+  `<Money>`: that component is for the product's money, with an `earned` or
+  `potential` intent, and dressing a running cost as revenue is the exact
+  confusion ADR-007 exists to prevent.
+- Non-negotiable 5 ("the AI explains; it never decides") is untouched. It
+  governs the product's AI, which still has no tools and no write path. The
+  simulation's model decides what a *simulated person* does in a browser, from
+  outside, exactly as a person would — and the boundary that keeps those two
+  things apart is the HTTP one.

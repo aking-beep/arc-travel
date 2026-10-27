@@ -170,6 +170,17 @@ const envSchema = z.object({
    * unconfigured secret is "off", never "open".
    */
   CRON_SECRET: z.string().optional(),
+
+  /**
+   * Shared secret the live-simulation runner authenticates with.
+   *
+   * Unset means `POST /api/simulation/ingest` 404s rather than accepts an
+   * anonymous writer — the same rule as `CRON_SECRET`, and for a sharper
+   * reason: the route writes rows that an operator then reads as a report of
+   * what the product did. An unauthenticated feed is a feed anybody can lie
+   * into, and the lie would be read as evidence. See ADR-043.
+   */
+  SIMULATION_TOKEN: z.string().optional(),
 })
 
 export type Env = z.infer<typeof envSchema>
@@ -318,6 +329,23 @@ export function getEnv(): Env {
 
   if (env.AI_PROVIDER === 'anthropic' && !env.ANTHROPIC_API_KEY) {
     throw new Error('AI_PROVIDER=anthropic requires ANTHROPIC_API_KEY.')
+  }
+
+  /*
+   * A simulation ingest endpoint exists only where the data is synthetic.
+   *
+   * `ARC_DATA_MODE` is the deployment's own statement about whose data this is.
+   * The runner refuses a target that does not say `demo`, and
+   * `simulation_run_is_demo_only` refuses the row; this refuses the
+   * *configuration*, so the live hotel's deployment cannot be given a token
+   * that would let a simulation write to it at all. ADR-043.
+   */
+  if (env.SIMULATION_TOKEN && env.ARC_DATA_MODE !== 'demo') {
+    throw new Error(
+      'SIMULATION_TOKEN is only valid while ARC_DATA_MODE=demo. The live simulation invents ' +
+        'guests, races for inventory and probes refusals; it runs against synthetic data or not ' +
+        'at all (ADR-043). Unset the token on this deployment.',
+    )
   }
 
   // Demo mode is a hard guarantee that no real money can move.
