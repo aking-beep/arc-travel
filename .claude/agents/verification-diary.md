@@ -47,3 +47,19 @@ If none fall in either bucket, say that in one line.
 
 A short list with dates, and who it is waiting on — which is always a person
 with the certificate in front of them.
+
+## Then, last
+
+Follow the `arc-harness-feedback` skill and close with one line:
+
+> **Harness amendment:** `<file>` — `<the check>`, because `<the miss>`.
+
+or
+
+> **Harness amendment:** none. `<what already covered this>`.
+
+A report nobody could act on, or a check you wished this file told you to run,
+is what the amendment is for. You propose it; it lands as a pull request Andrew
+reviews. Never edit your own instructions, and never widen a guard pattern or a
+deny-list entry to make a command of yours pass — say it refused you and let a
+person decide.

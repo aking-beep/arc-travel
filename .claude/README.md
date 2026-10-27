@@ -8,6 +8,7 @@ What an agent working on ARC Stay is given, and what it is refused.
 | `skills/` | The procedures that get repeated. A skill is the answer to "how do we do this here", so that it is written once rather than rediscovered per session. |
 | `hooks/deny-dangerous.mjs` | A `PreToolUse` guard. The non-negotiables that are irreversible, as refused tool calls rather than prose somebody might not read. |
 | `settings.json` | The deny list, and the wiring for the hook. |
+| `harness-log.md` | Why each check exists. Read it before deleting one. |
 
 ## The reviewers, and when each one is the right one
 
@@ -43,6 +44,22 @@ back, and the harness is arranged so an agent cannot make it alone.
 The hook enforces the first five and the command-line route to the last; the
 deny list in `settings.json` covers the tools. A refusal names the document the
 rule comes from; argue with the decision, not with the pattern.
+
+## How this changes
+
+Nothing in `.claude/` edits itself. Every file here behaves the same way each
+run until somebody changes it in a pull request, which is what makes the harness
+auditable.
+
+What the agents do instead is notice. Each one closes a review, a triage or a
+fix with a proposed amendment to the one file that should have caught the
+thing — or an explicit "none", which is the normal answer. The proposal lands as
+an ordinary pull request for Andrew to approve, in a separate commit so it can
+be dropped without losing the change it rode in with, and it adds its row to
+`harness-log.md`. `skills/arc-harness-feedback` has the rules, including the
+ones about what must *not* be proposed: nothing that relaxes a non-negotiable, a
+deny-list entry or a guard pattern. Those are Andrew's to loosen deliberately,
+never as a tidy-up at the end of unrelated work.
 
 The hook has **no exemption for its own path**. One existed and was a hole:
 it allowed any command that mentioned the file, so a `cat` of it joined to a
