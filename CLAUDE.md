@@ -236,4 +236,23 @@ Two E2E habits, learned the hard way and recorded in the specs:
 
 `.claude/agents/` holds focused reviewers: architecture, UX, data, AI safety,
 security and QA. Use an independent review before merging a change that touches
-inventory, money, the conditions gate or tenancy.
+inventory, money, the conditions gate or tenancy. `release-captain` runs the
+gate and picks the reviewers a diff needs — `.claude/README.md` has the
+path-to-reviewer table.
+
+## The agent harness
+
+`.claude/README.md` is the short version. In outline:
+
+- `.claude/skills/` — the procedures that get repeated. `arc-ship-change` is
+  the one to read at the start of a change; `arc-verify` before a commit;
+  `arc-money`, `arc-inventory`, `arc-adr`, `arc-ops-triage` and
+  `arc-demo-reset` for their subjects.
+- `.claude/agents/` — the six reviewers, plus `release-captain` and three
+  read-only operators (`ops-triage`, `conditions-steward`,
+  `verification-diary`).
+- `.claude/hooks/deny-dangerous.mjs` — the non-negotiables that cannot be taken
+  back, as a refused tool call rather than prose somebody might not read:
+  Prisma's destructive-action consent, a schema reset or push, SQL that writes a
+  supplier's verification or a `ConditionReport`, outbound messaging, a live
+  Stripe key. A refusal names the document the rule comes from.
