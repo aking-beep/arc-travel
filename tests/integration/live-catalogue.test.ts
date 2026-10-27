@@ -71,6 +71,63 @@ describe('liveExperiences', () => {
     })
   })
 
+  /*
+   * ADR-036's second amendment. The badge on a public card is a guest-facing
+   * verification claim, and this module read `supplier.verification` — so the
+   * one surface a stranger sees was the one surface that would have gone on
+   * printing a badge after it stopped being true. Both halves of a lapse are
+   * asserted here, because the amendment covers both.
+   */
+  it('stops claiming verified when the insurance certificate has expired', async () => {
+    await markVerified(tenant.supplierId, {
+      insuranceExpiresOn: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+    })
+
+    const [item] = await liveExperiences('en')
+    // Still listed: a lapse changes presentation, not data, and nothing is
+    // unpublished over it (non-negotiable 6).
+    expect(item).toBeDefined()
+    expect(item?.provenance).toEqual({
+      kind: 'live',
+      verification: VerificationStatus.UNVERIFIED,
+    })
+  })
+
+  /*
+   * The other half of a lapse — a `VERIFIED` row whose checklist is empty —
+   * cannot be constructed here, and that is the finding rather than a gap:
+   * `supplier_insurance_expiry_is_dated` refuses the write. Only pre-ADR rows
+   * are in that state, which is why both constraints are `NOT VALID`.
+   * `verificationStanding`'s own handling of it is covered in
+   * `tests/unit/verification.test.ts`; what matters here is that this module
+   * asks the question at all, which the expired certificate above proves.
+   */
+  it('cannot be put in the incomplete-checklist state by a new write', async () => {
+    await markVerified(tenant.supplierId)
+    await expect(
+      prisma.supplier.update({
+        where: { id: tenant.supplierId },
+        data: { verifiedChecks: [] },
+      }),
+    ).rejects.toThrow(/supplier_insurance_expiry_is_dated/)
+  })
+
+  it('applies the same rule on the detail page as on the card', async () => {
+    await markVerified(tenant.supplierId, {
+      insuranceExpiresOn: new Date(Date.now() - 24 * 60 * 60 * 1000),
+    })
+
+    const { slug } = await prisma.experience.findUniqueOrThrow({
+      where: { id: tenant.experienceId },
+      select: { slug: true },
+    })
+    const detail = await liveExperience(slug, 'en')
+    expect(detail?.provenance).toEqual({
+      kind: 'live',
+      verification: VerificationStatus.UNVERIFIED,
+    })
+  })
+
   it('passes the supplier’s claimed certifications through as claims', async () => {
     await prisma.supplier.update({
       where: { id: tenant.supplierId },
@@ -209,5 +266,41 @@ describe('liveStay', () => {
   it('returns null when no room type carries a rate', async () => {
     // A stay with no nightly rate has nothing to show on a card.
     expect(await liveStay('en')).toBeNull()
+  })
+
+  /*
+   * The seed used to write `VERIFIED` on the demo property, and this column is
+   * what the public card's badge reads — so the home page printed a shield and
+   * "Verified by ARC" beside the hotel to any stranger, with no verification
+   * record anywhere behind it, while `/admin` said "Nothing is verified by a
+   * seed" on the same build. A property has no checklist and no insurance
+   * expiry, so there is no standing to derive: the column is the decision, and
+   * what this asserts is that an unverified property claims nothing.
+   */
+  it('claims nothing for a property no admin has verified', async () => {
+    await prisma.roomType.create({
+      data: {
+        organizationId: tenant.organizationId,
+        propertyId: tenant.propertyId,
+        code: 'GARDEN',
+        name: 'Garden room',
+        maxOccupancy: 2,
+        roomCount: 4,
+        baseRateMinor: 280_000,
+        currency: 'MXN',
+      },
+    })
+
+    const property = await prisma.property.findUniqueOrThrow({
+      where: { id: tenant.propertyId },
+      select: { verification: true },
+    })
+    expect(property.verification).not.toBe(VerificationStatus.VERIFIED)
+
+    const stay = await liveStay('en')
+    expect(stay?.provenance).toEqual({
+      kind: 'live',
+      verification: VerificationStatus.UNVERIFIED,
+    })
   })
 })

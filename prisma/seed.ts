@@ -252,7 +252,21 @@ async function seedTenant(placeIdBySlug: Map<string, string>) {
       brandPrimary: '#1F3A34',
       brandAccent: '#C97B4A',
       status: EntityStatus.ACTIVE,
-      verification: VerificationStatus.VERIFIED,
+      /*
+       * UNVERIFIED, like every seeded supplier.
+       *
+       * This was `VERIFIED`, and it was the only thing anywhere in the product
+       * claiming a verification nobody performed. `/admin` says in as many
+       * words that "Nothing is verified by a seed", and non-negotiable 2 says
+       * `/admin` is the only route to a verified status — while the public home
+       * page printed a shield and "Verified by ARC" beside Casa Olas to any
+       * stranger, because `discovery/live.ts` passes this column into the card.
+       *
+       * A demo hotel is a fixture exactly as the six partners are. Verifying
+       * it means an admin recording what they checked, through the page the
+       * product insists on.
+       */
+      verification: VerificationStatus.UNVERIFIED,
       onboardingStep: 5,
       placeId: placeIdBySlug.get('la-rinconada') ?? null,
       latitude: 15.8655,

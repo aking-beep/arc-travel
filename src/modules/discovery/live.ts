@@ -1,5 +1,6 @@
 import type { AppLocale } from '@/lib/i18n'
 import { ExperienceCategory as DbCategory, AbilityLevel, VerificationStatus } from '@/lib/prisma-types'
+import { isCurrentlyVerified } from '@/modules/admin/verification'
 import {
   getPublicExperience,
   getPublicProperty,
@@ -32,9 +33,11 @@ import type {
  *      photograph. Those fields are optional on the content types and are left
  *      empty here rather than filled with something plausible.
  *   2. **Claims stay claims.** `hostClaims` is the supplier's own
- *      `claimedCertifications`, passed through. `provenance` carries the row's
- *      real `VerificationStatus`, so a fixture supplier reaches the page as
- *      unverified and only an `/admin` decision can change that.
+ *      `claimedCertifications`, passed through. `provenance` carries a
+ *      verification status derived through `isCurrentlyVerified`, so a fixture
+ *      supplier reaches the page as unverified, only an `/admin` decision can
+ *      make it say otherwise, and a stored decision that has stopped being
+ *      true stops being shown (ADR-036).
  *   3. **Currency travels with the price.** The content set is USD and the
  *      catalogue is in the property's own currency. The amount carries its
  *      currency so pesos are never rendered under a dollar sign.
@@ -125,7 +128,30 @@ function included(row: {
   return items
 }
 
-function toExperience(row: ListRow, locale: AppLocale): Experience | null {
+/**
+ * The status a public card may claim.
+ *
+ * `VERIFIED` only while the stored decision is still current. A `VERIFIED` row
+ * whose insurance certificate has expired, or whose checklist is incomplete,
+ * reads as `UNVERIFIED` here — which is what the guest portal, the basket and
+ * the booking page have said since ADR-036's amendment, and what the public
+ * storefront did not. It read the column, so the one surface a stranger sees
+ * was the one surface that would have gone on printing a lapsed badge.
+ *
+ * Downgraded rather than hidden: a lapse changes presentation, not data, and
+ * nothing is unpublished over it (non-negotiable 6).
+ */
+function publicVerification(
+  supplier: { verification: VerificationStatus; verifiedChecks: readonly string[]; insuranceExpiresOn: Date | null },
+  now: Date,
+): VerificationStatus {
+  if (isCurrentlyVerified(supplier, now)) return VerificationStatus.VERIFIED
+  return supplier.verification === VerificationStatus.VERIFIED
+    ? VerificationStatus.UNVERIFIED
+    : supplier.verification
+}
+
+function toExperience(row: ListRow, locale: AppLocale, now: Date): Experience | null {
   const price = row.prices[0]
   if (!price) return null
   if (row.supplier.verification === VerificationStatus.REJECTED) return null
@@ -150,7 +176,7 @@ function toExperience(row: ListRow, locale: AppLocale): Experience | null {
     // The supplier's own claims, as claims. Never re-labelled as certification.
     hostClaims: row.supplier.claimedCertifications,
     included: included(row, locale),
-    provenance: { kind: 'live', verification: row.supplier.verification },
+    provenance: { kind: 'live', verification: publicVerification(row.supplier, now) },
   }
 }
 
@@ -165,8 +191,14 @@ export async function liveExperiences(
   query: Record<string, string | undefined> = {},
 ): Promise<Experience[]> {
   const { items } = await listPublicExperiences(query)
+  /*
+   * One instant for the whole list, read here rather than per row: two cards
+   * on the same page disagreeing about whether a certificate has expired would
+   * be a worse bug than either answer.
+   */
+  const now = new Date()
   return items
-    .map((row) => toExperience(row, locale))
+    .map((row) => toExperience(row, locale, now))
     .filter((item): item is Experience => item !== null)
 }
 
@@ -185,7 +217,7 @@ export async function liveExperience(
     return null
   }
 
-  const base = toExperience(row, locale)
+  const base = toExperience(row, locale, new Date())
   if (!base) return null
 
   return {

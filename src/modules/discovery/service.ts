@@ -4,10 +4,10 @@ import {
   EntityStatus,
   ExperienceStatus,
   PriceKind,
-  VerificationStatus,
   type ExperienceCategory,
 } from '@/lib/prisma-types'
 import { addDays, dateRange, toDateKey, type DateKey } from '@/lib/dates'
+import { isCurrentlyVerified, VERIFICATION_STANDING_SELECT } from '@/modules/admin/verification'
 import { getConditionsForDestination } from '@/modules/destination/conditions'
 import { nightlyRateRange } from './estimate'
 import { parseExperienceFilter } from './schemas'
@@ -30,9 +30,10 @@ import { parseExperienceFilter } from './schemas'
  * Second, it returns **no availability and no commercial claim**. There is no
  * slot lookup, no hold, no "rooms left". A published nightly rate and a
  * published per-person price are facts about a price list; they are not an offer
- * on a date. Verification status is read from the row and passed through
- * untouched, so a fixture supplier reaches the page as `UNVERIFIED` and the UI
- * renders it as the claim it is.
+ * on a date. A verification claim is derived from the row through
+ * `isCurrentlyVerified`, never from the stored column alone (ADR-036), so a
+ * fixture supplier reaches the page as `UNVERIFIED` and a partner whose
+ * certificate has expired stops reading as verified on the day it expires.
  */
 
 /** The POC covers one destination. Not a parameter — a fact about the build. */
@@ -67,7 +68,13 @@ const EXPERIENCE_CARD_SELECT = {
     select: {
       slug: true,
       name: true,
-      verification: true,
+      /*
+       * The three columns a standing is derived from, not `verification`
+       * alone. A public card is a guest-facing verification claim, and ADR-036
+       * is explicit that such a claim asks `isCurrentlyVerified` rather than
+       * the stored column — which a query selecting only the column cannot do.
+       */
+      ...VERIFICATION_STANDING_SELECT,
       claimedCertifications: true,
       insuranceOnFile: true,
     },
@@ -174,7 +181,7 @@ export async function getPublicExperience(slug: string) {
           slug: true,
           name: true,
           description: true,
-          verification: true,
+          ...VERIFICATION_STANDING_SELECT,
           claimedCertifications: true,
           insuranceOnFile: true,
         },
@@ -348,9 +355,14 @@ export async function getDestinationOverview() {
     experienceCount: experiences.items.length,
     categories: experiences.categories,
     conditions,
-    /** True when nothing in the catalogue has been admin-verified yet. */
-    allUnverified: experiences.items.every(
-      (e) => e.supplier.verification !== VerificationStatus.VERIFIED,
-    ),
+    /**
+     * True when nothing in the catalogue is verified *today*.
+     *
+     * The live question, not the stored column: a partner whose insurance
+     * certificate expired last month is not currently verified, and a banner
+     * saying some of the catalogue is verified on the strength of that is the
+     * claim ADR-036 exists to prevent.
+     */
+    allUnverified: experiences.items.every((e) => !isCurrentlyVerified(e.supplier)),
   }
 }
