@@ -12,6 +12,12 @@
  * just saying no. The answer to a false positive is for a person to run the
  * command, not to widen the pattern.
  *
+ * There is deliberately no exemption for this file's own path. One existed and
+ * was a hole: it allowed any command mentioning the path, so a `cat` of this
+ * file joined to a forbidden command by a semicolon passed in full. The cost of
+ * removing it is that `grep PRISMA_USER_CONSENT .claude/hooks/...` is refused,
+ * which is a sentence of inconvenience against a bypass of every rule.
+ *
  * Exit 0 allows, exit 2 blocks and returns stderr to the model.
  */
 
@@ -56,6 +62,10 @@ const RULES = [
     pattern: /\b(truncate|drop\s+(table|schema|database))\b/i,
     why: 'Destructive SQL. If this is a local test database, say so to a person and let them run it.',
   },
+  {
+    pattern: /gh\s+pr\s+(merge|review)|gh\s+api[\s\S]*\/(merge|reviews)\b/,
+    why: 'No agent in this repository merges or approves a pull request. `settings.json` denies the MCP tools that would; this covers the command line.',
+  },
 ];
 
 function read() {
@@ -79,10 +89,6 @@ try {
 
 const command = payload?.tool_input?.command;
 if (typeof command !== 'string' || command.length === 0) process.exit(0);
-
-// The guard's own source quotes every pattern it blocks, so reading or
-// grepping this file must not trip it.
-if (/\.claude\/hooks\/deny-dangerous\.mjs/.test(command)) process.exit(0);
 
 for (const rule of RULES) {
   if (rule.pattern.test(command)) {

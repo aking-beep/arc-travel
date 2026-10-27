@@ -20,7 +20,7 @@ bug somebody already had.
 | Something that looks odd | the matching `CLAUDE.md` row, then that ADR in `docs/decisions.md` |
 | `src/modules/inventory/**`, holds, capacity | ADR-014, ADR-019, ADR-020, and `CLAUDE.md § Transactions` |
 | Money, commission, payouts | ADR-007, ADR-030, ADR-042, and the `arc-money` skill |
-| `src/modules/destination/conditions/**` | ADR-017, ADR-018, ADR-019, `docs/culture-context.md` |
+| `src/modules/destination/conditions.ts` | ADR-017, ADR-018, ADR-019, `docs/culture-context.md` |
 | `src/modules/ai/**` | non-negotiable 5, ADR-004, ADR-006 |
 | Auth, tenancy, the guest portal | ADR-035, ADR-039, ADR-041, `CLAUDE.md § Authorisation` |
 | Email or messaging | ADR-040 |
@@ -114,7 +114,7 @@ touches inventory, money, the conditions gate or tenancy.** Route the diff:
 | `prisma/**`, or any new query | `data-reviewer` |
 | `src/modules/inventory/**`, anything in a transaction, `src/modules/commerce/**` | `architecture-reviewer` **and** `data-reviewer` |
 | `src/modules/auth/**`, `src/modules/tenancy/**`, `src/app/api/**`, server actions, logging | `security-reviewer` |
-| `src/modules/ai/**`, `src/modules/destination/conditions/**` | `ai-safety-reviewer` |
+| `src/modules/ai/**`, `src/modules/destination/conditions.ts` | `ai-safety-reviewer` |
 | Any page or component | `ux-reviewer` |
 | Any change in behaviour | `qa-reviewer` |
 

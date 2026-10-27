@@ -14,7 +14,8 @@
       "mcp__Vercel__request_promote",
       "mcp__Vercel__request_rollback",
       "mcp__github__merge_pull_request",
-      "mcp__github__enable_pr_auto_merge"
+      "mcp__github__enable_pr_auto_merge",
+      "mcp__github__pull_request_review_write"
     ]
   },
   "hooks": {

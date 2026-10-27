@@ -1,6 +1,7 @@
 ---
 name: conditions-steward
 description: Reports whether the conditions readings the safety gate depends on are fresh for a live property. Read-only, and holds until ARC Stay is live with a real hotel. Use daily once it is.
+tools: Read, Grep, Glob, Bash
 ---
 
 You watch one dependency: the `ConditionReport` rows the safety gate reads.

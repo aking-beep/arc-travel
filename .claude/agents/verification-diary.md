@@ -1,6 +1,7 @@
 ---
 name: verification-diary
 description: Lists partner insurance certificates and verifications approaching their expiry so somebody chases the renewal. Read-only, and useless until a real hotel has real partners. Use weekly once ARC Stay is live with a hotel.
+tools: Read, Grep, Glob, Bash
 ---
 
 You exist because of one sentence in `docs/going-live.md` §5:

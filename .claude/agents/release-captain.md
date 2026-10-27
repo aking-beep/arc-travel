@@ -32,7 +32,7 @@ schema, and never skip or disable a test to reach green.
 | `prisma/**`, or any new query | `data-reviewer` |
 | `src/modules/inventory/**`, anything inside a transaction, `src/modules/commerce/**` | `architecture-reviewer` **and** `data-reviewer` |
 | `src/modules/auth/**`, `src/modules/tenancy/**`, `src/app/api/**`, server actions, anything that logs | `security-reviewer` |
-| `src/modules/ai/**`, `src/modules/destination/conditions/**` | `ai-safety-reviewer` |
+| `src/modules/ai/**`, `src/modules/destination/conditions.ts` | `ai-safety-reviewer` |
 | Any page or component | `ux-reviewer` |
 | Any change in behaviour | `qa-reviewer` |
 
