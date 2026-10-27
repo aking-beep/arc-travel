@@ -13,6 +13,7 @@
  *   npm run pressure-test
  *   npm run pressure-test -- --only=adversary,hotel-guest
  */
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { chromium } from '@playwright/test'
 import { Agent, writeJson, type PersonaModule, type PersonaResult } from './agent.js'
@@ -29,7 +30,19 @@ const PERSONAS: PersonaModule[] = [hotelOwner, supplierPartner, hotelGuest, dire
 
 const BASE_URL = (process.env.PRESSURE_BASE_URL ?? 'http://127.0.0.1:3100').replace(/\/$/, '')
 const OUT_DIR = process.env.PRESSURE_OUT_DIR ?? path.resolve('pressure-test-output')
-const CHROMIUM = process.env.PLAYWRIGHT_CHROMIUM_PATH ?? '/opt/pw-browsers/chromium'
+/**
+ * The browser to launch, following `playwright.config.ts`.
+ *
+ * Some sandboxes ship a pre-installed Chromium at a different build revision
+ * than the one this Playwright version downloads, so that binary is used *when
+ * it is there*. Everywhere else this is `undefined` and Playwright uses its own
+ * download — the point the config makes, and which this file originally got
+ * wrong by hardcoding the sandbox path, so `npm run pressure-test` could not
+ * have worked on a normal checkout or in CI.
+ */
+const CHROMIUM =
+  process.env.PLAYWRIGHT_CHROMIUM_PATH ??
+  (existsSync('/opt/pw-browsers/chromium') ? '/opt/pw-browsers/chromium' : undefined)
 
 function argValue(name: string): string | undefined {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`))
@@ -45,7 +58,8 @@ async function main(): Promise<void> {
   console.log(`  personas: ${chosen.map((p) => p.id).join(', ')}\n`)
 
   const browser = await chromium.launch({
-    executablePath: CHROMIUM,
+    ...(CHROMIUM ? { executablePath: CHROMIUM } : {}),
+    // Needed wherever this runs as root, which is every container it runs in.
     args: ['--no-sandbox'],
   })
 

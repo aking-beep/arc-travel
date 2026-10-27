@@ -282,6 +282,24 @@ export class Agent {
     }
   }
 
+  /**
+   * Waits for a Suspense boundary's loading state to go away.
+   *
+   * Server Components stream, so a page can answer with "Loading your
+   * bookings…" and fill in afterwards. Reading the text immediately after a
+   * `goto` caught that skeleton and reported the page as broken — a harness
+   * race that produced a blocker finding twice before it was understood.
+   */
+  async settled(timeout = 20_000): Promise<boolean> {
+    const until = Date.now() + timeout
+    while (Date.now() < until) {
+      const text = await this.text()
+      if (!/loading[\s.…]/i.test(text)) return true
+      await this.page.waitForTimeout(250)
+    }
+    return false
+  }
+
   /** Full visible text of the current page, lowercased, for a liberal read. */
   async text(): Promise<string> {
     return (await this.page.locator('body').innerText().catch(() => '')).toLowerCase()

@@ -10,6 +10,11 @@ npm run pressure-test                # all six
 npm run pressure-test -- --only=adversary,hotel-guest
 ```
 
+`PLAYWRIGHT_CHROMIUM_PATH` overrides which browser binary to launch; without
+it, a pre-installed Chromium at `/opt/pw-browsers/chromium` is used when that
+path exists and Playwright's own download otherwise, exactly as
+`playwright.config.ts` resolves it.
+
 `PRESSURE_BASE_URL` picks the target (default `http://127.0.0.1:3100`) and
 `PRESSURE_OUT_DIR` where the output goes (default `pressure-test-output/`,
 gitignored): `findings.json`, `readout.html`, and a screenshot of every

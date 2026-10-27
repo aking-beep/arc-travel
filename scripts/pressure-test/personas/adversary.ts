@@ -178,6 +178,9 @@ const persona: PersonaModule = {
       await page.waitForURL(/\/g\/[A-Za-z0-9_-]+$/, { timeout: 40_000 }).catch(() => {})
 
       await page.goto(`${agent.baseUrl}/me`)
+      // `/me` streams its bookings behind a Suspense boundary; read the answer,
+      // not the skeleton.
+      await agent.settled()
       const referenceField = page.getByLabel(/reference/i).first()
       if (!(await referenceField.waitFor({ state: 'visible', timeout: 10_000 }).then(() => true).catch(() => false))) {
         agent.skip('claim-needs-both-and-says-nothing', 'major', 'Claiming a booking needs the reference and the email, and refuses with one message.', `No claim form on /me for this account (${page.url()}).`)
@@ -216,6 +219,7 @@ const persona: PersonaModule = {
 
       await agent.check('claim-did-not-succeed', 'blocker', 'A claim with a reference that does not exist attaches nothing to the account.', async () => {
         await page.goto(`${agent.baseUrl}/me`)
+        await agent.settled()
         const t = await agent.text()
         return t.includes('casa olas') && t.includes('harriet')
           ? 'another guest’s stay appears on the adversary’s account'

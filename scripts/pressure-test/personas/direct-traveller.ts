@@ -144,6 +144,9 @@ const persona: PersonaModule = {
 
     await agent.step('his account calls it a trip', async () => {
       await page.goto(`${agent.baseUrl}/me`)
+      // `/me` streams its bookings behind a Suspense boundary, so the first
+      // read catches "Loading your bookings…" rather than the answer.
+      await agent.settled()
       const t = await agent.text()
       await agent.check('me-loads', 'major', 'His account page lists what he has booked.', async () => (t.length > 150 ? true : t.slice(0, 300)))
       await agent.check('trip-not-a-stay', 'blocker', 'A direct trip is labelled as a trip with no room (ADR-042).', async () =>
@@ -156,6 +159,7 @@ const persona: PersonaModule = {
 
     await agent.step('plan and book as a direct customer', async () => {
       await page.goto(`${agent.baseUrl}/me`)
+      await agent.settled()
       const open = page.getByRole('link', { name: /open|plan|trip/i }).first()
       if (!(await open.waitFor({ state: 'visible', timeout: 8_000 }).then(() => true).catch(() => false))) {
         agent.skip('direct-can-book', 'blocker', 'A direct customer can buy an experience.', 'No link from the account into his trip.')
