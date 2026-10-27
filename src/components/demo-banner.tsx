@@ -1,4 +1,5 @@
 import { AlertTriangle } from 'lucide-react'
+import { DemoPulse } from '@/components/demo-pulse'
 import { getTranslator } from '@/lib/i18n/server'
 import { getEnv } from '@/lib/env'
 
@@ -19,6 +20,7 @@ export async function DemoBanner() {
         <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden />
         <p>{t('common.demoBanner')}</p>
       </div>
+      <DemoPulse />
     </div>
   )
 }

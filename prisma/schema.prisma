@@ -1897,37 +1897,37 @@ model SimulationRun {
   id String @id @default(uuid())
 
   /// The origin the personas drove, e.g. `https://arc-stay-demo.vercel.app`.
-  targetUrl String
+  targetUrl    String
   /// What `GET /api/health` said the target's `ARC_DATA_MODE` was. Only `demo`
   /// is storable, and the CHECK is what makes that true rather than intended.
-  dataMode  String
+  dataMode     String
   /// The model the personas' decisions ran on, e.g. `claude-sonnet-5-5`.
-  model     String
+  model        String
   /// The spend ceiling the operator set, in USD cents. The runner stops when
   /// `spentMinor` would pass it, so a dashboard left open overnight cannot
   /// spend without a bound.
-  budgetMinor Int
+  budgetMinor  Int
   /// What the decisions have cost so far, in USD cents, from the token counts
   /// the API reported. Minor units for the same reason every other figure is
   /// (non-negotiable 3), even though it is a cost rather than a price.
-  spentMinor  Int @default(0)
+  spentMinor   Int    @default(0)
   /// Tokens, for the arithmetic behind `spentMinor` to be checkable.
-  inputTokens  Int @default(0)
-  outputTokens Int @default(0)
+  inputTokens  Int    @default(0)
+  outputTokens Int    @default(0)
   /// Decisions the personas made, as a denominator for the cost per decision.
-  decisions    Int @default(0)
+  decisions    Int    @default(0)
 
-  status SimulationRunStatus @default(RUNNING)
+  status        SimulationRunStatus @default(RUNNING)
   /// Why it ended, when it ended for a reason: the budget, a lost target, the
   /// operator closing the dashboard. Shown so a stopped run is never a blank.
   stoppedReason String?
 
-  startedAt  DateTime  @default(now())
+  startedAt   DateTime  @default(now())
   /// Last time the runner said anything. The dashboard reads a run as stalled
   /// rather than running once this is old, because a worker that died says
   /// nothing at all.
-  heartbeatAt DateTime @default(now())
-  finishedAt DateTime?
+  heartbeatAt DateTime  @default(now())
+  finishedAt  DateTime?
 
   events    SimulationEvent[]
   proposals SimulationProposal[]
@@ -2065,4 +2065,67 @@ enum SimulationProposalStatus {
   /// hand. Nothing in this product writes `.claude/`.
   ACCEPTED
   DISMISSED
+}
+
+/// One thing a simulated inhabitant did to the demo (ADR-044).
+///
+/// The inhabitants engine makes the demo busy: travellers arrive, baskets
+/// fill, seats are bought and given back, businesses ask to join. It does all
+/// of that through the product's own services, so what an operator sees in
+/// their screens is real product behaviour on synthetic data — and this table
+/// is the record of which of it was simulated.
+///
+/// Platform-scoped, like `SimulationRun`, and demo-only for the same reason.
+model SimulatedActivity {
+  id String @id @default(uuid())
+
+  kind     SimulatedActivityKind
+  /// How it ran: a scheduled tick, or a heartbeat from somebody's open page.
+  source   String
+  /// Always `demo`, and a CHECK constraint says so. The inhabitants are a
+  /// sandbox population; a deployment holding real data has no row to write.
+  dataMode String                @default("demo")
+
+  /// The simulated person, in the words a screen would show, e.g. "Rosa Vidal".
+  actor   String
+  /// One line, written for somebody watching the town rather than debugging it.
+  summary String
+  detail  String?
+  /// Where in the product it shows up, so a watcher can go and look.
+  path    String?
+
+  /// Rows it touched, for a sweep and for reading an entry back to the data.
+  stayId      String?
+  orderId     String?
+  orderItemId String?
+
+  occurredAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  @@index([occurredAt])
+  @@index([kind, occurredAt])
+}
+
+enum SimulatedActivityKind {
+  /// A traveller booked a trip through a hotel's storefront.
+  ARRIVAL
+  /// Somebody answered the hotel's intake questions.
+  INTAKE
+  /// The hotel entered a room reservation.
+  RESERVATION
+  /// Somebody put a seat in their basket, which takes a hold.
+  BASKET
+  /// A basket became an order, and money moved in the demo's ledger.
+  PURCHASE
+  /// Somebody gave a seat back.
+  CANCELLATION
+  /// A business asked a hotel to work with it.
+  JOIN_REQUEST
+  /// The front desk checked somebody in.
+  CHECK_IN
+  /// Availability was extended so the town does not run out of days.
+  HORIZON
+  /// Nothing was done, and why. A tick that does nothing is not a tick that
+  /// failed, and the difference has to be visible.
+  QUIET
 }

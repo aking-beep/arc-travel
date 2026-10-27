@@ -1950,3 +1950,97 @@ panel that cannot tell "still working" from "dead" is the blank panel
   simulation's model decides what a *simulated person* does in a browser, from
   outside, exactly as a person would — and the boundary that keeps those two
   things apart is the HTTP one.
+
+## ADR-044 — The demo is inhabited, and only through its own services
+
+**Status.** Accepted, 2026-10-27.
+
+**Context.** The simulation dashboard (ADR-043) shows six LLM personas being
+scrutinising about the product. That answers "is it right". It does not answer
+the thing a person walking into the demo actually notices, which is that the
+place is empty: one hotel, one guest, six listings, and a revenue card whose
+figures were all written at the same second by `db:seed`. An operator being
+shown ARC is being shown a marketplace, and a marketplace with nobody in it
+reads as a mock-up however good the screens are.
+
+So the demo needs a population: travellers who arrive, baskets that fill, seats
+bought and given back, businesses asking to work with the hotel, a front desk
+checking people in — happening *while* somebody is clicking around, not before
+they got there.
+
+**Decision.** A population engine, `modules/simulation/inhabitants`, with four
+properties.
+
+**Not one row is written directly.** An arrival is `registerDirectTrip`. A
+basket is `getOrCreateCart` and `addToCart`, so the hold is a real hold. A
+purchase is `checkout`, so the commission split, the ledger entries and the
+audit row are the real ones. A cancellation is `cancelOrderItem`, with a
+`CancelAuthority` naming the guest. A business joining is
+`requestToJoinProperty`, which means it is a request and nothing else — no
+supplier, no agreement, no login until a person accepts. Extending the
+destination's horizon is `scheduleAvailability`, so the activity's hours and
+season still decide which departures exist.
+
+This is the whole decision and everything else follows from it. Rows inserted
+behind the services would show an operator something the product itself could
+never produce — an order whose ledger does not balance, a seat held with no
+hold, a booking the conditions gate would have refused — and a demo that lies
+about what the product does is worse than an empty one. It also means a
+refusal is a *result*: when the gate declines a departure or a seat is taken
+between the read and the write, that is recorded as an activity ("the product
+said no") rather than swallowed, because it is the product working.
+
+**Two kinds of arrival, because the product has two.** A traveller booking
+through a hotel's storefront is a `DIRECT` trip with no room, which by ADR-042
+is deliberately absent from the arrivals board, the briefing and occupancy. A
+demo whose arrivals list never changes is the one this engine exists to fix, so
+the hotel also takes room reservations through `createStay`, exactly as a front
+desk does, and checks today's in. Both exist because collapsing them would mean
+either an arrivals board that never moves or a direct booking reading as a room
+booking, which is the thing ADR-042 is about.
+
+**Two clocks, and neither is a model call.** A scheduled job every five
+minutes is the baseline, so an owner opening the briefing has a morning behind
+them rather than a marketplace that started when their browser did. A
+heartbeat from any open demo page is the second, so a page being watched feels
+alive. The simulated people have no judgement — they have appetites, and the
+weights are a guess at what a small town does in a minute. That is deliberate
+and it is the division of labour with ADR-043: the personas are the scrutiny
+and they cost money; this is the population and it costs nothing. An
+improvising model deciding that a traveller books a boat trip is the same row
+as a weighted roll deciding it, at a few dollars an hour more.
+
+**It is bounded, visibly.** Simulated demand never takes the last
+`RESERVED_SEATS` of a departure, because a demo somebody cannot book anything
+in is worse than a quiet one. The town stops growing at `MAX_SIMULATED_STAYS`:
+the people already there carry on buying and cancelling, and nobody new
+arrives. Every simulated person's email is at `sim.arcstay.demo`, which is
+undeliverable and which is how they are told apart from anything a real person
+did in the demo, and swept without touching it.
+
+**Demo only, three refusals again.** `tick` refuses outside
+`ARC_DATA_MODE=demo`; both clocks 404 there; and
+`simulated_activity_is_demo_only` refuses the row. The reason is stronger here
+than for the dashboard: the inhabitants write *orders*, through the real
+services, against whatever data the deployment holds. Against a hotel's own
+guests that is not a simulation, it is forgery.
+
+**Consequences.**
+
+- The simulated people are not marked in the operator surfaces, and that is
+  the point: the briefing, the arrivals list and the revenue card are supposed
+  to show what the product would show. What marks them is the standing
+  `DemoBanner` saying none of it is real, the `sim.arcstay.demo` addresses, and
+  `/admin/simulation`, which names every one of them and what they did.
+- The heartbeat route takes no credential. Every demo surface is meant to be
+  opened by whoever was sent the link, and a tick does nothing a visitor could
+  not do by hand. What stops it being a load generator is a **global**
+  ticks-per-minute budget rather than a per-caller one — twenty open tabs and
+  one open tab produce the same town. Per-IP would have given each tab its own
+  allowance, which is the opposite of the property wanted.
+- The population drifts from the seed, so `db:seed` is still the way back to a
+  known demo: it truncates, and the town starts again.
+- Simulated orders are in the demo's revenue figures. They are synthetic
+  figures on a surface that says so in a banner, so there is nothing to
+  separate — the distinction ADR-007 cares about is earned against potential,
+  and these are earned revenue in exactly the sense the demo means it.

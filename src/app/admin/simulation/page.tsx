@@ -9,9 +9,15 @@ import {
   SIMULATION_MODEL_IDS,
   TYPICAL_DECISIONS_PER_HOUR,
 } from '@/modules/simulation/pricing'
+import {
+  MAX_SIMULATED_STAYS,
+  recentActivity,
+  simulatedPopulation,
+} from '@/modules/simulation/inhabitants'
 import { listRuns, readFeed } from '@/modules/simulation/service'
 
 import { LiveSimulation } from './live'
+import { TownPanel } from './town'
 
 export const metadata = { title: 'Live simulation' }
 export const dynamic = 'force-dynamic'
@@ -36,7 +42,12 @@ export default async function SimulationPage() {
   const env = getEnv()
   const configured = Boolean(env.SIMULATION_TOKEN)
 
-  const [feed, runs] = await Promise.all([readFeed({}), listRuns(8)])
+  const [feed, runs, population, activity] = await Promise.all([
+    readFeed({}),
+    listRuns(8),
+    simulatedPopulation(),
+    recentActivity(30),
+  ])
 
   /*
    * The hourly estimate, computed on the server from the same price table the
@@ -54,12 +65,26 @@ export default async function SimulationPage() {
       <div>
         <h1 className="font-display text-2xl font-semibold">Live simulation</h1>
         <p className="text-sand-600 mt-1 max-w-prose text-sm leading-relaxed">
-          Six simulated people working through the demo while you watch. Each one has a goal and a
-          set of things that must never happen to it; what it does next is decided a step at a
-          time, so the scenarios are new rather than a recording. Everything below is synthetic:
-          the runner refuses any target that does not report itself as a demo.
+          Two layers, and they do different jobs. The <strong>town</strong> is the demo&rsquo;s
+          population: travellers arriving, baskets filling, seats bought and given back,
+          businesses asking to work with a hotel — all of it through the same services your own
+          clicks go through, running whether or not anybody is watching. The{' '}
+          <strong>personas</strong> are the scrutiny: six simulated people with a goal and a set
+          of things that must never happen to them, deciding what to do a step at a time. Both are
+          synthetic, and both refuse any target that does not report itself as a demo.
         </p>
       </div>
+
+      <TownPanel
+        initial={{
+          population,
+          cap: MAX_SIMULATED_STAYS,
+          activity: activity.map((row) => ({
+            ...row,
+            occurredAt: row.occurredAt.toISOString(),
+          })),
+        }}
+      />
 
       <LiveSimulation
         initialFeed={serialise(feed)}

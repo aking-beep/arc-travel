@@ -53,7 +53,7 @@ export const TABLES_IN_DELETE_ORDER = [
   'RateLimitCounter',
   // Simulation telemetry. Platform-scoped and not tenant data either, and a
   // run left RUNNING by one test refuses the next one's `startRun`.
-  'SimulationProposal', 'SimulationEvent', 'SimulationRun',
+  'SimulationProposal', 'SimulationEvent', 'SimulationRun', 'SimulatedActivity',
 ] as const
 
 export async function resetDatabase(): Promise<void> {

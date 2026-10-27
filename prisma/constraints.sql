@@ -344,3 +344,17 @@ ALTER TABLE "SimulationProposal" ADD CONSTRAINT "simulation_proposal_targets_the
   AND length(btrim("miss")) > 0
   AND length(btrim("suggestion")) > 0
 );
+
+-- The inhabitants only ever live in a demo.
+--
+-- The simulated population books real orders through the real services: holds,
+-- commission splits, ledger entries, audit rows. Against a hotel's own data
+-- that is not a simulation, it is forgery. `tick` refuses outside
+-- `ARC_DATA_MODE=demo` and both clocks 404 there; this refuses the row, so a
+-- deployment holding real data has nowhere to record an invented guest.
+-- ADR-044.
+ALTER TABLE "SimulatedActivity" DROP CONSTRAINT IF EXISTS "simulated_activity_is_demo_only";
+ALTER TABLE "SimulatedActivity" ADD CONSTRAINT "simulated_activity_is_demo_only" CHECK (
+  "dataMode" = 'demo'
+  AND "source" IN ('cron', 'heartbeat')
+);
