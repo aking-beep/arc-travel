@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "deny": [
+      "Bash(npm run db:reset)",
+      "Bash(npm run db:rebuild)",
+      "Bash(npx prisma migrate reset)",
+      "Bash(npx prisma db push)",
+      "mcp__Vercel__create_project_env",
+      "mcp__Vercel__edit_project_env",
+      "mcp__Vercel__update_project",
+      "mcp__Vercel__update_project_protection_bypass",
+      "mcp__Vercel__pause_project",
+      "mcp__Vercel__request_promote",
+      "mcp__Vercel__request_rollback",
+      "mcp__github__merge_pull_request",
+      "mcp__github__enable_pr_auto_merge",
+      "mcp__github__pull_request_review_write"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/deny-dangerous.mjs\""
+          }
+        ]
+      }
+    ]
+  }
+}
