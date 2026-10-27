@@ -67,6 +67,13 @@ Keep it to the smallest change that would have caught the thing:
 5. **Separate commit**, so it can be dropped without losing the fix it rode in
    with. Say in the PR body that the amendment is separable.
 
+Who writes it matters. A reviewer or an operator **proposes** — it says the
+file and the check and stops there, because none of them holds `Write` or
+`Edit`. The session driving the work is what commits it, including the
+amendments `release-captain` hands back. If no session is in a position to
+commit, the proposal goes to Andrew in words and waits; it does not get written
+by whoever noticed it.
+
 With no PR in flight — an incident, a question, a read-only triage — put the
 proposal in the reply instead, in the same shape, and let Andrew say whether it
 becomes a change.
