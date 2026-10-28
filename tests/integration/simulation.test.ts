@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { prisma } from '@/lib/db'
+import { resetEnvCache } from '@/lib/env'
 import { SimulationRunStatus } from '@/lib/prisma-types'
 import { ingest, readFeed, startRun, stopRun } from '@/modules/simulation/service'
 
@@ -322,5 +323,74 @@ describe('the feed', () => {
     const feed = await readFeed({ runId })
     expect(feed.run?.status).toBe(SimulationRunStatus.RUNNING)
     expect(feed.run?.stalled).toBe(true)
+  })
+})
+
+/**
+ * What the route answers, as a status, because the status *is* an instruction.
+ *
+ * The runner does three different things with three classes of answer: it
+ * drops a malformed batch, it stops when the deployment will not accept it at
+ * all, and it re-sends anything else. Those were being told apart by "4xx
+ * means bad payload", which was wrong twice over — a `ZodError` is not an
+ * `AppError`, so `toErrorPayload` called a schema refusal a 500 and the runner
+ * retried it for ever; and the 4xx the route really returns are a wrong token
+ * and a missing run, which were being silently discarded while the run carried
+ * on spending.
+ */
+describe('the ingest route, as the runner reads it', () => {
+  const token = 'test-simulation-token-0123456789'
+
+  const post = async (body: unknown, authorization = `Bearer ${token}`) => {
+    const { POST } = await import('@/app/api/simulation/ingest/route')
+    return POST(
+      new Request('https://demo.example/api/simulation/ingest', {
+        method: 'POST',
+        headers: { authorization, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    )
+  }
+
+  beforeEach(() => {
+    process.env.SIMULATION_TOKEN = token
+    resetEnvCache()
+  })
+
+  afterAll(() => {
+    delete process.env.SIMULATION_TOKEN
+    resetEnvCache()
+  })
+
+  it('answers 400 for a batch that does not fit the schema', async () => {
+    const response = await post({
+      runId,
+      // A full URL where a path belongs: what an off-origin step used to send.
+      events: [{ ...event(1, '77777777-7777-4777-8777-777777777777'), path: 'https://x.test/a' }],
+      proposals: [],
+      usage: { inputTokens: 1, outputTokens: 1, decisions: 1, spentMinor: 0 },
+    })
+
+    expect(response.status).toBe(400)
+  })
+
+  it('answers 403 for a wrong token, which is not a batch to drop', async () => {
+    const response = await post(
+      { runId, events: [], proposals: [], usage: usage(1) },
+      'Bearer not-the-token-at-all-0123456789',
+    )
+
+    expect(response.status).toBe(403)
+  })
+
+  it('answers 200 for a batch it accepts', async () => {
+    const response = await post({
+      runId,
+      events: [event(1, '88888888-8888-4888-8888-888888888888')],
+      proposals: [],
+      usage: usage(1),
+    })
+
+    expect(response.status).toBe(200)
   })
 })

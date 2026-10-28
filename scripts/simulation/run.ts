@@ -113,11 +113,25 @@ async function main(): Promise<void> {
   }
 
   await reporter.finish(
-    stopped?.startsWith('budget') ? 'BUDGET_REACHED' : 'COMPLETED',
+    endingOf(stopped),
     stopped ?? 'The requested cycles are done.',
     decider.totals,
   )
   console.log(`\n▸ stopped: ${stopped ?? 'cycles complete'}`)
+}
+
+/**
+ * What to call the ending.
+ *
+ * The ceiling is a normal ending and a refusal is not, and the difference
+ * shows on the dashboard as the run's status. A rejected runner reported as
+ * `BUDGET_REACHED` would have an operator looking at the spend for an answer
+ * that is in the token.
+ */
+function endingOf(stopped: string | null): 'COMPLETED' | 'BUDGET_REACHED' | 'FAILED' {
+  if (stopped?.startsWith('budget')) return 'BUDGET_REACHED'
+  if (stopped?.startsWith('rejected')) return 'FAILED'
+  return 'COMPLETED'
 }
 
 interface ScenarioArgs {
@@ -234,7 +248,7 @@ async function runScenario({
       pending = decision.expectation ?? null
 
       const verdict = await reporter.flush(decider.totals)
-      if (verdict.stop) return `budget: ${verdict.reason}`
+      if (verdict.stop) return `${verdict.because ?? 'budget'}: ${verdict.reason}`
 
       if (outcome.finished) break
     }
@@ -251,7 +265,7 @@ async function runScenario({
   }
 
   const verdict = await reporter.flush(decider.totals)
-  return verdict.stop ? `budget: ${verdict.reason}` : null
+  return verdict.stop ? `${verdict.because ?? 'budget'}: ${verdict.reason}` : null
 }
 
 /**

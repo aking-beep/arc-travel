@@ -41,9 +41,26 @@ interface QueuedProposal {
 /** The deployment refused this batch's content. Sending it again cannot help. */
 class RefusedBatch extends Error {}
 
+/**
+ * The deployment will not talk to this runner at all: a wrong token, or a run
+ * that does not exist. Carrying on would be spending with nothing recording
+ * it and no arbiter answering `stop`, which is the failure the budget exists
+ * to prevent — so this ends the run rather than dropping a batch.
+ */
+class RunnerRejected extends Error {}
+
 export interface FlushVerdict {
   stop: boolean
   reason: string
+  /**
+   * Why to stop, so the ending is named correctly.
+   *
+   * `budget` is the ceiling doing its job and is a normal ending; `rejected`
+   * is the deployment refusing this runner, which is a failure. Reporting the
+   * second as the first would put "the spend ceiling was reached" on a run
+   * that was stopped by a wrong token.
+   */
+  because?: 'budget' | 'rejected'
 }
 
 interface Totals {
@@ -121,6 +138,7 @@ export class Reporter {
       return {
         stop: Boolean(response.stop),
         reason: response.stop ? `spent ${response.spentMinor} of ${response.budgetMinor} cents` : '',
+        because: response.stop ? 'budget' : undefined,
       }
     } catch (error) {
       /*
@@ -135,6 +153,12 @@ export class Reporter {
        * runner keeps spending. So a 4xx that is not a rate limit drops the
        * batch and says so, loudly, rather than retrying a refusal.
        */
+      if (error instanceof RunnerRejected) {
+        this.events.unshift(...batch)
+        this.proposals.unshift(...proposals)
+        console.error(`  (the feed will not accept this runner: ${error.message})`)
+        return { stop: true, reason: error.message, because: 'rejected' }
+      }
       if (error instanceof RefusedBatch) {
         console.warn(`  (feed refused a batch of ${batch.length}: ${error.message})`)
         return { stop: false, reason: '' }
@@ -187,11 +211,20 @@ export class Reporter {
     })
     if (!response.ok) {
       const message = `ingest answered ${response.status}`
-      // 4xx is the deployment saying this batch is wrong, not that it is busy.
-      // 429 is the exception: that one does mean "try again".
-      throw response.status >= 400 && response.status < 500 && response.status !== 429
-        ? new RefusedBatch(message)
-        : new Error(message)
+      /*
+       * Three answers, three different things to do, and the status class is
+       * not enough to tell them apart — which is why this reads the exact
+       * codes the ingest route actually returns rather than "4xx means bad
+       * payload". Its 403 is a wrong token and its 404 is a run that is not
+       * there; dropping those would discard the feed and keep spending.
+       */
+      if (response.status === 400) throw new RefusedBatch(message)
+      if (response.status === 401 || response.status === 403 || response.status === 404) {
+        throw new RunnerRejected(message)
+      }
+      // Everything else — 429, 5xx, a proxy having a bad minute — is worth
+      // sending again, and the `clientId`s make that free.
+      throw new Error(message)
     }
     return (await response.json()) as { stop?: boolean }
   }
