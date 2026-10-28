@@ -135,11 +135,64 @@ describe('ingesting what the runner saw', () => {
     expect(feed.run?.finishedAt).not.toBeNull()
   })
 
-  it('refuses a batch for a run that has finished', async () => {
+  /*
+   * The Stop button, end to end.
+   *
+   * `ingest` used to throw for a finished run, which was the hole in Stop: the
+   * runner treats a failed flush as a network blip, puts the batch back and
+   * carries on, so a 400 read as "try again shortly" and it kept spending. The
+   * deployment is the arbiter of `stop`, so a closed run answers rather than
+   * refuses — and it does not let the runner's own ending overwrite the
+   * operator's.
+   */
+  it('tells the runner to stop once the run has been stopped', async () => {
     await stopRun(runId, 'done')
-    await expect(
-      ingest({ runId, events: [], proposals: [], usage: usage(1) }),
-    ).rejects.toThrow(/already finished/i)
+
+    const result = await ingest({ runId, events: [], proposals: [], usage: usage(1) })
+
+    expect(result.stop).toBe(true)
+    expect(result.status).toBe(SimulationRunStatus.COMPLETED)
+  })
+
+  it('keeps a stopped run stopped, whatever the runner says it did', async () => {
+    await stopRun(runId, 'the operator pressed stop')
+
+    await ingest({
+      runId,
+      events: [event(9, '55555555-5555-4555-8555-555555555555')],
+      proposals: [],
+      usage: usage(2),
+      finish: { status: 'COMPLETED', reason: 'The requested cycles are done.' },
+    })
+
+    const feed = await readFeed({ runId })
+    expect(feed.run?.status).toBe(SimulationRunStatus.COMPLETED)
+    expect(feed.run?.stoppedReason).toMatch(/operator pressed stop/i)
+    // The last batch is still kept: the feed is the record of what happened,
+    // and the events were real whatever the run's ending is called.
+    expect(feed.events).toHaveLength(1)
+  })
+
+  it('never lets a retry walk the decision count backwards', async () => {
+    await ingest({
+      runId,
+      events: [],
+      proposals: [],
+      usage: { inputTokens: 9_000, outputTokens: 600, decisions: 12, spentMinor: 40 },
+    })
+    // A flush that committed and then failed to deliver its 200 is re-sent
+    // from a counter that never advanced.
+    await ingest({
+      runId,
+      events: [],
+      proposals: [],
+      usage: { inputTokens: 100, outputTokens: 10, decisions: 1, spentMinor: 2 },
+    })
+
+    const feed = await readFeed({ runId })
+    expect(feed.run?.decisions).toBe(12)
+    expect(feed.run?.inputTokens).toBe(9_000)
+    expect(feed.run?.outputTokens).toBe(600)
   })
 })
 
@@ -150,6 +203,7 @@ describe('proposed amendments', () => {
       events: [event(1, '33333333-3333-4333-8333-333333333333')],
       proposals: [
         {
+          clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
           targetPath: '.claude/skills/arc-verify/SKILL.md',
           miss: 'Nothing says to re-run the accessibility spec after a colour change.',
           suggestion: 'Add a line about re-running the accessibility spec.',
@@ -175,6 +229,7 @@ describe('proposed amendments', () => {
       events: [event(1, '44444444-4444-4444-8444-444444444444')],
       proposals: [
         {
+          clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2',
           targetPath: '.claude/hooks/deny-dangerous.mjs',
           miss: 'The hook refused the runner.',
           suggestion: 'Remove the deny-list entry so the simulation can reset the schema.',
@@ -194,12 +249,35 @@ describe('proposed amendments', () => {
     expect(guard?.summary).toMatch(/refused a proposed amendment/i)
   })
 
+  it('proposes the same amendment once when a batch is resent', async () => {
+    const batch = {
+      runId,
+      events: [event(1, '66666666-6666-4666-8666-666666666666')],
+      proposals: [
+        {
+          clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4',
+          targetPath: '.claude/skills/arc-verify/SKILL.md',
+          miss: 'Nothing says to re-run the accessibility spec after a colour change.',
+          suggestion: 'Add a line about re-running the accessibility spec.',
+        },
+      ],
+      usage: usage(1),
+    }
+
+    await ingest(batch)
+    await ingest(batch)
+
+    const feed = await readFeed({ runId })
+    expect(feed.proposals).toHaveLength(1)
+  })
+
   it('refuses one that names the product rather than the harness', async () => {
     const result = await ingest({
       runId,
       events: [],
       proposals: [
         {
+          clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3',
           targetPath: 'src/modules/destination/conditions.ts',
           miss: 'The gate was strict.',
           suggestion: 'Widen the window the gate allows.',

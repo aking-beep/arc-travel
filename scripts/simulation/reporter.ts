@@ -31,11 +31,15 @@ export interface QueuedEvent {
 }
 
 interface QueuedProposal {
+  clientId: string
   targetPath: string
   miss: string
   suggestion: string
   fromClientId?: string
 }
+
+/** The deployment refused this batch's content. Sending it again cannot help. */
+class RefusedBatch extends Error {}
 
 export interface FlushVerdict {
   stop: boolean
@@ -64,6 +68,10 @@ export class Reporter {
 
   queue(event: QueuedEvent): string {
     this.sequence += 1
+    // Counted here, not at flush time. A flush that fails puts its batch back
+    // and sends it again; a counter advanced per *send* counted those
+    // decisions twice, and the dashboard's cost-per-decision read low.
+    if (event.kind === 'DECISION') this.decisionCount += 1
     const clientId = randomUUID()
     this.events.push({
       ...event,
@@ -77,8 +85,12 @@ export class Reporter {
   }
 
   /** A proposal belongs to whatever was last reported, which is its cause. */
-  propose(proposal: Omit<QueuedProposal, 'fromClientId'>): void {
-    this.proposals.push({ ...proposal, fromClientId: this.lastClientId ?? undefined })
+  propose(proposal: Omit<QueuedProposal, 'fromClientId' | 'clientId'>): void {
+    this.proposals.push({
+      ...proposal,
+      clientId: randomUUID(),
+      fromClientId: this.lastClientId ?? undefined,
+    })
   }
 
   async flush(totals: Totals): Promise<FlushVerdict> {
@@ -97,7 +109,7 @@ export class Reporter {
         usage: {
           inputTokens: totals.usage.inputTokens,
           outputTokens: totals.usage.outputTokens,
-          decisions: this.decisions(batch),
+          decisions: this.decisionCount,
           spentMinor: nanosToMinor(totals.nanos),
         },
       })
@@ -112,12 +124,21 @@ export class Reporter {
       }
     } catch (error) {
       /*
-       * A failed flush puts the batch back and carries on.
+       * A failed flush puts the batch back and carries on — unless the
+       * deployment refused the batch itself.
        *
        * The dashboard losing a few seconds of feed because a laptop changed
        * network is not a reason to end a run an operator is watching; the
        * events are re-sent with the same `clientId`s, so nothing duplicates.
+       * But a batch the *ingest schema* rejected will be rejected identically
+       * for ever, and re-queueing it wedges the feed at that batch while the
+       * runner keeps spending. So a 4xx that is not a rate limit drops the
+       * batch and says so, loudly, rather than retrying a refusal.
        */
+      if (error instanceof RefusedBatch) {
+        console.warn(`  (feed refused a batch of ${batch.length}: ${error.message})`)
+        return { stop: false, reason: '' }
+      }
       this.events.unshift(...batch)
       this.proposals.unshift(...proposals)
       console.warn(`  (feed unavailable: ${error instanceof Error ? error.message : String(error)})`)
@@ -140,7 +161,7 @@ export class Reporter {
         usage: {
           inputTokens: totals.usage.inputTokens,
           outputTokens: totals.usage.outputTokens,
-          decisions: this.decisions(batch),
+          decisions: this.decisionCount,
           spentMinor: nanosToMinor(totals.nanos),
         },
         finish: { status, reason: reason.slice(0, 300) || 'Finished.' },
@@ -150,12 +171,7 @@ export class Reporter {
     }
   }
 
-  /** Decisions are the denominator of cost per decision, so they are counted. */
-  private decisions(batch: Array<{ kind: string }>): number {
-    this.decisionCount += batch.filter((event) => event.kind === 'DECISION').length
-    return this.decisionCount
-  }
-
+  /** The denominator of cost per decision. Advanced in `queue`, never here. */
   private decisionCount = 0
 
   private async send(body: unknown): Promise<{
@@ -169,7 +185,14 @@ export class Reporter {
       headers: { authorization: `Bearer ${this.token}`, 'content-type': 'application/json' },
       body: JSON.stringify(body),
     })
-    if (!response.ok) throw new Error(`ingest answered ${response.status}`)
+    if (!response.ok) {
+      const message = `ingest answered ${response.status}`
+      // 4xx is the deployment saying this batch is wrong, not that it is busy.
+      // 429 is the exception: that one does mean "try again".
+      throw response.status >= 400 && response.status < 500 && response.status !== 429
+        ? new RefusedBatch(message)
+        : new Error(message)
+    }
     return (await response.json()) as { stop?: boolean }
   }
 }

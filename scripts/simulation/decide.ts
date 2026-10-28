@@ -218,7 +218,10 @@ function render(request: DecisionRequest): string {
       ? `Last step you expected: ${request.pendingExpectation}\nJudge it against the page below, in "previous".`
       : 'You expected nothing in particular from the last step; set "previous" to null.',
     '',
-    `You are on ${observation.path} — "${observation.title}"`,
+    observation.path
+      ? `You are on ${observation.path} — "${observation.title}"`
+      : `You have left ARC Stay and are on ${observation.offOrigin} — "${observation.title}". ` +
+        'Going back is almost certainly what you want.',
     observation.heading ? `Heading: ${observation.heading}` : '',
     '',
     'What the page says:',

@@ -22,7 +22,19 @@ export interface Affordance {
 }
 
 export interface Observation {
-  readonly path: string
+  /**
+   * The path inside the product, or `null` when the browser has left it.
+   *
+   * Never the full URL. A link in content can take a persona off ARC Stay, and
+   * a URL carries whatever is in its query — which on this product includes a
+   * portal token, a bearer credential (ADR-035). So an off-origin page reports
+   * its *origin* and nothing else, and the event that records it carries no
+   * path at all rather than one the ingest schema would refuse and the runner
+   * would then re-send for ever.
+   */
+  readonly path: string | null
+  /** The origin the browser is on, when that is not the product. */
+  readonly offOrigin: string | null
   readonly title: string
   readonly heading: string
   /** Visible text, trimmed and bounded. */
@@ -36,13 +48,24 @@ export interface ObservedPage {
   readonly targets: readonly Locator[]
 }
 
+/** An origin with no path, query or fragment: never a credential. */
+function safeOrigin(url: string): string {
+  try {
+    return new URL(url).origin
+  } catch {
+    return 'somewhere else'
+  }
+}
+
 const MAX_AFFORDANCES = 45
 const MAX_TEXT = 2_600
 
 export async function observe(page: Page, baseUrl: string): Promise<ObservedPage> {
   await settled(page)
 
-  const path = page.url().startsWith(baseUrl) ? page.url().slice(baseUrl.length) || '/' : page.url()
+  const onOrigin = page.url().startsWith(baseUrl)
+  const path = onOrigin ? page.url().slice(baseUrl.length) || '/' : null
+  const offOrigin = onOrigin ? null : safeOrigin(page.url())
 
   const [title, heading, rawText] = await Promise.all([
     page.title().catch(() => ''),
@@ -79,6 +102,7 @@ export async function observe(page: Page, baseUrl: string): Promise<ObservedPage
   return {
     observation: {
       path,
+      offOrigin,
       title,
       heading: heading.trim().slice(0, 160),
       text: squash(rawText).slice(0, MAX_TEXT),

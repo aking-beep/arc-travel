@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { parseDecision } from '../../scripts/simulation/decide'
+import { ingestSchema } from '../../src/modules/simulation/schemas'
 
 /**
  * Reading a decision.
@@ -63,5 +64,46 @@ describe('parsing a decision', () => {
       }),
     )
     expect(result.ok).toBe(true)
+  })
+})
+
+/**
+ * What the runner may call a path.
+ *
+ * `observe` reports the page's path, and a persona can leave the product by
+ * clicking a link in content. It used to report the whole URL in that case,
+ * which the schema refuses — and the reporter re-sends a refused batch, so one
+ * off-origin step wedged the feed for the rest of the run while the model kept
+ * billing. Two rules, and the second is why the first cannot simply be relaxed.
+ */
+describe('the path a runner may report', () => {
+  const batch = (path: string) => ({
+    runId: '11111111-1111-4111-8111-111111111111',
+    events: [
+      {
+        clientId: '22222222-2222-4222-8222-222222222222',
+        sequence: 1,
+        kind: 'ACTION' as const,
+        persona: 'hotel-guest',
+        summary: 'looked at a page',
+        path,
+        costMinor: 0,
+        occurredAt: new Date().toISOString(),
+      },
+    ],
+    proposals: [],
+    usage: { inputTokens: 1, outputTokens: 1, decisions: 1, spentMinor: 0 },
+  })
+
+  it('takes a path inside the product', () => {
+    expect(ingestSchema.safeParse(batch('/owner/revenue')).success).toBe(true)
+  })
+
+  it('refuses a full URL, because a URL carries whatever is in its query', () => {
+    expect(ingestSchema.safeParse(batch('https://example.com/g/abc')).success).toBe(false)
+  })
+
+  it('refuses a protocol-relative URL, which a browser treats as absolute', () => {
+    expect(ingestSchema.safeParse(batch('//example.com/g/abc')).success).toBe(false)
   })
 })

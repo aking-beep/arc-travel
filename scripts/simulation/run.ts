@@ -177,7 +177,7 @@ async function runScenario({
           step: `step ${step + 1}`,
           summary: pending.text,
           detail: decision.previous.evidence,
-          path: observed.observation.path,
+          path: observed.observation.path ?? undefined,
           verdict: decision.previous.held ? 'HELD' : 'FAILED',
           severity: pending.severity,
         })
@@ -197,11 +197,27 @@ async function runScenario({
         scenario,
         step: `step ${step + 1}`,
         summary: decision.doing,
-        path: observed.observation.path,
+        path: observed.observation.path ?? undefined,
         costMinor: nanosToMinor(spent),
       })
 
-      claimChecks(observed.observation.text, observed.observation.path, persona, scenario, reporter)
+      /*
+       * Only ARC's own pages are held to ARC's promises.
+       *
+       * A link in content can take a persona off the product, and the claim
+       * checks look for "safe" and "verified" in the visible text. Running
+       * them on somebody else's page would report that page's wording as a
+       * failure of non-negotiable 1, which is a false blocker in the feed.
+       */
+      if (observed.observation.path) {
+        claimChecks(
+          observed.observation.text,
+          observed.observation.path,
+          persona,
+          scenario,
+          reporter,
+        )
+      }
 
       const outcome = await act(page, observed, decision.action, BASE_URL)
       reporter.queue({
@@ -211,7 +227,7 @@ async function runScenario({
         step: `step ${step + 1}`,
         summary: outcome.summary,
         detail: outcome.detail,
-        path: observed.observation.path,
+        path: observed.observation.path ?? undefined,
       })
 
       history.push(`${decision.doing} → ${outcome.summary}`)

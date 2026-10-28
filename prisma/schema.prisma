@@ -2038,6 +2038,12 @@ model SimulationProposal {
   id    String @id @default(uuid())
   runId String
 
+  /// The runner's own id for this proposal, and the whole of what makes a
+  /// resend idempotent — the same thing `SimulationEvent.clientId` is for. A
+  /// flush that committed and then failed to deliver its 200 is re-sent, and
+  /// without this the second copy was a second amendment in the panel.
+  clientId String
+
   /// The file it amends, e.g. `.claude/skills/arc-verify/SKILL.md`. Checked
   /// against an allow-list of `.claude/` paths before the row is written.
   targetPath String
@@ -2056,6 +2062,7 @@ model SimulationProposal {
 
   run SimulationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
 
+  @@unique([runId, clientId])
   @@index([runId, status, createdAt])
 }
 

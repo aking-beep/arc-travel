@@ -79,6 +79,11 @@ export type SimulationEventInput = z.infer<typeof simulationEventSchema>
 
 export const simulationProposalSchema = z
   .object({
+    /**
+     * The runner's own id for this proposal. A resent batch proposes the same
+     * amendment once, for the reason `simulationEventSchema.clientId` exists.
+     */
+    clientId: z.string().uuid(),
     /** A `.claude/` file. Checked again by `isHarnessPath` and by the database. */
     targetPath: trimmed(200),
     miss: trimmed(400),

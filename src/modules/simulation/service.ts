@@ -150,15 +150,39 @@ export async function ingest(raw: unknown): Promise<IngestResult> {
 
   const run = await prisma.simulationRun.findUnique({
     where: { id: input.runId },
-    select: { id: true, status: true, budgetMinor: true, spentMinor: true },
+    select: {
+      id: true,
+      status: true,
+      budgetMinor: true,
+      spentMinor: true,
+      inputTokens: true,
+      outputTokens: true,
+      decisions: true,
+    },
   })
   if (!run) throw notFound('Simulation run')
-  if (run.status !== SimulationRunStatus.RUNNING) {
-    throw invalid(`This run has already finished (${run.status.toLowerCase()}).`)
-  }
+
+  /*
+   * A run that is over answers `stop`, it does not refuse.
+   *
+   * This used to throw, and the throw was the hole in the Stop button. The
+   * runner treats a failed flush as a network blip — it puts the batch back
+   * and carries on, because a laptop changing network is not a reason to end a
+   * run somebody is watching. So a 400 here read as "try again shortly", the
+   * runner kept taking steps and kept billing the model, and the one control
+   * an operator has over the spend did nothing.
+   *
+   * The deployment is the arbiter of `stop` (that is the whole shape of this
+   * file). So a closed run still accepts the batch, which is idempotent
+   * anyway, and answers `stop: true`. What it will not do below is move the
+   * status: an operator's Stop outranks the runner's own idea of how the run
+   * ended, and it arrived first.
+   */
+  const closed = run.status !== SimulationRunStatus.RUNNING
 
   const refused: IngestResult['refused'] = []
   const accepted: Array<{
+    clientId: string
     targetPath: string
     miss: string
     suggestion: string
@@ -192,8 +216,8 @@ export async function ingest(raw: unknown): Promise<IngestResult> {
    * double-count the one number the ceiling is read from.
    */
   const spentMinor = Math.max(run.spentMinor, input.usage.spentMinor)
-  const stop = spentMinor >= run.budgetMinor
-  const finish = input.finish
+  const stop = closed || spentMinor >= run.budgetMinor
+  const finish = closed ? undefined : input.finish
 
   const result = await prisma.$transaction(async (tx) => {
     if (input.events.length > 0) {
@@ -258,40 +282,63 @@ export async function ingest(raw: unknown): Promise<IngestResult> {
           })
         : null
 
-      await tx.simulationProposal.create({
-        data: {
-          runId: run.id,
-          targetPath: proposal.targetPath,
-          miss: proposal.miss,
-          suggestion: proposal.suggestion,
-          eventId: prompting?.id ?? null,
-        },
+      // `createMany` with `skipDuplicates`, not `create`: the unique
+      // `[runId, clientId]` is what makes a resent batch propose the same
+      // amendment once rather than filling the panel with copies of it.
+      await tx.simulationProposal.createMany({
+        data: [
+          {
+            runId: run.id,
+            clientId: proposal.clientId,
+            targetPath: proposal.targetPath,
+            miss: proposal.miss,
+            suggestion: proposal.suggestion,
+            eventId: prompting?.id ?? null,
+          },
+        ],
+        skipDuplicates: true,
       })
     }
 
-    const status = finish
-      ? SimulationRunStatus[finish.status]
-      : stop
-        ? SimulationRunStatus.BUDGET_REACHED
-        : SimulationRunStatus.RUNNING
+    const status = closed
+      ? run.status
+      : finish
+        ? SimulationRunStatus[finish.status]
+        : stop
+          ? SimulationRunStatus.BUDGET_REACHED
+          : SimulationRunStatus.RUNNING
 
     const reason = finish
       ? finish.reason
-      : stop
+      : stop && !closed
         ? `The spend ceiling of ${formatUsdMinor(run.budgetMinor)} was reached.`
-        : null
+        : undefined
 
+    /*
+     * Every total is a high-water mark, for the reason the spend is.
+     *
+     * The runner reports running totals rather than deltas so a resend is
+     * harmless, but a resend can still carry a *lower* number than what landed
+     * — a flush that failed after committing is re-sent from a counter that
+     * never advanced. Taking the maximum means a retry can never walk the
+     * dashboard's figures backwards, and the cost-per-decision an operator
+     * reads stays the one the API actually reported.
+     */
     return tx.simulationRun.update({
       where: { id: run.id },
       data: {
-        inputTokens: input.usage.inputTokens,
-        outputTokens: input.usage.outputTokens,
-        decisions: input.usage.decisions,
+        inputTokens: Math.max(run.inputTokens, input.usage.inputTokens),
+        outputTokens: Math.max(run.outputTokens, input.usage.outputTokens),
+        decisions: Math.max(run.decisions, input.usage.decisions),
         spentMinor,
         heartbeatAt: new Date(),
-        status,
-        stoppedReason: reason,
-        finishedAt: status === SimulationRunStatus.RUNNING ? null : new Date(),
+        ...(closed
+          ? {}
+          : {
+              status,
+              stoppedReason: reason ?? null,
+              finishedAt: status === SimulationRunStatus.RUNNING ? null : new Date(),
+            }),
       },
       select: { status: true, spentMinor: true, budgetMinor: true },
     })
