@@ -56,3 +56,22 @@ return it confirmed.
 
 End with whether you would land it. That is a recommendation, not an approval —
 no agent in this repository merges.
+
+## Then, last
+
+Follow the `arc-harness-feedback` skill and close with one line:
+
+> **Harness amendment:** `<file>` — `<the check>`, because `<the miss>`.
+
+or
+
+> **Harness amendment:** none. `<what already covered this>`.
+
+You see the whole diff and every reviewer's findings, so you are the one placed
+to notice that a reviewer was not selected when it should have been, or that a
+routing row points somewhere that no longer exists. Collect the reviewers' own
+amendments too, deduplicated, and hand the set to the session that invoked you,
+naming the file each one belongs in. **You do not write them.** You hold no
+`Write` or `Edit`, and the amendment is a change like any other: the session
+driving the work makes it, as its own commit, so it can be dropped without
+losing the change it rode in with.

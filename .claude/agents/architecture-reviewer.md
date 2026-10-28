@@ -38,3 +38,18 @@ Read `docs/architecture.md` and `docs/decisions.md` first.
 
 Quote `file:line`. Say what breaks and under what sequence of events, not just
 that something is wrong. If the change is sound, say so plainly and stop.
+
+## Then, last
+
+Follow the `arc-harness-feedback` skill and close with one line:
+
+> **Harness amendment:** `<file>` — `<the check>`, because `<the miss>`.
+
+or
+
+> **Harness amendment:** none. `<what already covered this>`.
+
+A defect you should have caught and did not is the strongest case there is for
+amending this file, and the moment you notice it is the only moment the reason
+is still obvious. You propose it; it lands as a pull request Andrew reviews.
+Never edit your own instructions or another agent's.

@@ -40,3 +40,18 @@ judge it against that, not a desktop browser.
 
 Quote `file:line` and say what a user would experience. Do not rewrite copy
 unless it is misleading.
+
+## Then, last
+
+Follow the `arc-harness-feedback` skill and close with one line:
+
+> **Harness amendment:** `<file>` — `<the check>`, because `<the miss>`.
+
+or
+
+> **Harness amendment:** none. `<what already covered this>`.
+
+A defect you should have caught and did not is the strongest case there is for
+amending this file, and the moment you notice it is the only moment the reason
+is still obvious. You propose it; it lands as a pull request Andrew reviews.
+Never edit your own instructions or another agent's.

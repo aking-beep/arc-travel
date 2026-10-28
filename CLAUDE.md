@@ -247,7 +247,8 @@ path-to-reviewer table.
 - `.claude/skills/` — the procedures that get repeated. `arc-ship-change` is
   the one to read at the start of a change; `arc-verify` before a commit;
   `arc-money`, `arc-inventory`, `arc-adr`, `arc-ops-triage` and
-  `arc-demo-reset` for their subjects.
+  `arc-demo-reset` for their subjects; `arc-harness-feedback` at the end of
+  one.
 - `.claude/agents/` — the six reviewers, plus `release-captain` and three
   read-only operators (`ops-triage`, `conditions-steward`,
   `verification-diary`).
@@ -256,3 +257,6 @@ path-to-reviewer table.
   Prisma's destructive-action consent, a schema reset or push, SQL that writes a
   supplier's verification or a `ConditionReport`, outbound messaging, a live
   Stripe key. A refusal names the document the rule comes from.
+- `.claude/harness-log.md` — why each check exists, and the miss that prompted
+  it. Nothing in `.claude/` edits itself: an agent that notices a gap proposes
+  the amendment and a person approves it.
