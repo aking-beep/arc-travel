@@ -35,7 +35,8 @@
     "restore-drill": "./scripts/restore-drill.sh",
     "restore-smoke": "tsx scripts/restore-smoke.ts",
     "load-test": "node scripts/load-test.mjs",
-    "vercel-build": "prisma generate && npm run db:rebuild && prisma migrate deploy && npm run db:ensure-seed && next build"
+    "vercel-build": "prisma generate && npm run db:rebuild && prisma migrate deploy && npm run db:ensure-seed && next build",
+    "pressure-test": "tsx scripts/pressure-test/run.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.1",

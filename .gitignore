@@ -28,3 +28,6 @@ npm-debug.log*
 # Playwright
 /test-results/
 /playwright-report/
+
+# Pressure-test output: screenshots, findings.json and the generated readout.
+pressure-test-output/

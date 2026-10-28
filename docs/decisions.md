@@ -1227,6 +1227,43 @@ is still the rule's exception rather than the rule: this one had been applied
 only to the hosted demo, which took the `NOT VALID` re-declaration in the same
 `migrate deploy` run and so already holds the corrected form.
 
+### Amendment, 2026-10-27: the public storefront was the surface nobody checked
+
+The 2026-10-26 amendment above found guest surfaces asking the stored column in
+three places and fixed those three. It missed a fourth, and the fourth is the
+one a stranger sees: `src/modules/discovery/live.ts`, the bridge from the
+published catalogue to the public pages. A persona pressure test
+(`scripts/pressure-test/`) found it from the outside — a "Verified by ARC"
+badge with a shield icon on the public home page — and the code confirmed it:
+`live.ts` was the only guest-facing badge path in the codebase with no
+reference to `isCurrentlyVerified`, because `EXPERIENCE_CARD_SELECT` loaded
+`verification` alone and the live question's inputs were therefore not there to
+ask. Exactly the failure the first amendment described, in the one place it did
+not look.
+
+`VERIFICATION_STANDING_SELECT` is now spread in both public supplier selects,
+and `publicVerification` downgrades a `VERIFIED` row whose standing is no
+longer current to `UNVERIFIED` on the card and on the detail page. Downgraded,
+not hidden: a lapse changes presentation and not data, and nothing is
+unpublished over it. `allUnverified`, which decides whether the destination
+page says none of the catalogue is verified yet, asks the live question too.
+
+**And the demo property was claiming a verification nobody performed.**
+`prisma/seed.ts` wrote `verification: VERIFIED` on Casa Olas. That column is
+what the public property card's badge reads, so the home page printed the
+shield to any visitor — on the same build whose `/admin` page states that
+nothing is verified by a seed, and against non-negotiable 2, which makes
+`/admin` the only route to a verified status. The seed now writes `UNVERIFIED`,
+like the six seeded partners. A property has no checklist and no insurance
+expiry, so there is no standing to derive for one: the column *is* the
+decision, which is why the seed must not write it.
+
+The honest version of the demo is a hotel and six partners that nobody has
+verified, with the product saying so on every surface. If the demo should show
+what a verified listing looks like, that is an admin recording a verification
+through `/admin` — the route the product insists on — not a fixture asserting
+one.
+
 ## ADR-037 — Monitoring watches the data, not only the requests
 
 **Status:** accepted · 2026-10-26
