@@ -1878,3 +1878,261 @@ enum JoinRequestStatus {
   /// Withdrawn by the business before anyone decided.
   WITHDRAWN
 }
+
+// ---------------------------------------------------------------------------
+// The live simulation (ADR-043)
+// ---------------------------------------------------------------------------
+
+/// One continuous simulation session: an operator opened `/admin/simulation`,
+/// started the runner, and simulated people drove the product until it stopped.
+///
+/// Platform-scoped, so no `organizationId`: a run is about the deployment, not
+/// about one hotel, and the personas act across every tenant in the demo.
+///
+/// `dataMode` is the mode the *target* reported at preflight, recorded rather
+/// than assumed, and `simulation_run_is_demo_only` refuses any other value. A
+/// simulation invents guests, races for seats and probes refusals; the one
+/// place that may ever happen is synthetic data. See ADR-043.
+model SimulationRun {
+  id String @id @default(uuid())
+
+  /// The origin the personas drove, e.g. `https://arc-stay-demo.vercel.app`.
+  targetUrl    String
+  /// What `GET /api/health` said the target's `ARC_DATA_MODE` was. Only `demo`
+  /// is storable, and the CHECK is what makes that true rather than intended.
+  dataMode     String
+  /// The model the personas' decisions ran on, e.g. `claude-sonnet-5-5`.
+  model        String
+  /// The spend ceiling the operator set, in USD cents. The runner stops when
+  /// `spentMinor` would pass it, so a dashboard left open overnight cannot
+  /// spend without a bound.
+  budgetMinor  Int
+  /// What the decisions have cost so far, in USD cents, from the token counts
+  /// the API reported. Minor units for the same reason every other figure is
+  /// (non-negotiable 3), even though it is a cost rather than a price.
+  spentMinor   Int    @default(0)
+  /// Tokens, for the arithmetic behind `spentMinor` to be checkable.
+  inputTokens  Int    @default(0)
+  outputTokens Int    @default(0)
+  /// Decisions the personas made, as a denominator for the cost per decision.
+  decisions    Int    @default(0)
+
+  status        SimulationRunStatus @default(RUNNING)
+  /// Why it ended, when it ended for a reason: the budget, a lost target, the
+  /// operator closing the dashboard. Shown so a stopped run is never a blank.
+  stoppedReason String?
+
+  startedAt   DateTime  @default(now())
+  /// Last time the runner said anything. The dashboard reads a run as stalled
+  /// rather than running once this is old, because a worker that died says
+  /// nothing at all.
+  heartbeatAt DateTime  @default(now())
+  finishedAt  DateTime?
+
+  events    SimulationEvent[]
+  proposals SimulationProposal[]
+
+  @@index([status, startedAt])
+}
+
+enum SimulationRunStatus {
+  RUNNING
+  /// Ended as asked: the operator stopped it, or the cycle count ran out.
+  COMPLETED
+  /// Ended because the spend ceiling was reached.
+  BUDGET_REACHED
+  /// The runner stopped saying anything. Nothing writes this; the dashboard
+  /// derives it from `heartbeatAt`, and the sweep writes it when it is certain.
+  STALLED
+  FAILED
+}
+
+/// One thing that happened, append-only, in the order it happened.
+///
+/// Append-only and dense on purpose: the dashboard is a feed, and a feed that
+/// only keeps the latest state cannot tell an operator what the persona was
+/// doing when the thing went wrong. `sequence` is assigned by the runner so the
+/// order survives two events arriving in one request.
+model SimulationEvent {
+  id    String @id @default(uuid())
+  runId String
+
+  /// The runner's own id for this event. It is what makes a resend idempotent:
+  /// a batch the runner was not sure landed is sent again, and the unique
+  /// `[runId, clientId]` turns the second copy into a no-op. Ordering is
+  /// `sequence`, which is deliberately *not* unique — the server appends its
+  /// own rows (a refused proposal) at the sequence of the event that prompted
+  /// them, so the refusal reads next to its cause rather than at the end.
+  clientId String
+
+  sequence Int
+  kind     SimulationEventKind
+  /// Which simulated person, e.g. `hotel-guest`. Not a user id: no persona is
+  /// a person, and the accounts they sign into are the demo's own.
+  persona  String
+  /// The scenario they are working through, in their own words.
+  scenario String?
+  /// The leg of the journey, e.g. `checkout`.
+  step     String?
+
+  /// One line, written for an operator reading a feed.
+  summary String
+  /// What was seen: page text, a status code, the refusal that was rendered.
+  detail  String?
+  /// Where it happened. A path, never a full URL with a token in it.
+  path    String?
+
+  /// Only on a `CHECK` event: whether the expectation held.
+  verdict  SimulationVerdict?
+  severity String?
+
+  /// The decision's own cost in USD cents, so the feed can show where the
+  /// money went rather than only a total.
+  costMinor Int @default(0)
+
+  occurredAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  run SimulationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, clientId])
+  @@index([runId, sequence])
+  @@index([runId, kind, sequence])
+}
+
+enum SimulationEventKind {
+  /// A new scenario began.
+  SCENARIO
+  /// The model decided what the person does next, and why.
+  DECISION
+  /// The decision was carried out in the browser.
+  ACTION
+  /// An expectation about what the product did, with a verdict.
+  CHECK
+  /// A console error, a 5xx, a failed request — what no expectation was
+  /// looking for.
+  PROBLEM
+  /// A harness guard fired: a refusal the product made, or a rule the runner
+  /// itself enforced.
+  GUARD
+  /// Something observed that no expectation can judge.
+  NOTE
+}
+
+enum SimulationVerdict {
+  HELD
+  FAILED
+  ERRORED
+}
+
+/// A proposed amendment to one `.claude/` file, written because something the
+/// simulation saw should have been caught by it.
+///
+/// A proposal and nothing more. Per the harness rules nothing in this product
+/// edits its own guardrails: the row carries the file, the miss and the
+/// suggested text, an operator reads it on `/admin/simulation`, and it becomes
+/// a pull request only when a person decides it should. Anything that would
+/// relax a non-negotiable, a deny-list entry or a guard pattern is refused by
+/// the runner before it is ever written here. See ADR-043.
+model SimulationProposal {
+  id    String @id @default(uuid())
+  runId String
+
+  /// The runner's own id for this proposal, and the whole of what makes a
+  /// resend idempotent — the same thing `SimulationEvent.clientId` is for. A
+  /// flush that committed and then failed to deliver its 200 is re-sent, and
+  /// without this the second copy was a second amendment in the panel.
+  clientId String
+
+  /// The file it amends, e.g. `.claude/skills/arc-verify/SKILL.md`. Checked
+  /// against an allow-list of `.claude/` paths before the row is written.
+  targetPath String
+  /// The miss that prompted it, in one sentence.
+  miss       String
+  /// The amendment itself, as the text a person would paste.
+  suggestion String
+  /// The event that prompted it, so the proposal can be read back to what
+  /// happened rather than taken on trust.
+  eventId    String?
+
+  status SimulationProposalStatus @default(PROPOSED)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  run SimulationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, clientId])
+  @@index([runId, status, createdAt])
+}
+
+enum SimulationProposalStatus {
+  PROPOSED
+  /// An operator has read it and wants it; it still becomes a pull request by
+  /// hand. Nothing in this product writes `.claude/`.
+  ACCEPTED
+  DISMISSED
+}
+
+/// One thing a simulated inhabitant did to the demo (ADR-044).
+///
+/// The inhabitants engine makes the demo busy: travellers arrive, baskets
+/// fill, seats are bought and given back, businesses ask to join. It does all
+/// of that through the product's own services, so what an operator sees in
+/// their screens is real product behaviour on synthetic data — and this table
+/// is the record of which of it was simulated.
+///
+/// Platform-scoped, like `SimulationRun`, and demo-only for the same reason.
+model SimulatedActivity {
+  id String @id @default(uuid())
+
+  kind     SimulatedActivityKind
+  /// How it ran: a scheduled tick, or a heartbeat from somebody's open page.
+  source   String
+  /// Always `demo`, and a CHECK constraint says so. The inhabitants are a
+  /// sandbox population; a deployment holding real data has no row to write.
+  dataMode String                @default("demo")
+
+  /// The simulated person, in the words a screen would show, e.g. "Rosa Vidal".
+  actor   String
+  /// One line, written for somebody watching the town rather than debugging it.
+  summary String
+  detail  String?
+  /// Where in the product it shows up, so a watcher can go and look.
+  path    String?
+
+  /// Rows it touched, for a sweep and for reading an entry back to the data.
+  stayId      String?
+  orderId     String?
+  orderItemId String?
+
+  occurredAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  @@index([occurredAt])
+  @@index([kind, occurredAt])
+}
+
+enum SimulatedActivityKind {
+  /// A traveller booked a trip through a hotel's storefront.
+  ARRIVAL
+  /// Somebody answered the hotel's intake questions.
+  INTAKE
+  /// The hotel entered a room reservation.
+  RESERVATION
+  /// Somebody put a seat in their basket, which takes a hold.
+  BASKET
+  /// A basket became an order, and money moved in the demo's ledger.
+  PURCHASE
+  /// Somebody gave a seat back.
+  CANCELLATION
+  /// A business asked a hotel to work with it.
+  JOIN_REQUEST
+  /// The front desk checked somebody in.
+  CHECK_IN
+  /// Availability was extended so the town does not run out of days.
+  HORIZON
+  /// Nothing was done, and why. A tick that does nothing is not a tick that
+  /// failed, and the difference has to be visible.
+  QUIET
+}

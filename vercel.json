@@ -12,6 +12,10 @@
     {
       "path": "/api/cron/dispatch-email",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/inhabitants",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { Activity, Map, ShieldCheck } from 'lucide-react'
+import { Activity, Map, Radio, ShieldCheck } from 'lucide-react'
 import { DemoBanner } from '@/components/demo-banner'
 import { signOutAction } from '@/app/actions'
 import { getActor } from '@/modules/auth/service'
@@ -12,6 +12,7 @@ const NAV = [
   { href: '/admin', label: 'Verification', icon: ShieldCheck },
   { href: '/admin/destination', label: 'Destination graph', icon: Map },
   { href: '/admin/health', label: 'System health', icon: Activity },
+  { href: '/admin/simulation', label: 'Live simulation', icon: Radio },
 ]
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {

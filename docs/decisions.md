@@ -1850,3 +1850,197 @@ two hotels has two guest records.
 
 **Bounded, because it is open.** Five sign-ups per caller per hour and sixty per
 property per hour. A sign-up writes rows into a real hotel's guest list.
+
+## ADR-043 — A live simulation is a user of the product, bounded by a budget and confined to the demo
+
+**Status:** accepted · 2026-10-27
+
+**Context.** The product has no real users yet, and the pressure-test harness
+(`scripts/pressure-test/`) answers a different question from the one an owner
+keeps asking: not "do the journeys we wrote still hold", but "what happens when
+somebody does something nobody wrote down". The ask was a dashboard that, while
+it is open, shows simulated people working through the product against
+synthetic data, with the harness's own checks and its proposed amendments
+visible as they happen.
+
+Three things had to be decided: where such a runner lives, what stops it, and
+what it is allowed to touch.
+
+**Decision.**
+
+**The personas improvise, and the improvising is a model call per step.** The
+briefs are written down — a goal, the few facts the person has, and the
+product's promises restated in that person's terms — and what the person does
+next is decided from the page in front of them. One call per step answers three
+things at once: whether the expectation it stated last step held, what the
+person does now, and what it expects next. Judging the previous expectation in
+the same call rather than a second one halves the bill and loses nothing, since
+the evidence is the page that call is already looking at.
+
+The two claims the product promises never to make are **not** left to the
+model. `safetyClaims` and `verificationClaims` run deterministically on every
+page the personas see. A judgement about the product's two load-bearing
+promises should not vary between runs, and the model's own watching is the
+wider net rather than the backstop.
+
+**The runner is a process, not a route.** It drives a real browser, which no
+serverless function hosts. It would have been possible to drive the services
+directly from inside the app and call that a simulation; that was rejected
+twice over. It would test a path no user takes, and a simulation that can be
+started from inside the deployment is a privileged path into the deployment.
+The only way in is a bearer token and two routes: one to open a run, one to
+report what was seen. The runner may write and may not read the feed; an
+operator may read everything and writes none of it.
+
+**The deployment holds the budget, the runner holds the tokens.** Spend is
+computed from the token counts the API reports, in integer nanodollars (a
+published price in dollars per million is exactly nanodollars per token, which
+keeps the cheapest model's $0.10/M from becoming a float), converted to cents
+once, at the edge, rounding **up**. The runner sends its running total and the
+deployment answers `stop`. One arbiter, and it is the one with the dashboard
+attached: a runner that decided its own stopping point from its own copy of the
+prices would be the only thing that knew it had passed the ceiling.
+
+**It runs against the demo or it does not run.** The personas invent guests,
+race three ways for one seat and probe refusals. There is one kind of data that
+may happen to, and "we point it at the demo" is a convention somebody
+eventually forgets. So three independent refusals, each of which would be
+sufficient and none of which is trusted alone:
+
+1. the runner asks the target what it is and accepts only `demo` — the
+   deployment's own statement rather than a flag or a URL pattern;
+2. `SIMULATION_TOKEN` is refused by `getEnv()` outside `ARC_DATA_MODE=demo`, so
+   the live hotel's deployment cannot hold a working token;
+3. `simulation_run_is_demo_only` refuses the row, so a run against real data
+   has nowhere to be recorded even if the first two were bypassed.
+
+**A persona proposes; nobody applies.** A failure may produce a proposed
+amendment to one `.claude/` file, which is the PR-#11 feedback loop with one
+extra hazard: the agent writing the proposal is also the thing the guardrail
+refused, and the cheapest way to stop failing a check is to propose that the
+check go away. `guardrails.ts` therefore refuses any suggestion that removes,
+loosens or bypasses a guard, turns outbound messaging on, claims safety, routes
+around `/admin` for a verification, lets an agent apply its own change, or
+points the simulation at anything but the demo — and records the attempt as a
+`GUARD` event, because a refusal nobody is told about looks exactly like a
+simulation that never tried. Accepting a proposal records that it should
+happen; it still becomes a pull request a person opens.
+
+**The dashboard polls.** A held-open `text/event-stream` dies at the platform's
+function-duration ceiling and reconnects on a timer, so the "live" panel
+blinks. A cursor and a two-second interval is the same latency with none of
+that, and it stops polling the moment there is nothing live to watch. A run
+whose heartbeat has gone quiet reads as **stalled**, derived on the server:
+a browser tab that has been asleep has a clock with its own opinions, and a
+panel that cannot tell "still working" from "dead" is the blank panel
+`CLAUDE.md` forbids wearing a different costume.
+
+**Consequences.**
+
+- Simulation rows live in the demo database and `db:seed` truncates them.
+  That is correct: they are telemetry about a demo, not records of anything.
+- One runner at a time. Two would race each other for the same inventory and
+  neither feed would describe what happened.
+- The spend figure is in US dollars and is deliberately **not** rendered with
+  `<Money>`: that component is for the product's money, with an `earned` or
+  `potential` intent, and dressing a running cost as revenue is the exact
+  confusion ADR-007 exists to prevent.
+- Non-negotiable 5 ("the AI explains; it never decides") is untouched. It
+  governs the product's AI, which still has no tools and no write path. The
+  simulation's model decides what a *simulated person* does in a browser, from
+  outside, exactly as a person would — and the boundary that keeps those two
+  things apart is the HTTP one.
+
+## ADR-044 — The demo is inhabited, and only through its own services
+
+**Status.** Accepted, 2026-10-27.
+
+**Context.** The simulation dashboard (ADR-043) shows six LLM personas being
+scrutinising about the product. That answers "is it right". It does not answer
+the thing a person walking into the demo actually notices, which is that the
+place is empty: one hotel, one guest, six listings, and a revenue card whose
+figures were all written at the same second by `db:seed`. An operator being
+shown ARC is being shown a marketplace, and a marketplace with nobody in it
+reads as a mock-up however good the screens are.
+
+So the demo needs a population: travellers who arrive, baskets that fill, seats
+bought and given back, businesses asking to work with the hotel, a front desk
+checking people in — happening *while* somebody is clicking around, not before
+they got there.
+
+**Decision.** A population engine, `modules/simulation/inhabitants`, with four
+properties.
+
+**Not one row is written directly.** An arrival is `registerDirectTrip`. A
+basket is `getOrCreateCart` and `addToCart`, so the hold is a real hold. A
+purchase is `checkout`, so the commission split, the ledger entries and the
+audit row are the real ones. A cancellation is `cancelOrderItem`, with a
+`CancelAuthority` naming the guest. A business joining is
+`requestToJoinProperty`, which means it is a request and nothing else — no
+supplier, no agreement, no login until a person accepts. Extending the
+destination's horizon is `scheduleAvailability`, so the activity's hours and
+season still decide which departures exist.
+
+This is the whole decision and everything else follows from it. Rows inserted
+behind the services would show an operator something the product itself could
+never produce — an order whose ledger does not balance, a seat held with no
+hold, a booking the conditions gate would have refused — and a demo that lies
+about what the product does is worse than an empty one. It also means a
+refusal is a *result*: when the gate declines a departure or a seat is taken
+between the read and the write, that is recorded as an activity ("the product
+said no") rather than swallowed, because it is the product working.
+
+**Two kinds of arrival, because the product has two.** A traveller booking
+through a hotel's storefront is a `DIRECT` trip with no room, which by ADR-042
+is deliberately absent from the arrivals board, the briefing and occupancy. A
+demo whose arrivals list never changes is the one this engine exists to fix, so
+the hotel also takes room reservations through `createStay`, exactly as a front
+desk does, and checks today's in. Both exist because collapsing them would mean
+either an arrivals board that never moves or a direct booking reading as a room
+booking, which is the thing ADR-042 is about.
+
+**Two clocks, and neither is a model call.** A scheduled job every five
+minutes is the baseline, so an owner opening the briefing has a morning behind
+them rather than a marketplace that started when their browser did. A
+heartbeat from any open demo page is the second, so a page being watched feels
+alive. The simulated people have no judgement — they have appetites, and the
+weights are a guess at what a small town does in a minute. That is deliberate
+and it is the division of labour with ADR-043: the personas are the scrutiny
+and they cost money; this is the population and it costs nothing. An
+improvising model deciding that a traveller books a boat trip is the same row
+as a weighted roll deciding it, at a few dollars an hour more.
+
+**It is bounded, visibly.** Simulated demand never takes the last
+`RESERVED_SEATS` of a departure, because a demo somebody cannot book anything
+in is worse than a quiet one. The town stops growing at `MAX_SIMULATED_STAYS`:
+the people already there carry on buying and cancelling, and nobody new
+arrives. Every simulated person's email is at `sim.arcstay.demo`, which is
+undeliverable and which is how they are told apart from anything a real person
+did in the demo, and swept without touching it.
+
+**Demo only, three refusals again.** `tick` refuses outside
+`ARC_DATA_MODE=demo`; both clocks 404 there; and
+`simulated_activity_is_demo_only` refuses the row. The reason is stronger here
+than for the dashboard: the inhabitants write *orders*, through the real
+services, against whatever data the deployment holds. Against a hotel's own
+guests that is not a simulation, it is forgery.
+
+**Consequences.**
+
+- The simulated people are not marked in the operator surfaces, and that is
+  the point: the briefing, the arrivals list and the revenue card are supposed
+  to show what the product would show. What marks them is the standing
+  `DemoBanner` saying none of it is real, the `sim.arcstay.demo` addresses, and
+  `/admin/simulation`, which names every one of them and what they did.
+- The heartbeat route takes no credential. Every demo surface is meant to be
+  opened by whoever was sent the link, and a tick does nothing a visitor could
+  not do by hand. What stops it being a load generator is a **global**
+  ticks-per-minute budget rather than a per-caller one — twenty open tabs and
+  one open tab produce the same town. Per-IP would have given each tab its own
+  allowance, which is the opposite of the property wanted.
+- The population drifts from the seed, so `db:seed` is still the way back to a
+  known demo: it truncates, and the town starts again.
+- Simulated orders are in the demo's revenue figures. They are synthetic
+  figures on a surface that says so in a banner, so there is nothing to
+  separate — the distinction ADR-007 cares about is earned against potential,
+  and these are earned revenue in exactly the sense the demo means it.
