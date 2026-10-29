@@ -69,11 +69,27 @@ test.describe('a visitor buying from the storefront', () => {
     await expect(page.getByText('Trip — no room booked').first()).toBeVisible()
 
     /*
-     * The unpaid-trip notice names a stay, and the name comes from this
-     * person's own stays rather than from the URL — a crafted link must not be
-     * able to put a reference, or any other words, on somebody's account page.
+     * The unpaid-trip notice, and the two things that must not show it.
+     *
+     * It is for one state only: a trip the till wrote and then failed to take
+     * the payment for. A reference from the URL is matched against this
+     * person's own stays, so a crafted link cannot put words on somebody's
+     * account page; and the stay must have no order, because a reference is
+     * printed on this very page — without that, anybody could paste the
+     * reference of a trip they had *paid* for and be told nothing had been
+     * charged for it.
      */
     await page.goto('/me?unpaid=ARC-NOT-A-REAL-REFERENCE')
+    await expect(page.getByText(/it is not booked yet/i)).toHaveCount(0)
+
+    await page.goto('/me')
+    const paidReference = await page
+      .locator('dt', { hasText: 'Reference' })
+      .first()
+      .locator('xpath=following-sibling::dd[1]')
+      .innerText()
+    expect(paidReference).toMatch(/\S/)
+    await page.goto(`/me?unpaid=${encodeURIComponent(paidReference.trim())}`)
     await expect(page.getByText(/it is not booked yet/i)).toHaveCount(0)
 
     await signOut(page)

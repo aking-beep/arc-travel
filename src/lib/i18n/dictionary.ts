@@ -108,7 +108,7 @@ export const dictionary = {
     'account.nothingChanged': 'Claiming a booking does not change anything the property holds.',
     'account.unpaidTitle': 'Your trip is saved, and it is not booked yet',
     'account.unpaidBody':
-      'Something went wrong taking the payment for {reference}, so nothing has been charged and no seats have been taken. Your account and your trip are here. Start the trip again from the property page to book it.',
+      'Something went wrong taking the payment for {reference}, so nothing has been charged and nothing is booked. Your account, your trip and the basket you filled are all saved — open that trip below and pay for it there, rather than starting again.',
     'account.spendTitle': 'What you have spent',
     'account.spendSub': 'Across everything you have booked through ARC, per currency.',
     'account.spendGross': 'Paid',
@@ -735,7 +735,7 @@ export const dictionary = {
     'account.nothingChanged': 'Vincular una reserva no cambia nada de lo que el alojamiento tiene.',
     'account.unpaidTitle': 'Tu viaje está guardado y todavía no está reservado',
     'account.unpaidBody':
-      'Algo falló al cobrar {reference}, así que no se ha cobrado nada ni se ha ocupado ninguna plaza. Tu cuenta y tu viaje están aquí. Vuelve a empezar el viaje desde la página del alojamiento para reservarlo.',
+      'Algo falló al cobrar {reference}, así que no se ha cobrado nada y no hay nada reservado. Tu cuenta, tu viaje y la cesta que llenaste están guardados: abre ese viaje más abajo y págalo ahí, en lugar de empezar de nuevo.',
     'account.spendTitle': 'Lo que has gastado',
     'account.spendSub': 'Sobre todo lo que has reservado con ARC, por moneda.',
     'account.spendGross': 'Pagado',

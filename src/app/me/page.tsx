@@ -70,7 +70,20 @@ export default async function AccountPage({
   // read. Sending them to sign in again is the honest answer.
   if (!account) redirect('/sign-in?next=%2Fme')
 
-  const unpaidStay = unpaid ? (account.stays.find((stay) => stay.reference === unpaid) ?? null) : null
+  /*
+   * The unpaid notice, for the one state it is about.
+   *
+   * Matched against this person's own stays, so a crafted link cannot put a
+   * reference on somebody's account page — and only a stay with no order at
+   * all, which is what a till that committed and then failed to take the
+   * payment leaves behind. A stay reference is printed on this page, so
+   * without that second condition anybody could paste a *paid* trip's
+   * reference and be told nothing had been charged for it; and the same link,
+   * revisited after the trip was paid for in the portal, would keep saying so.
+   */
+  const unpaidStay = unpaid
+    ? (account.stays.find((stay) => stay.reference === unpaid && stay.orders.length === 0) ?? null)
+    : null
 
   return (
     <div className="flex min-h-dvh flex-col">
