@@ -1,6 +1,6 @@
-import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
-import { getEnv } from '@/lib/env'
+import { cronGate } from '@/lib/cron-request'
+import { isDemoMode } from '@/lib/env'
 import { reportError } from '@/lib/observability'
 import { tick } from '@/modules/simulation/inhabitants'
 
@@ -23,21 +23,27 @@ import { tick } from '@/modules/simulation/inhabitants'
  */
 export const dynamic = 'force-dynamic'
 
+/**
+ * Both verbs, deliberately: Vercel's scheduler sends a `GET`, and a route that
+ * exported `POST` alone was a job that never ran. See `src/lib/cron-request.ts`.
+ */
+export async function GET(request: Request): Promise<NextResponse> {
+  return run(request)
+}
+
 export async function POST(request: Request): Promise<NextResponse> {
-  const env = getEnv()
+  return run(request)
+}
 
-  if (env.ARC_DATA_MODE !== 'demo') {
+async function run(request: Request): Promise<NextResponse> {
+  // Ahead of the credential, because this is the stronger refusal: ADR-044's
+  // first of three, and it must hold even on a deployment whose secret is right.
+  if (!isDemoMode()) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  // Unconfigured means off, not open — as in the other scheduled routes.
-  if (!env.CRON_SECRET) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  }
-
-  if (!authorised(request.headers.get('authorization'), env.CRON_SECRET)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const refusal = cronGate(request)
+  if (refusal) return refusal
 
   try {
     const result = await tick({ source: 'cron', actions: 3 })
@@ -46,15 +52,8 @@ export async function POST(request: Request): Promise<NextResponse> {
       population: result.population,
     })
   } catch (error) {
-    await reportError(error, { where: 'POST /api/cron/inhabitants' })
+    await reportError(error, { where: '/api/cron/inhabitants' })
     return NextResponse.json({ error: 'Tick failed' }, { status: 500 })
   }
 }
 
-function authorised(header: string | null, secret: string): boolean {
-  if (!header) return false
-  const presented = Buffer.from(header.replace(/^Bearer /i, ''), 'utf8')
-  const expected = Buffer.from(secret, 'utf8')
-  if (presented.length !== expected.length) return false
-  return timingSafeEqual(presented, expected)
-}
