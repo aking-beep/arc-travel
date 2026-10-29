@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { BedDouble, Compass, Heart, Home, Menu, Sparkles, X } from 'lucide-react'
+import { BedDouble, Compass, Heart, Home, Menu, ShoppingBag, Sparkles, User, X } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { setLocaleAction, signOutAction } from '@/app/actions'
 import { createTranslator, type AppLocale, type MessageKey } from '@/lib/i18n'
@@ -96,6 +96,7 @@ function LocaleToggle({
 export function ExploreNav({
   locale,
   signedIn,
+  tripCount,
 }: {
   locale: AppLocale
   /**
@@ -105,6 +106,12 @@ export function ExploreNav({
    * render.
    */
   signedIn: boolean
+  /**
+   * How many departures are in the storefront basket, resolved in the layout
+   * for the same reason `signedIn` is: the trip cookie is HttpOnly and only
+   * the server can read it.
+   */
+  tripCount: number
 }) {
   const t = createTranslator(locale)
   const pathname = usePathname()
@@ -209,6 +216,46 @@ export function ExploreNav({
               </span>
             ) : null}
           </Link>
+          {tripCount > 0 ? (
+            <Link
+              href="/book"
+              className={cn(
+                'flex items-center gap-2 rounded-full px-3 py-2 text-sm transition-colors duration-150',
+                transparent ? 'hover:bg-ivory/10' : 'hover:bg-paper',
+              )}
+            >
+              <ShoppingBag className="size-4" aria-hidden />
+              <span className="hidden whitespace-nowrap sm:inline">
+                {t('explore.book.heading')}
+              </span>
+              <span className="bg-gold text-ink flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] font-semibold tabular-nums">
+                {tripCount}
+              </span>
+            </Link>
+          ) : null}
+          {signedIn ? (
+            <Link
+              href="/me"
+              className={cn(
+                'hidden items-center gap-2 rounded-full px-3 py-2 text-sm transition-colors duration-150 sm:flex',
+                transparent ? 'hover:bg-ivory/10' : 'hover:bg-paper',
+              )}
+            >
+              <User className="size-4" aria-hidden />
+              <span className="whitespace-nowrap">{t('account.title')}</span>
+            </Link>
+          ) : (
+            <Link
+              href={`/sign-in?next=${encodeURIComponent(here)}`}
+              className={cn(
+                'hidden items-center gap-2 rounded-full px-3 py-2 text-sm transition-colors duration-150 sm:flex',
+                transparent ? 'hover:bg-ivory/10' : 'hover:bg-paper',
+              )}
+            >
+              <User className="size-4" aria-hidden />
+              <span className="whitespace-nowrap">{t('common.signIn')}</span>
+            </Link>
+          )}
           <Link
             href="/plan"
             className={cn(

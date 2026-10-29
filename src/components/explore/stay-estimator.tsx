@@ -1,8 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
+import { useActionState, useState } from 'react'
 import { Minus, Plus } from 'lucide-react'
+import { startTripAction } from '@/app/(public)/book/actions'
+import { AbilityField, type AbilityFieldProps } from '@/app/(public)/book/forms'
+import { FormFeedback, SubmitButton } from '@/components/ui/form-feedback'
+import { emptyFormState } from '@/lib/form-state'
 import { DemoFigure, Money } from '@/components/money'
 import { createTranslator, type AppLocale } from '@/lib/i18n'
 import { estimateStay } from '@/modules/discovery/estimate'
@@ -30,7 +34,8 @@ export function StayEstimator({
   defaultArrive,
   defaultDepart,
   defaultParty,
-  portalHref,
+  booking,
+  liveStayHref,
 }: {
   locale: AppLocale
   rooms: Room[]
@@ -38,9 +43,20 @@ export function StayEstimator({
   defaultArrive: string
   defaultDepart: string
   defaultParty: number
-  portalHref: string
+  /**
+   * The property this panel can actually sell for, or null.
+   *
+   * Present only for the live property. The content set's stays have no hotel
+   * behind them, no catalogue and no availability, so a booking control on one
+   * would be a button that cannot be honoured — which is the thing this panel
+   * used to be, pointed at a demo portal.
+   */
+  booking: { propertySlug: string; ability: AbilityFieldProps } | null
+  /** Where somebody on an illustrative listing can go to buy something real. */
+  liveStayHref?: string | null
 }) {
   const t = createTranslator(locale)
+  const [state, formAction] = useActionState(startTripAction, emptyFormState)
   const [arrive, setArrive] = useState(defaultArrive)
   const [depart, setDepart] = useState(defaultDepart)
   const [party, setParty] = useState(defaultParty)
@@ -207,12 +223,36 @@ export function StayEstimator({
         </dl>
       )}
 
-      <Link
-        href={portalHref}
-        className="bg-ink text-ivory hover:bg-ink-soft mt-5 flex h-12 w-full items-center justify-center rounded-full text-sm transition-colors duration-150"
-      >
-        {t('explore.stay.enquireCta')}
-      </Link>
+      {booking ? (
+        <form action={formAction} className="mt-5 space-y-3">
+          <FormFeedback state={state} />
+          {/* The controls above are stateful, so what the server receives is
+              carried explicitly rather than read off named inputs. */}
+          <input type="hidden" name="propertySlug" value={booking.propertySlug} />
+          <input type="hidden" name="fromDate" value={arrive} />
+          <input type="hidden" name="toDate" value={depart} />
+          <input type="hidden" name="partySize" value={party} />
+          <AbilityField {...booking.ability} />
+          <SubmitButton block pendingLabel={t('explore.stay.bookPending')}>
+            {t('explore.stay.bookCta')}
+          </SubmitButton>
+          <p className="text-muted text-xs leading-relaxed">{t('explore.stay.bookNote')}</p>
+        </form>
+      ) : (
+        <div className="mt-5">
+          <p className="text-muted text-sm leading-relaxed">
+            {t('explore.stay.illustrativeCta')}
+          </p>
+          {liveStayHref ? (
+            <Link
+              href={liveStayHref}
+              className="bg-ink text-ivory hover:bg-ink-soft mt-3 flex h-12 w-full items-center justify-center rounded-full text-sm transition-colors duration-150"
+            >
+              {t('explore.stay.liveAlternative')}
+            </Link>
+          ) : null}
+        </div>
+      )}
 
       <IllustrativeNote className="mt-4">{t('explore.stay.estimateNote')}</IllustrativeNote>
     </div>

@@ -2044,3 +2044,100 @@ guests that is not a simulation, it is forgery.
   figures on a surface that says so in a banner, so there is nothing to
   separate — the distinction ADR-007 cares about is earned against potential,
   and these are earned revenue in exactly the sense the demo means it.
+
+## ADR-045 — The public storefront sells, and the account arrives at the till
+
+**Status.** Accepted, 2026-10-29.
+
+**Context.** The property page ended at a button labelled "Open the guest
+portal demo". That was honest about what it was and useless as a product: the
+one surface a stranger arrives on could not sell anything. Every route into the
+guest surface began either at a front desk handing over a QR code or at
+`/sign-up/direct`, which asks somebody to create an account *before* they have
+decided to buy anything — the wrong way round for a person who has just read
+about a hotel.
+
+Meanwhile the whole apparatus a purchase needs already existed and was already
+tested: a `Cart`, dated departures with seat counts, `InventoryHold`,
+`checkout()` with its Serializable transaction and its ledger, and the
+conditions gate at the point of commitment. None of it was reachable from the
+front door.
+
+**Decision.** A visitor declares a trip window on a property page and gets a
+basket. That basket is an ordinary `Cart` with `guestId` and `stayId` null,
+addressed by a signed `arc_trip` cookie. They add real departures to it, at
+real prices, against real holds. At the till they are asked who they are, and
+in one transaction they get an account, a `DIRECT` trip (ADR-042) and that
+basket; then `checkout()` runs and they land signed in on the order.
+
+Five things make this safe rather than merely new.
+
+**The gate runs on a basket nobody owns.** `addToCart` gated only
+`if (cart.guestId)`. That was correct while every basket the product could
+produce had a guest behind it, and would have made "sign up after you pay" the
+one route to a booking the conditions gate never saw. The gate's inputs were
+never a `Guest` — they are a property and a stated ability — so that pair is
+now a `SlotAudience`, `evaluateSlotForGuest` reads one off the row, and a
+guestless basket is gated as somebody who has stated no ability. That is the
+strict case under ADR-017, not an exemption from it.
+
+**An unstated ability is asked for, not assumed.** ADR-017 means a visitor who
+says nothing is refused anything demanding — which, in Puerto Escondido, is
+most of the catalogue. So the trip panel asks, optionally, the same question
+the portal's intake asks. Declining is a real answer and the gate stays strict.
+A declaration lands on a *new* `Guest` row and never overwrites a recorded one:
+an ability a front desk wrote down is evidence, and letting the person being
+gated overwrite it would make the gate negotiable by its subject. `addToCart`'s
+`audience` argument is ignored the moment the basket has a guest, for the same
+reason, and there is a test that says so.
+
+**A half-filled basket is not a booking.** No `Stay` is written until somebody
+pays. A `Stay` with a hotel's name and a pair of dates on it is a booking as
+far as the arrivals board, the briefing and occupancy are concerned, and
+somebody who opened a page and changed their mind has booked nothing.
+
+**The basket id is a bearer credential, so the cookie is signed.** Whoever
+holds it can add to, empty and buy from that basket. The dates and the party
+size ride in the same envelope because they have nowhere else to live until the
+trip exists; signing those adds no secrecy, since they are the person's own
+declaration. The basket is re-read and re-checked on every action — still open,
+still this property's, still nobody's — rather than trusted from the cookie,
+and `cart.updateMany` with `guestId: null` in the `where` clause is what makes
+two tabs at one till safe.
+
+**The account is the one that already exists.** The address may belong to a
+credential-free placeholder a front desk created, which is theirs to take over,
+or to a real account, which is not. Both paths hand over to `establishAccount`
+(ADR-039), including its races. Somebody already signed in buys against their
+own account rather than being asked for a second one.
+
+**No room is sold.** ARC holds no room calendar — there is a `RoomType` with a
+published rate and no per-date inventory anywhere — so a basket line for a bed
+would be exactly the invented availability non-negotiable 2 refuses. The panel
+has said "availability lives with the hotel" since the port and it still does;
+the storefront says in as many words that it pays for experiences only. Whether
+a room should become a *request* the hotel confirms is a product decision, not
+a code one, and it is not taken here.
+
+**Consequences.**
+
+- The content-set stays have no hotel, no catalogue and no availability behind
+  them, so the panel on one offers no booking control at all. It says the
+  listing is illustrative and points at the live property. That is a worse
+  page and a true one; the alternative was a button that cannot be honoured,
+  which is what the portal-demo link was.
+- A refusal now has to name itself. `ConditionsGate` gained `blockers`, the
+  subset of `notes` that are reasons rather than caveats, because the
+  storefront greys out a departure and prints a reason, and `notes[0]` was
+  whichever sentence happened to be pushed first — usually "no reading for this
+  date, judged against the baseline", which is true of allowed departures too.
+- The default dates on a property page moved from a month out to a week. A
+  month was a neutral default for an estimator; it is past the horizon the
+  catalogue publishes departures for, so as a *booking* default it sent
+  everybody to an empty trip.
+- `/me` is no longer only an index. It carries what was spent, per currency and
+  per category, and the day-by-day itinerary of what was bought — built from
+  the order items rather than from a generated `Itinerary`, which is a proposal
+  and can hold candidates nobody paid for. Gross and refunded are reported side
+  by side rather than netted, and currencies are never summed, which is ADR-007's
+  instinct applied to a guest's own money.

@@ -599,7 +599,13 @@ export interface AccountOrderItem {
   startsAt: Date | null
   quantity: number
   totalMinor: number
+  /** What has been refunded against this line, minor units. Usually zero. */
+  refundedMinor: number
   currency: string
+  category: string
+  supplierName: string
+  meetingPoint: string | null
+  durationMinutes: number
   cancelledAt: Date | null
   supplierConfirmed: boolean
 }
@@ -652,7 +658,42 @@ export interface AccountStay {
   daysUntilCheckIn: number
   itinerary: { id: string; dayCount: number; itemCount: number } | null
   orders: AccountOrder[]
+  /**
+   * What is actually booked, by day.
+   *
+   * Deliberately built from the order items rather than from `itinerary`. A
+   * generated itinerary is a proposal: it can hold candidates nobody paid for
+   * and can go stale the moment something is cancelled. This is the trip the
+   * person bought, in the order it happens, which is what somebody opening
+   * their account wants to see.
+   */
+  schedule: ScheduleDay[]
   basketCount: number
+}
+
+export interface ScheduleDay {
+  date: DateKey
+  items: Array<AccountOrderItem & { orderReference: string }>
+}
+
+/**
+ * What the person has spent, and on what.
+ *
+ * Per currency, never across them. An account can hold bookings at two
+ * properties that price in different currencies, and one figure over both
+ * would be a number with no unit — which is the same failure as summing
+ * earnings with potential value, in a smaller place.
+ *
+ * `refundedMinor` is reported beside the gross rather than subtracted into it.
+ * "You spent 4,000 and 1,200 came back" is a statement somebody can check
+ * against their bank; a single net figure is not.
+ */
+export interface AccountSpend {
+  currency: string
+  grossMinor: number
+  refundedMinor: number
+  netMinor: number
+  byCategory: Array<{ category: string; totalMinor: number; itemCount: number }>
 }
 
 export interface GuestAccountView {
@@ -660,6 +701,7 @@ export interface GuestAccountView {
   name: string
   email: string
   stays: AccountStay[]
+  spend: AccountSpend[]
 }
 
 /**
@@ -735,11 +777,21 @@ export async function getGuestAccount(
               id: true,
               quantity: true,
               lineTotalMinor: true,
+              refundedMinor: true,
               currency: true,
               cancelledAt: true,
               supplierConfirmedAt: true,
               slot: { select: { startsAt: true } },
-              experience: { select: { titleEn: true, titleEs: true } },
+              experience: {
+                select: {
+                  titleEn: true,
+                  titleEs: true,
+                  category: true,
+                  durationMinutes: true,
+                  meetingPoint: true,
+                  supplier: { select: { name: true } },
+                },
+              },
             },
           },
         },
@@ -801,14 +853,26 @@ export async function getGuestAccount(
           startsAt: item.slot?.startsAt ?? null,
           quantity: item.quantity,
           totalMinor: item.lineTotalMinor,
+          refundedMinor: item.refundedMinor,
           currency: item.currency,
+          category: item.experience.category,
+          supplierName: item.experience.supplier.name,
+          meetingPoint: item.experience.meetingPoint,
+          durationMinutes: item.experience.durationMinutes,
           cancelledAt: item.cancelledAt,
           supplierConfirmed: Boolean(item.supplierConfirmedAt),
         })),
       })),
       basketCount: stay.carts.reduce((sum, cart) => sum + cart._count.items, 0),
+      schedule: [],
     }
   })
+
+  // The booked trip, day by day. Built after the map above because it reads
+  // the mapped orders rather than the rows a second time.
+  for (const stay of stays) {
+    stay.schedule = scheduleFor(stay.orders)
+  }
 
   // Soonest arrival first, then the ones already behind them.
   stays.sort((a, b) => {
@@ -820,7 +884,114 @@ export async function getGuestAccount(
       : b.daysUntilCheckIn - a.daysUntilCheckIn
   })
 
-  return { userId: user.id, name: user.name, email: user.email, stays }
+  return {
+    userId: user.id,
+    name: user.name,
+    email: user.email,
+    stays,
+    spend: summariseSpend(stays),
+  }
+}
+
+/**
+ * Booked lines grouped by the day they happen on.
+ *
+ * A cancelled line stays in the list, struck through by the caller. Somebody
+ * looking for the surf lesson they cancelled last night and finding no trace
+ * of it has been given a worse answer than one that says it was cancelled.
+ * Lines with no departure time — there are none today, but the column is
+ * nullable — fall into an `unscheduled` bucket keyed by the empty string
+ * rather than being dropped.
+ */
+function scheduleFor(orders: AccountOrder[]): ScheduleDay[] {
+  const days = new Map<DateKey, ScheduleDay['items']>()
+
+  for (const order of orders) {
+    for (const item of order.items) {
+      const key = item.startsAt ? toDateKey(item.startsAt) : ''
+      const bucket = days.get(key) ?? []
+      bucket.push({ ...item, orderReference: order.reference })
+      days.set(key, bucket)
+    }
+  }
+
+  return [...days.entries()]
+    .sort(([a], [b]) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b)))
+    .map(([date, items]) => ({
+      date,
+      items: items.sort((a, b) => (a.startsAt?.getTime() ?? 0) - (b.startsAt?.getTime() ?? 0)),
+    }))
+}
+
+/**
+ * What was spent, per currency and per category.
+ *
+ * A cancelled line is excluded from the category breakdown but its refund is
+ * still reported, because the money did leave the account and come back and
+ * the person may be looking for exactly that.
+ */
+function summariseSpend(stays: AccountStay[]): AccountSpend[] {
+  const byCurrency = new Map<
+    string,
+    { grossMinor: number; refundedMinor: number; categories: Map<string, { totalMinor: number; itemCount: number }> }
+  >()
+
+  for (const stay of stays) {
+    for (const order of stay.orders) {
+      for (const item of order.items) {
+        const entry = byCurrency.get(item.currency) ?? {
+          grossMinor: 0,
+          refundedMinor: 0,
+          categories: new Map<string, { totalMinor: number; itemCount: number }>(),
+        }
+        entry.grossMinor += item.totalMinor
+        entry.refundedMinor += item.refundedMinor
+        if (!item.cancelledAt) {
+          const category = entry.categories.get(item.category) ?? { totalMinor: 0, itemCount: 0 }
+          category.totalMinor += item.totalMinor
+          category.itemCount += 1
+          entry.categories.set(item.category, category)
+        }
+        byCurrency.set(item.currency, entry)
+      }
+    }
+  }
+
+  return [...byCurrency.entries()]
+    .map(([currency, entry]) => ({
+      currency,
+      grossMinor: entry.grossMinor,
+      refundedMinor: entry.refundedMinor,
+      netMinor: entry.grossMinor - entry.refundedMinor,
+      byCategory: [...entry.categories.entries()]
+        .map(([category, totals]) => ({ category, ...totals }))
+        .sort((a, b) => b.totalMinor - a.totalMinor),
+    }))
+    .sort((a, b) => b.netMinor - a.netMinor)
+}
+
+/**
+ * One order, for the page somebody lands on after paying.
+ *
+ * Scoped by `userId` inside the `where` clause rather than checked afterwards,
+ * which is what `CLAUDE.md` asks of a guest-surface read that accepts a
+ * client-supplied identifier: the reference is on a confirmation and in a URL,
+ * and ownership is a predicate rather than something to remember to test.
+ */
+export async function getGuestOrder(
+  userId: string,
+  reference: string,
+  now = new Date(),
+): Promise<{ stay: AccountStay; order: AccountOrder } | null> {
+  const account = await getGuestAccount(userId, now)
+  if (!account) return null
+
+  const wanted = reference.trim().toUpperCase()
+  for (const stay of account.stays) {
+    const order = stay.orders.find((candidate) => candidate.reference.toUpperCase() === wanted)
+    if (order) return { stay, order }
+  }
+  return null
 }
 
 /**

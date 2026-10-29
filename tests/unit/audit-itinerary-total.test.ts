@@ -47,6 +47,7 @@ const allowed: ConditionsGate = {
   allowed: true,
   exclusions: [],
   notes: [],
+  blockers: [],
   snapshot: null,
   usedBaseline: false,
 }

@@ -3,7 +3,7 @@ import { conflict, invalid, notFound } from '@/lib/errors'
 import { hashPassword } from '@/lib/password'
 import { assertWithinRateLimit, rateLimitSubject } from '@/lib/rate-limit'
 import { addDays, daysBetween, fromDateKey, toDateKey, type DateKey } from '@/lib/dates'
-import { EntityStatus, Locale, StayKind, StayStatus } from '@/lib/prisma-types'
+import { type AbilityLevel, EntityStatus, Locale, StayKind, StayStatus } from '@/lib/prisma-types'
 import { portalToken, stayReference } from '@/lib/ids'
 import { recordAudit } from '@/modules/workflows/audit'
 import { track } from '@/modules/analytics/track'
@@ -99,7 +99,7 @@ export async function listDirectStorefronts(): Promise<DirectStorefront[]> {
   }))
 }
 
-interface TripWindow {
+export interface TripWindow {
   fromDate: DateKey
   toDate: DateKey
   partySize: number
@@ -112,7 +112,7 @@ interface TripWindow {
  * in Puerto Escondido, and a traveller whose phone is on a European clock must
  * not be told their own first day is in the past.
  */
-function assertWindowIsSensible(window: TripWindow, now: Date): void {
+export function assertWindowIsSensible(window: TripWindow, now: Date): void {
   const today = toDateKey(now)
 
   if (window.fromDate < today) {
@@ -137,7 +137,7 @@ function assertWindowIsSensible(window: TripWindow, now: Date): void {
   }
 }
 
-async function findDirectProperty(
+export async function findDirectProperty(
   slug: string,
 ): Promise<{ id: string; organizationId: string; name: string; currency: string }> {
   const property = await prisma.property.findFirst({
@@ -153,7 +153,7 @@ async function findDirectProperty(
   return property
 }
 
-async function guardDirectTrip(options: {
+export async function guardDirectTrip(options: {
   clientKey?: string | null
   propertyId: string
   now: Date
@@ -177,7 +177,7 @@ async function guardDirectTrip(options: {
   })
 }
 
-interface CreatedTrip {
+export interface CreatedTrip {
   guestId: string
   stayId: string
   reference: string
@@ -199,10 +199,10 @@ interface CreatedTrip {
  * stayed here in March and is back for a day should keep their preferences and
  * their intake.
  */
-async function writeDirectStay(
+export async function writeDirectStay(
   tx: Prisma.TransactionClient,
   property: { id: string; organizationId: string; name: string },
-  person: { name: string; email: string; locale: Locale },
+  person: { name: string; email: string; locale: Locale; surfAbility?: AbilityLevel | null },
   window: TripWindow,
   token: string,
 ): Promise<CreatedTrip> {
@@ -219,9 +219,18 @@ async function writeDirectStay(
       email: person.email,
       locale: person.locale,
       partySize: window.partySize,
+      surfAbility: person.surfAbility ?? null,
     },
-    // A returning person keeps their intake. Only the party size is this
-    // trip's, and only because the basket and the itinerary read it.
+    /*
+     * A returning person keeps their intake. Only the party size is this
+     * trip's, and only because the basket and the itinerary read it.
+     *
+     * `surfAbility` is deliberately absent here. A recorded ability is what a
+     * front desk or an intake wrote down; a storefront declaration is what
+     * somebody typed to unlock a departure, and letting the second overwrite
+     * the first would make the safety gate negotiable by whoever is being
+     * gated. On a new row there is nothing to overwrite, so it is taken.
+     */
     update: { partySize: window.partySize },
     select: { id: true, userId: true, email: true },
   })

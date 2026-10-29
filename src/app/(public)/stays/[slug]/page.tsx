@@ -6,6 +6,7 @@ import { IllustrativeNote, ListingBadge, Shell } from '@/components/explore/edit
 import { ImageGallery } from '@/components/explore/image-gallery'
 import { SaveButton } from '@/components/explore/save-button'
 import { StayEstimator } from '@/components/explore/stay-estimator'
+import { abilityField } from '@/app/(public)/book/ability-labels'
 import { addDays, toDateKey } from '@/lib/dates'
 import { getTranslator } from '@/lib/i18n/server'
 import { getDestination } from '@/modules/discovery/content/destinations'
@@ -46,12 +47,31 @@ export default async function StayDetailPage({ params }: { params: Promise<{ slu
   const stay = live?.slug === slug ? live : getStay(slug)
   if (!stay) notFound()
   const destination = getDestination(stay.destination)
+  /*
+   * Only the live property can be sold from.
+   *
+   * The content set's stays have no hotel, no catalogue and no availability
+   * behind them, so the panel on one of those offers no booking control at
+   * all — it says the listing is illustrative and points at the one that is
+   * not. The page used to end at "Open the guest portal demo" on every listing
+   * alike, which was a tour of the product rather than a way to buy from it.
+   */
+  const bookable = live !== null && live.slug === slug
   const nearby = experiences.filter((e) => e.destination === stay.destination).slice(0, 3)
 
   // Dates are computed here, on the server, and handed to the client island as
   // props. Nothing below the fold reads a clock during render.
   const today = toDateKey(new Date())
-  const defaultArrive = addDays(today, 30)
+  /*
+   * A week out, not a month.
+   *
+   * The export's panel was an estimator and a month ahead was a neutral
+   * default for one. It is now also what the booking panel carries, and a
+   * month ahead is past the horizon the catalogue publishes departures for —
+   * so the default sent everybody to an empty trip page and the product's
+   * first impression was "nothing runs on those days".
+   */
+  const defaultArrive = addDays(today, 7)
   const defaultDepart = addDays(defaultArrive, 4)
 
   return (
@@ -180,7 +200,10 @@ export default async function StayDetailPage({ params }: { params: Promise<{ slu
             defaultArrive={defaultArrive}
             defaultDepart={defaultDepart}
             defaultParty={2}
-            portalHref="/sign-in"
+            booking={
+              bookable ? { propertySlug: stay.slug, ability: abilityField(t, null) } : null
+            }
+            liveStayHref={live && !bookable ? `/stays/${live.slug}` : null}
           />
         </aside>
       </div>

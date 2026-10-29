@@ -1,6 +1,6 @@
-import { prisma } from '@/lib/db'
-import { AbilityLevel, ConditionsRisk } from '@/lib/prisma-types'
-import { fromDateKey, type DateKey } from '@/lib/dates'
+import { prisma } from "@/lib/db";
+import { AbilityLevel, ConditionsRisk } from "@/lib/prisma-types";
+import { fromDateKey, type DateKey } from "@/lib/dates";
 
 /**
  * Ocean and terrain conditions.
@@ -22,7 +22,7 @@ export const RISK_ORDER = [
   ConditionsRisk.MODERATE,
   ConditionsRisk.HIGH,
   ConditionsRisk.EXTREME,
-] as const
+] as const;
 
 export const ABILITY_ORDER = [
   AbilityLevel.BEGINNER,
@@ -30,10 +30,12 @@ export const ABILITY_ORDER = [
   AbilityLevel.INTERMEDIATE,
   AbilityLevel.ADVANCED,
   AbilityLevel.EXPERT,
-] as const
+] as const;
 
-export const riskRank = (risk: ConditionsRisk): number => RISK_ORDER.indexOf(risk)
-export const abilityRank = (level: AbilityLevel): number => ABILITY_ORDER.indexOf(level)
+export const riskRank = (risk: ConditionsRisk): number =>
+  RISK_ORDER.indexOf(risk);
+export const abilityRank = (level: AbilityLevel): number =>
+  ABILITY_ORDER.indexOf(level);
 
 /**
  * The lowest ability each risk band demands of anyone entering the water.
@@ -48,54 +50,54 @@ export const MIN_ABILITY_BY_RISK: Record<ConditionsRisk, AbilityLevel> = {
   [ConditionsRisk.MODERATE]: AbilityLevel.IMPROVER,
   [ConditionsRisk.HIGH]: AbilityLevel.ADVANCED,
   [ConditionsRisk.EXTREME]: AbilityLevel.EXPERT,
-}
+};
 
 /** A reading older than this is shown as history, not as current information. */
-export const STALE_AFTER_HOURS = 12
+export const STALE_AFTER_HOURS = 12;
 
 export interface ConditionsSnapshot {
-  placeId: string
-  forDate: DateKey
-  risk: ConditionsRisk
-  minAbilityRequired: AbilityLevel
-  guideRecommended: boolean
-  waveHeightMinM: number
-  waveHeightMaxM: number
-  windKph: number | null
-  windDirection: string | null
-  waterTempC: number | null
-  highTideLocal: string | null
-  lowTideLocal: string | null
-  currentNotesEn: string | null
-  currentNotesEs: string | null
-  source: string
-  observedAt: Date
-  ageHours: number
-  isStale: boolean
+  placeId: string;
+  forDate: DateKey;
+  risk: ConditionsRisk;
+  minAbilityRequired: AbilityLevel;
+  guideRecommended: boolean;
+  waveHeightMinM: number;
+  waveHeightMaxM: number;
+  windKph: number | null;
+  windDirection: string | null;
+  waterTempC: number | null;
+  highTideLocal: string | null;
+  lowTideLocal: string | null;
+  currentNotesEn: string | null;
+  currentNotesEs: string | null;
+  source: string;
+  observedAt: Date;
+  ageHours: number;
+  isStale: boolean;
 }
 
 function toSnapshot(
   row: {
-    placeId: string
-    forDate: Date
-    risk: ConditionsRisk
-    minAbilityRequired: AbilityLevel
-    guideRecommended: boolean
-    waveHeightMinM: number
-    waveHeightMaxM: number
-    windKph: number | null
-    windDirection: string | null
-    waterTempC: number | null
-    highTideLocal: string | null
-    lowTideLocal: string | null
-    currentNotesEn: string | null
-    currentNotesEs: string | null
-    source: string
-    observedAt: Date
+    placeId: string;
+    forDate: Date;
+    risk: ConditionsRisk;
+    minAbilityRequired: AbilityLevel;
+    guideRecommended: boolean;
+    waveHeightMinM: number;
+    waveHeightMaxM: number;
+    windKph: number | null;
+    windDirection: string | null;
+    waterTempC: number | null;
+    highTideLocal: string | null;
+    lowTideLocal: string | null;
+    currentNotesEn: string | null;
+    currentNotesEs: string | null;
+    source: string;
+    observedAt: Date;
   },
   now: Date,
 ): ConditionsSnapshot {
-  const ageHours = (now.getTime() - row.observedAt.getTime()) / 3_600_000
+  const ageHours = (now.getTime() - row.observedAt.getTime()) / 3_600_000;
   return {
     placeId: row.placeId,
     forDate: row.forDate.toISOString().slice(0, 10),
@@ -115,7 +117,7 @@ function toSnapshot(
     observedAt: row.observedAt,
     ageHours: Math.round(ageHours * 10) / 10,
     isStale: ageHours > STALE_AFTER_HOURS,
-  }
+  };
 }
 
 export async function getConditions(
@@ -123,28 +125,31 @@ export async function getConditions(
   dates: DateKey[],
   now = new Date(),
 ): Promise<Map<string, ConditionsSnapshot>> {
-  if (placeIds.length === 0 || dates.length === 0) return new Map()
+  if (placeIds.length === 0 || dates.length === 0) return new Map();
 
   const rows = await prisma.conditionReport.findMany({
-    where: { placeId: { in: placeIds }, forDate: { in: dates.map(fromDateKey) } },
-  })
+    where: {
+      placeId: { in: placeIds },
+      forDate: { in: dates.map(fromDateKey) },
+    },
+  });
 
-  const out = new Map<string, ConditionsSnapshot>()
+  const out = new Map<string, ConditionsSnapshot>();
   for (const row of rows) {
-    const snapshot = toSnapshot(row, now)
-    out.set(`${snapshot.placeId}:${snapshot.forDate}`, snapshot)
+    const snapshot = toSnapshot(row, now);
+    out.set(`${snapshot.placeId}:${snapshot.forDate}`, snapshot);
   }
-  return out
+  return out;
 }
 
 export async function getConditionsForDestination(
-  destination = 'puerto-escondido',
+  destination = "puerto-escondido",
   dates: DateKey[] = [],
   now = new Date(),
 ) {
   const places = await prisma.place.findMany({
     where: { destination, conditionReports: { some: {} } },
-    orderBy: { name: 'asc' },
+    orderBy: { name: "asc" },
     select: {
       id: true,
       slug: true,
@@ -156,28 +161,40 @@ export async function getConditionsForDestination(
       latitude: true,
       longitude: true,
       conditionReports: {
-        where: dates.length > 0 ? { forDate: { in: dates.map(fromDateKey) } } : {},
-        orderBy: { forDate: 'asc' },
+        where:
+          dates.length > 0 ? { forDate: { in: dates.map(fromDateKey) } } : {},
+        orderBy: { forDate: "asc" },
       },
     },
-  })
+  });
 
   return places.map((place) => ({
     ...place,
     reports: place.conditionReports.map((r) => toSnapshot(r, now)),
-  }))
+  }));
 }
 
 /** Why a candidate was, or was not, allowed through the conditions gate. */
 export interface ConditionsGate {
-  allowed: boolean
+  allowed: boolean;
   /** Machine-readable exclusion codes for the recommendation record. */
-  exclusions: string[]
+  exclusions: string[];
   /** Human-readable, deterministic sentences shown to the guest. */
-  notes: string[]
-  snapshot: ConditionsSnapshot | null
+  notes: string[];
+  /**
+   * The subset of `notes` that are reasons for a refusal.
+   *
+   * `notes` holds both — "no reading for this date, judged against the
+   * baseline" is a caveat, "you have not told us your ability and this day
+   * demands more than improver" is a refusal — and nothing distinguished them,
+   * so a caller showing `notes[0]` showed whichever happened to be pushed
+   * first. A public storefront greying out a departure and printing a caveat
+   * as the reason answers the wrong question.
+   */
+  blockers: string[];
+  snapshot: ConditionsSnapshot | null;
   /** True when no reading existed and the place's baseline was used instead. */
-  usedBaseline: boolean
+  usedBaseline: boolean;
 }
 
 /**
@@ -195,39 +212,51 @@ export interface ConditionsGate {
  * the lifeguards, and the UI says so.
  */
 export function gateByConditions(input: {
-  guestAbility: AbilityLevel | null
-  activityMaxSafeRisk: ConditionsRisk
-  activityMinAbility: AbilityLevel
-  activityGuideRequired: boolean
-  experienceGuideIncluded: boolean
+  guestAbility: AbilityLevel | null;
+  activityMaxSafeRisk: ConditionsRisk;
+  activityMinAbility: AbilityLevel;
+  activityGuideRequired: boolean;
+  experienceGuideIncluded: boolean;
   /** Null for anything that does not depend on the water or the weather. */
-  snapshot: ConditionsSnapshot | null
-  placeBaselineRisk?: ConditionsRisk | null
+  snapshot: ConditionsSnapshot | null;
+  placeBaselineRisk?: ConditionsRisk | null;
   /** False for land-based activities, which skip the conditions checks. */
-  conditionsSensitive: boolean
+  conditionsSensitive: boolean;
   /**
    * False when the experience has no place at all. A water activity we cannot
    * locate cannot be judged, and an unjudgeable water activity is refused
    * rather than waved through.
    */
-  hasLocation?: boolean
+  hasLocation?: boolean;
 }): ConditionsGate {
-  const exclusions: string[] = []
-  const notes: string[] = []
+  const exclusions: string[] = [];
+  const notes: string[] = [];
+  const blockers: string[] = [];
+  /** Records a refusal: its code, and its sentence in both lists. */
+  const refuse = (code: string, note: string): void => {
+    exclusions.push(code);
+    notes.push(note);
+    blockers.push(note);
+  };
 
   // A guide-required activity sold without a guide is never recommendable,
   // conditions or not.
   if (input.activityGuideRequired && !input.experienceGuideIncluded) {
-    exclusions.push('guide_required_but_not_included')
-    notes.push('This activity requires a certified guide and this version does not include one.')
+    refuse(
+      "guide_required_but_not_included",
+      "This activity requires a certified guide and this version does not include one.",
+    );
   }
 
   // Ability floor from the activity itself applies on land and water alike.
-  if (input.guestAbility && abilityRank(input.guestAbility) < abilityRank(input.activityMinAbility)) {
-    exclusions.push('ability_below_activity_minimum')
-    notes.push(
+  if (
+    input.guestAbility &&
+    abilityRank(input.guestAbility) < abilityRank(input.activityMinAbility)
+  ) {
+    refuse(
+      "ability_below_activity_minimum",
       `Needs ${input.activityMinAbility.toLowerCase()} experience or above; you told us ${input.guestAbility.toLowerCase()}.`,
-    )
+    );
   }
 
   if (!input.conditionsSensitive) {
@@ -235,36 +264,45 @@ export function gateByConditions(input: {
       allowed: exclusions.length === 0,
       exclusions,
       notes,
+      blockers,
       snapshot: null,
       usedBaseline: false,
-    }
+    };
   }
 
   if (input.hasLocation === false) {
-    exclusions.push('conditions_sensitive_without_location')
-    notes.push(
-      'This depends on the water but is not tied to a place, so we cannot check conditions for it.',
-    )
-    return { allowed: false, exclusions, notes, snapshot: null, usedBaseline: false }
+    refuse(
+      "conditions_sensitive_without_location",
+      "This depends on the water but is not tied to a place, so we cannot check conditions for it.",
+    );
+    return {
+      allowed: false,
+      exclusions,
+      notes,
+      blockers,
+      snapshot: null,
+      usedBaseline: false,
+    };
   }
 
-  const snapshot = input.snapshot
-  const usedBaseline = snapshot === null
+  const snapshot = input.snapshot;
+  const usedBaseline = snapshot === null;
 
   // No reading is not a green light. Fall back to the place's baseline
   // character and say that is what we did.
-  const effectiveRisk = snapshot?.risk ?? input.placeBaselineRisk ?? ConditionsRisk.HIGH
+  const effectiveRisk =
+    snapshot?.risk ?? input.placeBaselineRisk ?? ConditionsRisk.HIGH;
   if (usedBaseline) {
     notes.push(
-      'No conditions reading for this date. Judged against this spot’s typical character instead — treat it as a guess, not a forecast.',
-    )
+      "No conditions reading for this date. Judged against this spot’s typical character instead — treat it as a guess, not a forecast.",
+    );
   }
 
   if (riskRank(effectiveRisk) > riskRank(input.activityMaxSafeRisk)) {
-    exclusions.push('conditions_risk_above_activity_limit')
-    notes.push(
+    refuse(
+      "conditions_risk_above_activity_limit",
       `Conditions are rated ${effectiveRisk.toLowerCase()} and this activity does not run above ${input.activityMaxSafeRisk.toLowerCase()}.`,
-    )
+    );
   }
 
   /**
@@ -277,35 +315,49 @@ export function gateByConditions(input: {
    * advanced-only break on any date we had no data for — the exact inversion
    * ADR-004 forbids, and worse than the outcome for a guest who did answer.
    */
-  const demandedAbility = snapshot?.minAbilityRequired ?? MIN_ABILITY_BY_RISK[effectiveRisk]
+  const demandedAbility =
+    snapshot?.minAbilityRequired ?? MIN_ABILITY_BY_RISK[effectiveRisk];
 
-  if (input.guestAbility && abilityRank(input.guestAbility) < abilityRank(demandedAbility)) {
-    exclusions.push('conditions_demand_higher_ability')
-    notes.push(
+  if (
+    input.guestAbility &&
+    abilityRank(input.guestAbility) < abilityRank(demandedAbility)
+  ) {
+    refuse(
+      "conditions_demand_higher_ability",
       usedBaseline
         ? `This spot typically demands ${demandedAbility.toLowerCase()} ability or above.`
         : `On this date the water demands ${demandedAbility.toLowerCase()} ability or above.`,
-    )
+    );
   }
 
   // An unknown ability is never treated as expert. Anything that demands more
   // than improver level is withheld until the guest tells us where they stand.
-  if (!input.guestAbility && abilityRank(demandedAbility) > abilityRank(AbilityLevel.IMPROVER)) {
-    exclusions.push('ability_unknown_and_conditions_demanding')
-    notes.push(
-      'Tell us your experience level and we can say whether this date suits you. We will not guess on a demanding day.',
-    )
+  if (
+    !input.guestAbility &&
+    abilityRank(demandedAbility) > abilityRank(AbilityLevel.IMPROVER)
+  ) {
+    refuse(
+      "ability_unknown_and_conditions_demanding",
+      "Tell us your experience level and we can say whether this date suits you. We will not guess on a demanding day.",
+    );
   }
 
   if (snapshot?.isStale) {
     notes.push(
       `This reading is ${Math.round(snapshot.ageHours)} hours old. Check with your guide before you commit.`,
-    )
+    );
   }
 
   if (snapshot?.guideRecommended) {
-    notes.push('A guide is recommended in these conditions.')
+    notes.push("A guide is recommended in these conditions.");
   }
 
-  return { allowed: exclusions.length === 0, exclusions, notes, snapshot, usedBaseline }
+  return {
+    allowed: exclusions.length === 0,
+    exclusions,
+    notes,
+    blockers,
+    snapshot,
+    usedBaseline,
+  };
 }
