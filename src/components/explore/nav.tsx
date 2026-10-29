@@ -160,11 +160,24 @@ export function ExploreNav({
     const banner = overHero ? document.querySelector('[data-demo-banner]') : null
     let bannerHeight = banner?.getBoundingClientRect().height ?? 0
 
+    /*
+     * Cleared, not merely left unset, when this is not a hero page.
+     *
+     * This component lives in the layout, so the node survives a client
+     * navigation. An inline `top` written on `/` outlives the trip to
+     * `/experiences` and overrides `sticky top-0` there — the bar then sticks
+     * a banner's height below the top of the viewport. Both the else branch
+     * and the cleanup remove the property rather than setting it to `0px`, so
+     * the class is what decides.
+     */
     const place = () => {
       setScrolled(window.scrollY > 40)
-      if (overHero && header.current) {
+      if (!header.current) return
+      if (overHero) {
         const top = Math.max(0, bannerHeight - window.scrollY)
         header.current.style.top = `${String(top)}px`
+      } else {
+        header.current.style.removeProperty('top')
       }
     }
     place()
@@ -181,6 +194,7 @@ export function ExploreNav({
     return () => {
       window.removeEventListener('scroll', place)
       observer?.disconnect()
+      header.current?.style.removeProperty('top')
     }
   }, [overHero])
 
