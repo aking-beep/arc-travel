@@ -42,4 +42,14 @@ describe('the scheduled routes', () => {
     expect(source).toContain('cronGate(request)')
     expect(source).not.toContain('timingSafeEqual')
   })
+
+  it.each(crons.map((cron) => cron.path))('%s says something when it runs', (path) => {
+    const source = readFileSync(join(root, 'src', 'app', path, 'route.ts'), 'utf8')
+    // A scheduled job that prints nothing on success cannot be told apart from
+    // one that was never invoked — both leave an empty log. `/api/cron/
+    // inhabitants` was silent on a clean tick, which is a normal outcome
+    // there, and that is why the fix above took a second deployment to
+    // confirm. Whatever a run did, including nothing, it says so.
+    expect(source).toContain('console.log(')
+  })
 })
