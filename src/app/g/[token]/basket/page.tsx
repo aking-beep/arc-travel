@@ -11,6 +11,7 @@ import { getLocale } from '@/lib/i18n/server'
 import { toLocalDateKey, toLocalTimeString } from '@/lib/dates'
 import { resolvePortalForRequest } from '../resolve'
 import { getCartView, getOrCreateCart, validateCart } from '@/modules/commerce/cart'
+import { listBookedItemsForStay } from '@/modules/commerce/checkout'
 import { startPaymentSession, type PaymentSession } from '@/modules/commerce/payment-session'
 import { isAppError } from '@/lib/errors'
 import { BasketActions, CheckoutForm } from './forms'
@@ -34,13 +35,35 @@ export default async function BasketPage({ params }: { params: Promise<{ token: 
   const [cart, validation] = await Promise.all([getCartView(cartId), validateCart(cartId)])
 
   if (!cart || cart.items.length === 0) {
+    /*
+     * An empty basket is not always "you have added nothing".
+     *
+     * A visitor who bought from the storefront filled a different basket — a
+     * guestless `Cart` carried in the `arc_trip` cookie, which the till claims
+     * and closes. Coming back here afterwards, they were told their basket was
+     * empty with no hint that their order existed, which reads as having lost
+     * the thing they just paid for. It is the one case where the empty state
+     * has to say where the money went.
+     */
+    const bought = await listBookedItemsForStay(context.stayId, context.guestId)
+
     return (
       <div className="space-y-5">
         <h2 className="font-display text-xl font-semibold">{t('guest.cart')}</h2>
         <EmptyState
-          title={t('guest.emptyBasket')}
-          description="Add something from your itinerary or from Explore."
-          action={<LinkButton href={`/g/${token}/explore`}>{t('guest.explore')}</LinkButton>}
+          title={bought.length > 0 ? t('guest.basketAfterOrder') : t('guest.emptyBasket')}
+          description={
+            bought.length > 0
+              ? t('guest.basketAfterOrderSub', { count: bought.length })
+              : t('guest.emptyBasketSub')
+          }
+          action={
+            bought.length > 0 ? (
+              <LinkButton href={`/g/${token}`}>{t('guest.basketSeeOrder')}</LinkButton>
+            ) : (
+              <LinkButton href={`/g/${token}/explore`}>{t('guest.explore')}</LinkButton>
+            )
+          }
         />
       </div>
     )

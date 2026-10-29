@@ -256,6 +256,19 @@ export function ExploreNav({
               <span className="whitespace-nowrap">{t('common.signIn')}</span>
             </Link>
           )}
+          {/*
+           * The loudest control on the page, and it used to repeat the nav
+           * item two inches to its left — same words, same destination, the
+           * illustrative planner that cannot sell anything. Two buttons
+           * reading "Trip planning" pointing at one page is how a visitor
+           * concludes there is only one planner; there are three, and this is
+           * the one that books nothing.
+           *
+           * It keeps its destination — drafting a trip is a reasonable front
+           * door, and the planner now carries a real exit to the property
+           * that can be booked — but it says what it is, and it no longer
+           * duplicates its neighbour.
+           */}
           <Link
             href="/plan"
             className={cn(
@@ -263,7 +276,7 @@ export function ExploreNav({
               transparent ? 'bg-ivory text-ink hover:bg-paper' : 'bg-ink text-ivory hover:bg-ink-soft',
             )}
           >
-            {t('explore.nav.plan')}
+            {t('explore.nav.draftTrip')}
           </Link>
           <button
             type="button"

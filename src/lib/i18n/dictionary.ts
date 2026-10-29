@@ -14,8 +14,17 @@ export const dictionary = {
   en: {
     'common.arcStay': 'ARC Stay',
     'common.demoData': 'Demo data',
+    /*
+     * "Nothing here is bookable and no payment is taken" stopped being true
+     * when the storefront shipped. It sat on `/book`, directly above a
+     * basket, a total and a "Pay and create my account" button — so the one
+     * standing notice the product never lets you dismiss was also the one
+     * sentence on the page contradicting everything around it. The seats,
+     * the holds, the ledger and the confirmations are all real; the money is
+     * what is not, and that is what it now says.
+     */
     'common.demoBanner':
-      'Demonstration environment. Hotels, partners, prices and conditions are synthetic. Nothing here is bookable and no payment is taken.',
+      'Demonstration environment. The hotels, partners, prices and conditions are synthetic. Bookings behave exactly as they would — real seats, real holds, real confirmations — but no money changes hands.',
     'common.loading': 'Loading…',
     'common.error': 'Something went wrong',
     'common.retry': 'Try again',
@@ -72,6 +81,9 @@ export const dictionary = {
     'account.planTitle': 'Your plan',
     'account.planSummary': '{items} things across {days} days',
     'account.planNone': 'No plan yet. Open your stay to build one.',
+    'account.planBooked': '{items} booked for this trip.',
+    'account.intakeSharpens':
+      'Answer a few questions in your stay and what we suggest around your bookings gets sharper.',
     'account.intakeOutstanding': 'You have not told us your preferences yet.',
     'account.basket': '{count} in your basket',
     'account.bookingsTitle': 'Booked',
@@ -128,6 +140,16 @@ export const dictionary = {
       'Each partner confirms their own booking. You will see the status change here, and your plan is on your account.',
     'account.orderNotFound': 'We could not find that order on your account.',
     'account.openTrip': 'Open your trip',
+    'account.orderKeepTitle': 'Keeping this, and getting help',
+    'account.orderEmailSent':
+      'A confirmation has been sent to the address on this booking. It carries the same reference and a link back to this page.',
+    'account.orderEmailRecorded':
+      'No email will arrive. This build records the confirmation it would have sent rather than delivering it, so this page and your account are where your booking lives.',
+    'account.orderKeepBody':
+      'Your reference is {reference}. Print this page or save it as a PDF if you want it offline — everything on it is here whenever you sign in.',
+    'account.orderHelp': 'Questions about a booking, a change or a cancellation:',
+    'account.orderHelpLink': 'read the help page',
+    'account.orderPrint': 'Print or save as PDF',
 
     'guest.accountOffer':
       'Want this without the QR code, and every booking in one place?',
@@ -135,6 +157,20 @@ export const dictionary = {
     'guest.welcome': 'Welcome to',
     'guest.welcomeSub': 'Your stay, your pace. Tell us what you are drawn to.',
     'guest.startPlanning': 'Start planning',
+    'guest.startPlanningSub':
+      'Thirty seconds of questions. We will not guess your surf level — an unanswered question stays unanswered.',
+    'guest.planTheRest': 'Plan the rest of your trip',
+    'guest.planTheRestSub':
+      'Your booking is above and stays as it is. These questions shape what we suggest for the days around it.',
+    'guest.bookedTitle': 'What you have booked',
+    'guest.bookedSub': 'Paid for and held. Each partner confirms their own booking.',
+    'guest.bookedConfirmed': 'Confirmed',
+    'guest.bookedAwaiting': 'Awaiting the partner',
+    'guest.basketAfterOrder': 'Nothing waiting to be paid for',
+    'guest.basketAfterOrderSub':
+      'You have {count} booked on this trip already — they are paid for, so they are not in a basket. Add something new and it appears here.',
+    'guest.basketSeeOrder': 'See what you booked',
+    'guest.emptyBasketSub': 'Add something from your itinerary or from Explore.',
     'guest.viewItinerary': 'View my itinerary',
     'guest.guide': 'Local guide',
     'guest.itinerary': 'Itinerary',
@@ -339,6 +375,9 @@ export const dictionary = {
   'explore.nav.experiences': 'Experiences',
   'explore.nav.guide': 'Local guide',
   'explore.nav.plan': 'Trip planning',
+  'explore.nav.draftTrip': 'Draft a trip',
+  'explore.listing.noPhoto':
+    'No photograph. This is a real business, and ARC does not put stock images on somebody else\u2019s listing.',
   'explore.nav.saved': 'Saved',
   'explore.nav.menu': 'Menu',
   'explore.nav.closeMenu': 'Close menu',
@@ -347,7 +386,7 @@ export const dictionary = {
   'explore.hero.lede':
     'One boutique hotel on the western coves, the people who host around it, and the reference you need to travel the coast well.',
   'explore.hero.demoNote':
-    'A demonstration build. The hotel, the hosts and every figure below are synthetic, and nothing here is bookable.',
+    'A demonstration build. The hotel, the hosts and every figure below are synthetic. What can be booked, really books — no money changes hands.',
   'explore.home.stayHeading': 'Where to stay',
   'explore.home.stayKicker': 'The hotel this build is modelled on, with its published room rates.',
   'explore.home.experiencesHeading': 'Hosted by people who live here',
@@ -382,6 +421,8 @@ export const dictionary = {
   'explore.stay.nightsLine': '{nights} nights',
   'explore.stay.nightsLineRooms': '{nights} nights × {rooms} rooms',
   'explore.stay.estimateTotal': 'Estimated total',
+  'explore.stay.estimateIsNotBooked':
+    'For the room, and the room is not what you book here. ARC holds no room calendar, so this figure is an estimate you take to the hotel. The button below books experiences.',
   'explore.stay.estimateNote':
     'An estimate from the published rate, not a quote and not a reservation. It says nothing about whether these nights are free — availability lives with the hotel.',
   'explore.stay.pickDates': 'Choose an arrival and a departure to see an estimate.',
@@ -435,6 +476,20 @@ export const dictionary = {
   'explore.book.notEnoughSeats': 'Not enough places left for your party.',
   'explore.book.basketHeading': 'Your trip so far',
   'explore.book.basketEmpty': 'Nothing in it yet. Add a departure and it appears here.',
+  'explore.book.review': 'Review and pay',
+  'explore.book.allCategories': 'Everything ({count})',
+  'explore.book.backToTrip': 'Back to your trip',
+  'explore.book.reviewHeading': 'Review your trip',
+  'explore.book.reviewLede':
+    'Read it back before anything is taken. Nothing is charged and no account is made until you press the button.',
+  'explore.book.reviewProperty': 'Booking through',
+  'explore.book.reviewWhen': 'Days',
+  'explore.book.reviewParty': 'Travellers',
+  'explore.book.reviewPayHeading': 'Pay for this trip',
+  'explore.book.reviewChangeNote':
+    'Go back to change anything. Your places are held while you decide, and a hold that lapses is said so on the line.',
+  'explore.book.reviewPaymentNote':
+    'A demonstration build: no card is asked for and no money moves. Everything else — the seats, the holds, the ledger behind them — behaves exactly as it would.',
   'explore.book.remove': 'Remove',
   'explore.book.holdLapsed': 'The hold on these places has lapsed. Remove it and add it again.',
   'explore.book.outsideWindow': 'This now falls outside your dates.',
@@ -557,6 +612,16 @@ export const dictionary = {
   'explore.planner.titleLabel': 'Itinerary title',
   'explore.planner.redraft': 'Re-draft',
   'explore.planner.save': 'Keep in this browser',
+  'explore.planner.saveNote':
+    'Kept on this device only, so you can come back to it. Nothing is sent to ARC, nothing is held and no price is fixed.',
+  'explore.planner.bookHeading': 'Book this for real',
+  'explore.planner.bookBody':
+    'This is the one place on ARC with a hotel behind it. {property} can arrange real departures on these days, with real seats, bought and paid for in the app.',
+  'explore.planner.bookCta': 'See what can be booked',
+  'explore.planner.notBookableHeading': 'Not bookable yet',
+  'explore.planner.notBookableBody':
+    'This destination is editorial: there is no hotel, no catalogue and no availability behind it, so nothing on this plan can be bought. It is a sketch of what ARC does, not an offer.',
+  'explore.planner.notBookableCta': 'See what can be booked at {property}',
   'explore.planner.savedState': 'Kept',
   'explore.planner.unsaved': 'Unsaved changes',
   'explore.planner.costHeading': 'Illustrative cost',
@@ -587,8 +652,11 @@ export const dictionary = {
   'explore.footer.exploreHeading': 'Explore',
   'explore.footer.aboutHeading': 'About this build',
   'explore.footer.disclaimer':
-    '© {year} ARC Transformation Group. A demonstration build: the hotel, the hosts, the prices and the conditions are synthetic, nothing is bookable and no payment is taken.',
+    '© {year} ARC Transformation Group. A demonstration build: the hotel, the hosts, the prices and the conditions are synthetic, and no money changes hands.',
   'explore.footer.demoSurfaces': 'The four product surfaces',
+  'explore.footer.help': 'Help',
+  'explore.footer.terms': 'Terms',
+  'explore.footer.privacy': 'Privacy',
   'explore.footer.bookDirect': 'Book without a room',
   'explore.notFound.title': 'There is nothing at this address',
   'explore.notFound.body': 'The link may be stale, or it may never have pointed anywhere.',
@@ -642,7 +710,7 @@ export const dictionary = {
     'common.arcStay': 'ARC Stay',
     'common.demoData': 'Datos de demostración',
     'common.demoBanner':
-      'Entorno de demostración. Los hoteles, socios, precios y condiciones son sintéticos. Nada es reservable y no se cobra ningún pago.',
+      'Entorno de demostración. Los hoteles, socios, precios y condiciones son sintéticos. Las reservas funcionan exactamente como lo harían — lugares, apartados y confirmaciones reales — pero no se mueve dinero.',
     'common.loading': 'Cargando…',
     'common.error': 'Algo salió mal',
     'common.retry': 'Intentar de nuevo',
@@ -699,6 +767,9 @@ export const dictionary = {
     'account.planTitle': 'Tu plan',
     'account.planSummary': '{items} actividades en {days} días',
     'account.planNone': 'Aún no hay plan. Abre tu estancia para crearlo.',
+    'account.planBooked': '{items} reservado para este viaje.',
+    'account.intakeSharpens':
+      'Responde unas preguntas en tu estancia y lo que sugerimos alrededor de tus reservas se afina.',
     'account.intakeOutstanding': 'Todavía no nos has dicho tus preferencias.',
     'account.basket': '{count} en tu cesta',
     'account.bookingsTitle': 'Reservado',
@@ -755,6 +826,16 @@ export const dictionary = {
       'Cada socio confirma su propia reserva. Verás el estado cambiar aquí, y tu plan está en tu cuenta.',
     'account.orderNotFound': 'No encontramos ese pedido en tu cuenta.',
     'account.openTrip': 'Abrir tu viaje',
+    'account.orderKeepTitle': 'Guardar esto y pedir ayuda',
+    'account.orderEmailSent':
+      'Se envió una confirmación a la dirección de esta reserva. Lleva la misma referencia y un enlace de vuelta a esta página.',
+    'account.orderEmailRecorded':
+      'No llegará ningún correo. Este build registra la confirmación que habría enviado en lugar de entregarla, así que esta página y tu cuenta son donde vive tu reserva.',
+    'account.orderKeepBody':
+      'Tu referencia es {reference}. Imprime esta página o guárdala como PDF si la quieres sin conexión: todo lo que ves sigue aquí cada vez que inicies sesión.',
+    'account.orderHelp': '¿Dudas sobre una reserva, un cambio o una cancelación?',
+    'account.orderHelpLink': 'lee la página de ayuda',
+    'account.orderPrint': 'Imprimir o guardar como PDF',
 
     'guest.accountOffer':
       '¿Quieres esto sin el código QR, y todas tus reservas en un solo lugar?',
@@ -762,6 +843,20 @@ export const dictionary = {
     'guest.welcome': 'Bienvenido a',
     'guest.welcomeSub': 'Tu estancia, a tu ritmo. Cuéntanos qué te atrae.',
     'guest.startPlanning': 'Empezar a planear',
+    'guest.startPlanningSub':
+      'Treinta segundos de preguntas. No adivinaremos tu nivel en el mar: una pregunta sin responder se queda sin responder.',
+    'guest.planTheRest': 'Planea el resto de tu viaje',
+    'guest.planTheRestSub':
+      'Tu reserva está arriba y no cambia. Estas preguntas dan forma a lo que sugerimos para los días alrededor.',
+    'guest.bookedTitle': 'Lo que ya reservaste',
+    'guest.bookedSub': 'Pagado y apartado. Cada socio confirma su propia reserva.',
+    'guest.bookedConfirmed': 'Confirmado',
+    'guest.bookedAwaiting': 'Pendiente del socio',
+    'guest.basketAfterOrder': 'No hay nada pendiente de pago',
+    'guest.basketAfterOrderSub':
+      'Ya tienes {count} reservado en este viaje: está pagado, así que no aparece en una canasta. Agrega algo nuevo y se mostrará aquí.',
+    'guest.basketSeeOrder': 'Ver lo que reservaste',
+    'guest.emptyBasketSub': 'Agrega algo desde tu itinerario o desde Explorar.',
     'guest.viewItinerary': 'Ver mi itinerario',
     'guest.guide': 'Guía local',
     'guest.itinerary': 'Itinerario',
@@ -965,6 +1060,9 @@ export const dictionary = {
   'explore.nav.experiences': 'Experiencias',
   'explore.nav.guide': 'Guía local',
   'explore.nav.plan': 'Planear el viaje',
+  'explore.nav.draftTrip': 'Esbozar un viaje',
+  'explore.listing.noPhoto':
+    'Sin fotograf\u00eda. Es un negocio real, y ARC no pone im\u00e1genes de archivo en el anuncio de otra persona.',
   'explore.nav.saved': 'Guardados',
   'explore.nav.menu': 'Menú',
   'explore.nav.closeMenu': 'Cerrar el menú',
@@ -973,7 +1071,7 @@ export const dictionary = {
   'explore.hero.lede':
     'Un hotel boutique sobre las calas del poniente, las personas que reciben a su alrededor y la referencia que hace falta para recorrer bien esta costa.',
   'explore.hero.demoNote':
-    'Build de demostración. El hotel, los anfitriones y todas las cifras que siguen son sintéticos, y aquí no se puede reservar nada.',
+    'Build de demostración. El hotel, los anfitriones y todas las cifras que siguen son sintéticos. Lo que se puede reservar, se reserva de verdad: no se mueve dinero.',
   'explore.home.stayHeading': 'Dónde alojarse',
   'explore.home.stayKicker': 'El hotel en el que se basa este build, con sus tarifas publicadas.',
   'explore.home.experiencesHeading': 'Con anfitriones que viven aquí',
@@ -1008,6 +1106,8 @@ export const dictionary = {
   'explore.stay.nightsLine': '{nights} noches',
   'explore.stay.nightsLineRooms': '{nights} noches × {rooms} habitaciones',
   'explore.stay.estimateTotal': 'Total estimado',
+  'explore.stay.estimateIsNotBooked':
+    'Es por la habitaci\u00f3n, y la habitaci\u00f3n no es lo que reservas aqu\u00ed. ARC no lleva el calendario de habitaciones, as\u00ed que esta cifra es un estimado que llevas al hotel. El bot\u00f3n de abajo reserva experiencias.',
   'explore.stay.estimateNote':
     'Una estimación a partir de la tarifa publicada: no es una cotización ni una reserva. No dice nada sobre si esas noches están libres — la disponibilidad la tiene el hotel.',
   'explore.stay.pickDates': 'Elige una llegada y una salida para ver una estimación.',
@@ -1061,6 +1161,20 @@ export const dictionary = {
   'explore.book.notEnoughSeats': 'No quedan lugares suficientes para tu grupo.',
   'explore.book.basketHeading': 'Tu viaje hasta ahora',
   'explore.book.basketEmpty': 'Todavía no hay nada. Agrega una salida y aparecerá aquí.',
+  'explore.book.review': 'Revisar y pagar',
+  'explore.book.allCategories': 'Todo ({count})',
+  'explore.book.backToTrip': 'Volver a tu viaje',
+  'explore.book.reviewHeading': 'Revisa tu viaje',
+  'explore.book.reviewLede':
+    'Léelo antes de que se cobre nada. No se cobra ni se crea una cuenta hasta que presiones el botón.',
+  'explore.book.reviewProperty': 'Reservando con',
+  'explore.book.reviewWhen': 'Días',
+  'explore.book.reviewParty': 'Viajeros',
+  'explore.book.reviewPayHeading': 'Paga este viaje',
+  'explore.book.reviewChangeNote':
+    'Vuelve atrás para cambiar lo que sea. Tus lugares quedan apartados mientras decides, y si un apartado vence se indica en la línea.',
+  'explore.book.reviewPaymentNote':
+    'Una demostración: no se pide tarjeta y no se mueve dinero. Todo lo demás — los lugares, los apartados y el libro mayor detrás — funciona exactamente como lo haría.',
   'explore.book.remove': 'Quitar',
   'explore.book.holdLapsed': 'La retención de estos lugares venció. Quítalo y agrégalo de nuevo.',
   'explore.book.outsideWindow': 'Esto queda fuera de tus fechas.',
@@ -1183,6 +1297,16 @@ export const dictionary = {
   'explore.planner.titleLabel': 'Título del itinerario',
   'explore.planner.redraft': 'Rehacer',
   'explore.planner.save': 'Guardar en este navegador',
+  'explore.planner.saveNote':
+    'Se guarda solo en este dispositivo, para que puedas volver. No se envía nada a ARC, no se aparta nada y ningún precio queda fijado.',
+  'explore.planner.bookHeading': 'Reserva esto de verdad',
+  'explore.planner.bookBody':
+    'Este es el único lugar en ARC con un hotel detrás. {property} puede organizar salidas reales en estos días, con lugares reales, pagadas en la app.',
+  'explore.planner.bookCta': 'Ver qué se puede reservar',
+  'explore.planner.notBookableHeading': 'Todavía no se puede reservar',
+  'explore.planner.notBookableBody':
+    'Este destino es editorial: no hay hotel, ni catálogo, ni disponibilidad detrás, así que nada de este plan se puede comprar. Es un boceto de lo que hace ARC, no una oferta.',
+  'explore.planner.notBookableCta': 'Ver qué se puede reservar en {property}',
   'explore.planner.savedState': 'Guardado',
   'explore.planner.unsaved': 'Cambios sin guardar',
   'explore.planner.costHeading': 'Coste ilustrativo',
@@ -1214,8 +1338,11 @@ export const dictionary = {
   'explore.footer.exploreHeading': 'Explorar',
   'explore.footer.aboutHeading': 'Sobre este build',
   'explore.footer.disclaimer':
-    '© {year} ARC Transformation Group. Build de demostración: el hotel, los anfitriones, los precios y las condiciones son sintéticos, no se puede reservar nada y no se cobra ningún pago.',
+    '© {year} ARC Transformation Group. Build de demostración: el hotel, los anfitriones, los precios y las condiciones son sintéticos, y no se mueve dinero.',
   'explore.footer.demoSurfaces': 'Las cuatro superficies del producto',
+  'explore.footer.help': 'Ayuda',
+  'explore.footer.terms': 'Términos',
+  'explore.footer.privacy': 'Privacidad',
   'explore.footer.bookDirect': 'Reservar sin hospedaje',
   'explore.notFound.title': 'No hay nada en esta dirección',
   'explore.notFound.body': 'El enlace puede estar caducado, o puede que nunca llevara a nada.',

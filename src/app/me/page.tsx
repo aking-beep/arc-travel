@@ -274,7 +274,22 @@ function StayCard({
           </div>
         </dl>
 
-        {/* --- The plan ------------------------------------------------------ */}
+        {/*
+         * --- The plan ------------------------------------------------------
+         *
+         * "Your plan" reads the *drafted* itinerary — the portal planner's
+         * `Itinerary` row — and a storefront purchase never writes one. So
+         * this section printed "No plan yet. Open your stay to build one."
+         * directly above a list of the things the person had just paid for,
+         * and told them they had stated no preferences on the same card. Both
+         * sentences were true of the data and absurd to the reader.
+         *
+         * A booking is a plan as far as the person who made it is concerned.
+         * The drafted itinerary still gets its own line when there is one,
+         * because the two are genuinely different — a draft can hold
+         * candidates nobody paid for — but "nothing here" is now said only
+         * when there is nothing.
+         */}
         <section>
           <h3 className="flex items-center gap-1.5 text-sm font-semibold">
             <Sparkles className="text-jade-700 size-4" aria-hidden />
@@ -286,10 +301,22 @@ function StayCard({
                   items: stay.itinerary.itemCount,
                   days: stay.itinerary.dayCount,
                 })
-              : t('account.planNone')}
+              : bookedItems.length > 0
+                ? t('account.planBooked', { items: bookedItems.length })
+                : t('account.planNone')}
           </p>
+          {/*
+           * Offered, not demanded — and only where it would still change
+           * something. Telling somebody who has just bought their trip that
+           * they have not answered our questions reads as a reproach for
+           * nothing.
+           */}
           {!stay.intakeCompleted ? (
-            <p className="text-sand-600 mt-1 text-sm">{t('account.intakeOutstanding')}</p>
+            <p className="text-sand-600 mt-1 text-sm">
+              {bookedItems.length > 0
+                ? t('account.intakeSharpens')
+                : t('account.intakeOutstanding')}
+            </p>
           ) : null}
           {stay.basketCount > 0 ? (
             <p className="text-sand-700 mt-1 flex items-center gap-1.5 text-sm">

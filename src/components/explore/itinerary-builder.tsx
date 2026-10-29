@@ -52,6 +52,7 @@ export function ItineraryBuilder({
   onBack,
   now,
   generatorLabel,
+  bookable,
 }: {
   locale: AppLocale
   itinerary: Itinerary
@@ -60,6 +61,8 @@ export function ItineraryBuilder({
   /** The instant this page was rendered, from the server. Never `new Date()`. */
   now: Date
   generatorLabel: string
+  /** The one destination with a hotel behind it, or null. See `TripPlanner`. */
+  bookable: { destination: string; href: string; propertyName: string } | null
 }) {
   const t = createTranslator(locale)
   const saved = useSaved()
@@ -234,31 +237,89 @@ export function ItineraryBuilder({
           <IllustrativeNote className="mt-5">{t('explore.planner.note')}</IllustrativeNote>
         </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            saved.saveItinerary(itinerary)
-            setDirty(false)
-          }}
-          className={cn(
-            'flex h-12 w-full items-center justify-center gap-2 rounded-full text-sm transition-colors duration-150',
-            isKept && !dirty
-              ? 'border-line text-muted border'
-              : 'bg-ink text-ivory hover:bg-ink-soft',
-          )}
-        >
-          {isKept && !dirty ? (
-            <>
-              <BookmarkCheck className="size-4" aria-hidden />
-              {t('explore.planner.savedState')}
-            </>
-          ) : (
-            <>
-              <BookmarkPlus className="size-4" aria-hidden />
-              {isKept ? t('explore.planner.unsaved') : t('explore.planner.save')}
-            </>
-          )}
-        </button>
+        {/*
+         * Where the plan goes next.
+         *
+         * This panel used to be a single button reading "Keep in this
+         * browser", which writes to `localStorage`. As a privacy statement
+         * that is honest; as the only exit from a planner somebody has just
+         * spent two minutes in, it is the moment the product loses them —
+         * and the page's own next step was a link into a demo portal, which
+         * is a tour rather than a way to buy the thing on screen.
+         *
+         * So: when the drafted destination is the one with a hotel, a
+         * catalogue and real seats behind it, offer that, carrying the dates
+         * across. When it is not — seven of the eight places here are
+         * editorial only — say so plainly rather than implying otherwise.
+         * Keeping the plan stays available underneath, in words that say what
+         * it does.
+         */}
+        {bookable && bookable.destination === itinerary.preferences.destination ? (
+          <div className="border-line rounded-3xl border p-6">
+            <p className="text-muted text-xs tracking-wide">
+              {t('explore.planner.bookHeading')}
+            </p>
+            <p className="mt-2 text-sm leading-relaxed">
+              {t('explore.planner.bookBody', { property: bookable.propertyName })}
+            </p>
+            <Link
+              href={`${bookable.href}?arrive=${itinerary.preferences.startDate}&depart=${itinerary.preferences.endDate}&party=${itinerary.preferences.travelers}`}
+              className="bg-ink text-ivory hover:bg-ink-soft mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-full text-sm transition-colors duration-150"
+            >
+              {t('explore.planner.bookCta')}
+              <ArrowRight className="size-4" aria-hidden />
+            </Link>
+          </div>
+        ) : (
+          <div className="border-line rounded-3xl border border-dashed p-6">
+            <p className="text-muted text-xs tracking-wide">
+              {t('explore.planner.notBookableHeading')}
+            </p>
+            <p className="text-muted mt-2 text-sm leading-relaxed">
+              {t('explore.planner.notBookableBody')}
+            </p>
+            {bookable ? (
+              <Link
+                href={bookable.href}
+                className="border-gold text-ink hover:text-gold-deep mt-4 inline-flex items-center gap-2 border-b pb-1 text-sm transition-colors duration-150"
+              >
+                {t('explore.planner.notBookableCta', { property: bookable.propertyName })}
+                <ArrowRight className="size-4" aria-hidden />
+              </Link>
+            ) : null}
+          </div>
+        )}
+
+        <div>
+          <button
+            type="button"
+            onClick={() => {
+              saved.saveItinerary(itinerary)
+              setDirty(false)
+            }}
+            className={cn(
+              'flex h-12 w-full items-center justify-center gap-2 rounded-full text-sm transition-colors duration-150',
+              isKept && !dirty
+                ? 'border-line text-muted border'
+                : 'border-line hover:bg-paper border',
+            )}
+          >
+            {isKept && !dirty ? (
+              <>
+                <BookmarkCheck className="size-4" aria-hidden />
+                {t('explore.planner.savedState')}
+              </>
+            ) : (
+              <>
+                <BookmarkPlus className="size-4" aria-hidden />
+                {isKept ? t('explore.planner.unsaved') : t('explore.planner.save')}
+              </>
+            )}
+          </button>
+          <p className="text-muted mt-2 text-xs leading-relaxed">
+            {t('explore.planner.saveNote')}
+          </p>
+        </div>
 
         {stay ? (
           <div className="border-line rounded-3xl border p-6">

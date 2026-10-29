@@ -27,6 +27,7 @@ export function TripPlanner({
   defaultPrefs,
   samples,
   initialItinerary,
+  bookable,
   children,
 }: {
   locale: AppLocale
@@ -35,6 +36,17 @@ export function TripPlanner({
   defaultPrefs: PlannerPreferences
   samples: Itinerary[]
   initialItinerary?: Itinerary
+  /**
+   * The one destination that can actually be booked, resolved on the server.
+   *
+   * This planner drafts over editorial content for eight places, exactly one
+   * of which has a hotel, a catalogue and seats behind it. Its only exit used
+   * to be "Keep in this browser" — a `localStorage` write — so somebody who
+   * had just built a plan was offered a button about browser storage and
+   * nothing else. Where the plan *can* be bought, say so and link to it;
+   * where it cannot, say that instead of implying it can.
+   */
+  bookable: { destination: string; href: string; propertyName: string } | null
   /** The explanatory band, rendered on the server and shown under the form. */
   children?: ReactNode
 }) {
@@ -62,6 +74,7 @@ export function TripPlanner({
         onBack={() => setItinerary(null)}
         now={now}
         generatorLabel={activeGenerator.label}
+        bookable={bookable}
       />
     )
   }

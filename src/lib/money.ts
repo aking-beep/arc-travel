@@ -90,7 +90,22 @@ export function splitByBps(
   return out
 }
 
-const LOCALE_BY_CURRENCY: Record<string, string> = { MXN: 'es-MX', USD: 'en-US', EUR: 'de-DE' }
+/**
+ * The locale a figure is formatted in when the caller names none.
+ *
+ * Deliberately **not** the currency's home locale. `es-MX` renders MXN as a
+ * bare `$`, which is correct in Mexico and ambiguous to everybody else — and
+ * this product puts a USD content set and an MXN catalogue on the same
+ * journey. A visitor saw "Estimated total $9,600" (real US dollars, the room)
+ * and then "$950 per person" and "$3,800" on the till, which are pesos, about
+ * US$50 and US$200. Nothing on the page distinguished them.
+ *
+ * `en-US` renders MXN as `MX$`, USD as `$` and EUR as `€` — each unambiguous
+ * whoever is reading. A caller that knows its reader's locale should still
+ * pass it, which is what the guest surfaces now do; this is the floor, not the
+ * preference.
+ */
+const FALLBACK_FORMATTING_LOCALE = 'en-US'
 
 /**
  * Formats an amount for display.
@@ -99,10 +114,10 @@ const LOCALE_BY_CURRENCY: Record<string, string> = { MXN: 'es-MX', USD: 'en-US',
  * meant a commission column of 142.50 displayed as 143, so an owner adding up
  * the numbers on screen — the thing ADR-002 exists to let them do — got a
  * total that did not match, while the stored arithmetic was exact. Whole
- * amounts still render cleanly as "$950".
+ * amounts still render cleanly as "MX$950".
  */
 export function formatMoney(amountMinor: number, currency = 'MXN', locale?: string): string {
-  const resolved = locale ?? LOCALE_BY_CURRENCY[currency] ?? 'en-US'
+  const resolved = locale ?? FALLBACK_FORMATTING_LOCALE
   const hasCentavos = Math.trunc(amountMinor) % 100 !== 0
 
   return new Intl.NumberFormat(resolved, {

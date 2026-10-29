@@ -13,6 +13,20 @@ export function toDateKey(d: Date | string): DateKey {
   return d.toISOString().slice(0, 10)
 }
 
+/**
+ * Whether an untrusted string really is a calendar day.
+ *
+ * `YYYY-MM-DD` shaped *and* a real date, so "2026-02-31" and "2026-13-01" are
+ * refused rather than silently rolled forward by `Date`. For query strings and
+ * anywhere else a `DateKey` arrives from outside the product; a value that
+ * fails this belongs in a fallback, not in a date.
+ */
+export function isDateKey(value: unknown): value is DateKey {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const parsed = new Date(`${value}T00:00:00.000Z`)
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
+}
+
 /** Midnight UTC for a calendar day — the canonical form for a `@db.Date`. */
 export function fromDateKey(key: DateKey): Date {
   return new Date(`${key}T00:00:00.000Z`)

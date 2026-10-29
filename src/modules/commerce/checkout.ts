@@ -1075,6 +1075,52 @@ export async function confirmOrderItemBySupplier(options: {
   })
 }
 
+/**
+ * What this guest has actually bought for this stay.
+ *
+ * The portal's front page greeted somebody who had just paid for two
+ * departures with the hotel's description and a "Start planning" button, and
+ * said nothing about the order at all — because the page branched on
+ * `intakeCompleted` and a storefront purchase does not complete intake. The
+ * surface the confirmation page sends a paying customer to showed them
+ * nothing they had paid for.
+ *
+ * Scoped by `guestId` **and** `stayId` in the `where` clause rather than
+ * filtered afterwards, per the guest-surface rule in `CLAUDE.md`: the caller
+ * holds a portal token, and ownership belongs in the query.
+ *
+ * Cancelled lines are kept. A guest looking for the thing they cancelled
+ * needs to see that it is gone, not to find a page that never mentions it.
+ */
+export async function listBookedItemsForStay(stayId: string, guestId: string) {
+  return prisma.orderItem.findMany({
+    where: {
+      order: { stayId, guestId },
+      status: { not: OrderItemStatus.CANCELLED },
+    },
+    orderBy: [{ slot: { startsAt: 'asc' } }],
+    select: {
+      id: true,
+      quantity: true,
+      lineTotalMinor: true,
+      currency: true,
+      supplierConfirmedAt: true,
+      slot: { select: { startsAt: true } },
+      order: { select: { reference: true } },
+      experience: {
+        select: {
+          titleEn: true,
+          titleEs: true,
+          meetingPoint: true,
+          supplier: { select: { name: true } },
+        },
+      },
+    },
+  })
+}
+
+export type BookedStayItem = Awaited<ReturnType<typeof listBookedItemsForStay>>[number]
+
 export async function getOrderForGuest(reference: string, guestId: string) {
   const order = await prisma.order.findUnique({
     where: { reference },
