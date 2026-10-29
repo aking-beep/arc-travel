@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { ArrowRight } from 'lucide-react'
 import { Band, IllustrativeNote, Shell } from '@/components/explore/editorial'
 import { TripPlanner } from '@/components/explore/trip-planner'
-import { addDays, toDateKey } from '@/lib/dates'
+import { addDays, toLocalDateKey } from '@/lib/dates'
 import { getTranslator } from '@/lib/i18n/server'
 import { getDestination } from '@/modules/discovery/content/destinations'
 import { getSampleItinerary, sampleItineraries } from '@/modules/discovery/content/itineraries'
@@ -38,7 +38,22 @@ export default async function PlanPage({
   const { sample, destination } = await searchParams
 
   const now = new Date()
-  const start = addDays(toDateKey(now), 45)
+  /*
+   * Ten days out, not forty-five, and a local day rather than a UTC one.
+   *
+   * Forty-five was a neutral default while this planner was a sketch that
+   * booked nothing. It now ends in a *Book this for real* panel that carries
+   * these dates to the property page, and forty-five days is past the horizon
+   * the catalogue publishes departures for — so the default path through the
+   * handoff landed on an empty trip, which is the exact failure ADR-045 moved
+   * the stay panel's own default from a month to a week to stop. Ten days
+   * keeps a five-night window comfortably inside the horizon.
+   *
+   * `toLocalDateKey` because the property is UTC-6: after 18:00 there the
+   * UTC day has already rolled forward, and every trip window in the product
+   * is a local date key.
+   */
+  const start = addDays(toLocalDateKey(now), 10)
 
   /*
    * The destination the visitor clicked.

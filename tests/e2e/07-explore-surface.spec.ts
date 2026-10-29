@@ -117,6 +117,24 @@ test.describe('the public surface', () => {
     await expect(header).toHaveCSS('top', '0px')
   })
 
+  test('a question the guide offers is answered by the editors who wrote it', async ({ page }) => {
+    /*
+     * Mexico City's own chip is "Is it safe to walk around?", and the guide
+     * panel's refusal guard matches the word "safe". Sent through the guard,
+     * the chip returned the generic borders-and-health refusal and the
+     * hand-written answer — which opens by refusing to call anywhere safe and
+     * then says what is actually true — was thrown away.
+     *
+     * An exact prepared question is answered from the notes and never reaches
+     * the model. The refusal still applies to anything typed.
+     */
+    await page.goto('/culture/mexico-city')
+    await page.getByRole('button', { name: 'Is it safe to walk around?' }).click()
+
+    await expect(page.getByText(/ARC does not tell anybody a place is safe/i)).toBeVisible()
+    await expect(page.getByText(/is editorial writing, last read through/i)).toHaveCount(0)
+  })
+
   test('the local guide reports conditions without ever calling them safe', async ({ page }) => {
     await page.goto('/culture/puerto-escondido')
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible()

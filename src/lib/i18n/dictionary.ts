@@ -491,6 +491,8 @@ export const dictionary = {
   'explore.book.reviewPaymentNote':
     'A demonstration build: no card is asked for and no money moves. Everything else — the seats, the holds, the ledger behind them — behaves exactly as it would.',
   'explore.book.remove': 'Remove',
+  'explore.book.reviewBlocked':
+    'Something in this trip falls outside your dates, so it cannot be paid for as it stands. The lines are flagged above — go back to widen the dates, or drop them.',
   'explore.book.holdLapsed': 'The hold on these places has lapsed. Remove it and add it again.',
   'explore.book.outsideWindow': 'This now falls outside your dates.',
   'explore.book.total': 'Total',
@@ -1176,6 +1178,8 @@ export const dictionary = {
   'explore.book.reviewPaymentNote':
     'Una demostración: no se pide tarjeta y no se mueve dinero. Todo lo demás — los lugares, los apartados y el libro mayor detrás — funciona exactamente como lo haría.',
   'explore.book.remove': 'Quitar',
+  'explore.book.reviewBlocked':
+    'Algo de este viaje queda fuera de tus fechas, así que no se puede pagar tal como está. Las líneas están marcadas arriba: vuelve para ampliar las fechas o quitarlas.',
   'explore.book.holdLapsed': 'La retención de estos lugares venció. Quítalo y agrégalo de nuevo.',
   'explore.book.outsideWindow': 'Esto queda fuera de tus fechas.',
   'explore.book.total': 'Total',

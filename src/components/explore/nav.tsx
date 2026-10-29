@@ -159,6 +159,9 @@ export function ExploreNav({
   useEffect(() => {
     const banner = overHero ? document.querySelector('[data-demo-banner]') : null
     let bannerHeight = banner?.getBoundingClientRect().height ?? 0
+    // Captured once, so the cleanup clears the node this effect wrote on
+    // rather than whatever the ref points at by the time it runs.
+    const bar = header.current
 
     /*
      * Cleared, not merely left unset, when this is not a hero page.
@@ -172,12 +175,12 @@ export function ExploreNav({
      */
     const place = () => {
       setScrolled(window.scrollY > 40)
-      if (!header.current) return
+      if (!bar) return
       if (overHero) {
         const top = Math.max(0, bannerHeight - window.scrollY)
-        header.current.style.top = `${String(top)}px`
+        bar.style.top = `${String(top)}px`
       } else {
-        header.current.style.removeProperty('top')
+        bar.style.removeProperty('top')
       }
     }
     place()
@@ -194,7 +197,7 @@ export function ExploreNav({
     return () => {
       window.removeEventListener('scroll', place)
       observer?.disconnect()
-      header.current?.style.removeProperty('top')
+      bar?.style.removeProperty('top')
     }
   }, [overHero])
 
