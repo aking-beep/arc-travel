@@ -412,7 +412,7 @@ export const cultureGuides: CultureGuide[] = [
       'Pickpocketing is concentrated on tram 28, the metro at rush hour and the Alfama viewpoints. It is opportunistic rather than confrontational',
       'People will offer you drugs on Rua Augusta. It is a long-running scam and the product is fake; the answer is to keep walking',
       'The Atlantic beaches west of the city have strong rips and the flag system is posted and meant. The lifeguard, not a guidebook, is the authority on the day',
-      'Tap water is safe to drink and tastes slightly of chlorine. Nobody needs to buy bottles here',
+      'Tap water is drinkable here and tastes slightly of chlorine. Nobody needs to buy bottles',
     ],
     seasons: [
       { months: 'Mar – May', label: 'The best of it', text: 'Mild, bright, jacaranda in late May, and before the crowds. The pick of the year.' },
@@ -486,7 +486,7 @@ export const cultureGuides: CultureGuide[] = [
       'Water is 14–18°C through the year. A 3/2 in summer, a 4/3 and boots in winter, and hypothermia is the thing that actually catches visitors out',
       'The cliffs erode and sections collapse. The fenced-off paths are fenced for a reason',
       'Rips run hard along the beach breaks on a dropping tide. The flag system is posted at lifeguarded beaches in season and unmanned outside it',
-      'Tap water is safe to drink',
+      'Tap water is drinkable, unlike in much of the region',
     ],
     seasons: [
       { months: 'Sep – Nov', label: 'The season', text: 'Consistent autumn swell, water still warm from summer, town quiet again. What people come for.' },
@@ -557,7 +557,7 @@ export const cultureGuides: CultureGuide[] = [
     ],
     advisories: [
       'The lifts put you at 3,800 m in twenty minutes from 1,000 m. Altitude sickness at the Aiguille du Midi is common and the answer is to go back down, not to push through',
-      'Glacier terrain, including the Vallée Blanche, is crevassed and not a marked run. It needs a guide and the equipment to go with one. ARC does not tell anybody a route is safe, and nobody should',
+      'Glacier terrain, including the Vallée Blanche, is crevassed and not a marked run. It needs a guide and the equipment to go with one. ARC does not certify any route in the mountains, and nobody should',
       'Avalanche risk is published daily on a five-point scale by Météo-France. That bulletin, on the day, is the thing to read — not any line written here months earlier',
       'Mountain weather turns in under an hour. Carry layers, water and a charged phone even for a short marked walk, and tell somebody your route',
       'Mountain rescue in France is charged for. Check your insurance explicitly covers helicopter rescue and off-piste or glacier activity; most standard travel policies do not',
