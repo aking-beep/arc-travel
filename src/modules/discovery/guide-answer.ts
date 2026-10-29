@@ -6,6 +6,7 @@ import { getDestination } from './content/destinations'
 import { prisma } from '@/lib/db'
 import { EntityStatus } from '@/lib/prisma-types'
 import { runAI } from '@/modules/ai/service'
+import { isRefusedSubject } from './guide-refusals'
 
 /**
  * The local guide, answered by a model that may only read what the editors
@@ -42,10 +43,6 @@ import { runAI } from '@/modules/ai/service'
  * the caller depends on — never throws. A failed or unconfigured model returns
  * `null` and the panel falls back to the keyword matcher it always had.
  */
-
-/** Subjects the model may not answer from editorial prose, whatever it says. */
-const REFUSED_SUBJECTS =
-  /\b(safe|safety|dangerous|danger|risk|drown|rip ?current|shark|avalanche|crevasse|surf (?:report|conditions)|swell|tide|visa|passport|border|customs|legal|law|arrest|police report|insurance claim|vaccin|malaria|dengue|medic|doctor|prescription|allerg|emergency)\b/i
 
 export type GuideAnswer = {
   /** The answer, or the refusal. Always something a person can read. */
@@ -129,7 +126,7 @@ export async function answerFromGuide(
    * refusal names where the live answer actually lives — the dated readings
    * on the local guide, or a person standing on the beach.
    */
-  if (REFUSED_SUBJECTS.test(asked)) {
+  if (isRefusedSubject(asked)) {
     return {
       text: `The guide to ${destination.name} is editorial writing, last read through on ${guide.reviewedAt}, so it is the wrong thing to answer that from. Anything about conditions, safety, law, borders or health needs a current source: the dated readings on this page for the state of the water, your government's own advice for travel and entry, and a guide, a lifeguard or a doctor on the ground for the rest.`,
       source: 'refused',

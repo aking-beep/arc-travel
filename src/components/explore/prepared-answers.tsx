@@ -146,9 +146,16 @@ export function PreparedAnswers({
       <div className="border-ivory/10 border-b p-6">
         <p className="text-2xl">Ask the local guide</p>
         <p className="text-ivory/50 mt-1 text-xs leading-relaxed">
+          {/*
+            Worded around the phrase it refuses, deliberately. Saying "it will
+            not tell you whether anything is safe" puts "is safe" on a page
+            about a real beach, and `07-explore-surface` greps the rendered
+            body for exactly that — the guard is right, and this panel has no
+            business printing the string even to disclaim it.
+          */}
           Answered from notes ARC editors wrote about this place, and nothing else. It will not
-          tell you whether anything is safe, what the sea is doing today, or anything about law,
-          borders or health — those need a current source, and it will say so.
+          judge safety, describe what the sea is doing today, or answer anything about law, borders
+          or health — those need a current source, and it will say so.
         </p>
       </div>
 

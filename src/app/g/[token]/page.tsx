@@ -9,7 +9,7 @@ import { ConditionsCard } from '@/components/guest/conditions-card'
 import { AccountNudge } from '@/components/guest/account-nudge'
 import { createTranslator, type AppLocale } from '@/lib/i18n'
 import { getLocale } from '@/lib/i18n/server'
-import { toLocalTimeString } from '@/lib/dates'
+import { toLocalDateKey, toLocalTimeString } from '@/lib/dates'
 import { ItineraryItemKind } from '@/lib/prisma-types'
 import { resolvePortalForRequest } from './resolve'
 import { getItineraryForGuest } from '@/modules/itinerary/service'
@@ -427,7 +427,16 @@ function BookedCard({
                 <span className="min-w-0">
                   {item.slot ? (
                     <span className="text-sand-500 tabular-nums">
-                      {item.slot.startsAt.toISOString().slice(0, 10)}{' '}
+                      {/*
+                        `toLocalDateKey`, not `toISOString().slice(0, 10)`.
+                        `startsAt` is an instant, and the time beside it is
+                        the property's local clock — so a 19:30 departure is
+                        01:30 UTC the next day and the pair printed the wrong
+                        calendar day with the right time. The `@db.Date`
+                        columns elsewhere on this page are midnight UTC by
+                        convention and may be sliced; a timestamp may not.
+                      */}
+                      {toLocalDateKey(item.slot.startsAt)}{' '}
                       {toLocalTimeString(item.slot.startsAt)}{' '}
                     </span>
                   ) : null}

@@ -7,7 +7,7 @@ import { ImageGallery } from '@/components/explore/image-gallery'
 import { SaveButton } from '@/components/explore/save-button'
 import { StayEstimator } from '@/components/explore/stay-estimator'
 import { abilityField } from '@/app/(public)/book/ability-labels'
-import { addDays, isDateKey, toDateKey } from '@/lib/dates'
+import { addDays, isDateKey, toLocalDateKey } from '@/lib/dates'
 import { getTranslator } from '@/lib/i18n/server'
 import { getDestination } from '@/modules/discovery/content/destinations'
 import { experiences } from '@/modules/discovery/content/experiences'
@@ -82,7 +82,16 @@ export default async function StayDetailPage({
 
   // Dates are computed here, on the server, and handed to the client island as
   // props. Nothing below the fold reads a clock during render.
-  const today = toDateKey(new Date())
+  /*
+   * `toLocalDateKey`, not `toDateKey(new Date())`.
+   *
+   * `toDateKey` slices a UTC instant, and the property is UTC-6: after 18:00
+   * in Puerto Escondido the server's calendar day has already rolled forward,
+   * so an arrival of *today* carried over from the planner read as past and
+   * was thrown away for a window a week out. Every trip window in the product
+   * is a local date key, which is the whole point of `DateKey`.
+   */
+  const today = toLocalDateKey(new Date())
   /*
    * A week out, not a month.
    *
