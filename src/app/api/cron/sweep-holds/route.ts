@@ -1,6 +1,5 @@
-import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
-import { getEnv } from '@/lib/env'
+import { cronGate } from '@/lib/cron-request'
 import { reportError } from '@/lib/observability'
 import { sweepExpiredHolds } from '@/modules/inventory/service'
 
@@ -30,23 +29,21 @@ const BATCH = 200
 /** Batches per invocation, so a neglected database converges over several runs. */
 const MAX_BATCHES = 10
 
+/**
+ * Both verbs, deliberately: Vercel's scheduler sends a `GET`, and a route that
+ * exported `POST` alone was a job that never ran. See `src/lib/cron-request.ts`.
+ */
+export async function GET(request: Request): Promise<NextResponse> {
+  return run(request)
+}
+
 export async function POST(request: Request): Promise<NextResponse> {
-  const env = getEnv()
+  return run(request)
+}
 
-  if (!env.CRON_SECRET) {
-    /*
-     * Unconfigured means off, not open.
-     *
-     * Treating an unset secret as "no authorisation required" is how an
-     * internal endpoint becomes a public one on the one deployment where
-     * somebody forgot a variable.
-     */
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  }
-
-  if (!authorised(request.headers.get('authorization'), env.CRON_SECRET)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+async function run(request: Request): Promise<NextResponse> {
+  const refusal = cronGate(request)
+  if (refusal) return refusal
 
   try {
     let swept = 0
@@ -63,19 +60,10 @@ export async function POST(request: Request): Promise<NextResponse> {
     console.log('[sweep-holds] released %d hold(s) in %d batch(es).', swept, batches + 1)
     return NextResponse.json({ swept, batches: batches + 1 })
   } catch (error) {
-    await reportError(error, { where: 'POST /api/cron/sweep-holds' })
+    await reportError(error, { where: '/api/cron/sweep-holds' })
     // 500 so the scheduler's own retry and alerting see the failure. A sweep
     // is idempotent, so being run again is always safe.
     return NextResponse.json({ error: 'Sweep failed' }, { status: 500 })
   }
 }
 
-function authorised(header: string | null, secret: string): boolean {
-  if (!header) return false
-  const presented = Buffer.from(header.replace(/^Bearer /i, ''), 'utf8')
-  const expected = Buffer.from(secret, 'utf8')
-  // Lengths differ is itself the answer, and `timingSafeEqual` throws on a
-  // length mismatch rather than returning false.
-  if (presented.length !== expected.length) return false
-  return timingSafeEqual(presented, expected)
-}

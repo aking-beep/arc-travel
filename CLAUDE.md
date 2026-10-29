@@ -247,6 +247,7 @@ Two E2E habits, learned the hard way and recorded in the specs:
 | `/api/simulation/tick` takes no credential | ADR-044. Every demo surface is meant to be opened by whoever has the link. A *global* ticks-per-minute budget is what bounds it — per-IP would give each of twenty tabs its own allowance |
 | Simulated people are not marked in the owner surfaces | ADR-044. The briefing and the revenue card are meant to show what the product would show. `DemoBanner`, the `sim.arcstay.demo` addresses and `/admin/simulation` are where they are named |
 | A simulated persona may propose a harness amendment but never a relaxation | ADR-043. The agent writing the proposal is also the thing the guardrail refused, and the cheapest way to stop failing a check is to propose that the check go away. The attempt is recorded as a `GUARD` event rather than dropped |
+| A cron route exports `GET` as well as `POST`, and the gate lives in `src/lib` | Vercel invokes a scheduled job with a `GET`. All four routes exported `POST` alone, so for a month not one of them had ever run — holds unswept, invariants unchecked, queued mail undispatched — and the symptom was silence, which is what a healthy cron looks like too. `POST` stays because it is the honest verb for a route that writes and it is what the runbook calls. `tests/unit/cron-routes.test.ts` reads `vercel.json` and fails if a scheduled path has no `GET`. The bearer check was four copies; ADR-029's reasoning applies |
 
 ## Review
 

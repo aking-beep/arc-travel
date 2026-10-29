@@ -1,6 +1,5 @@
-import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
-import { getEnv } from '@/lib/env'
+import { cronGate } from '@/lib/cron-request'
 import { reportError } from '@/lib/observability'
 import { checkInvariants, hasCritical } from '@/modules/observability/invariants'
 
@@ -19,15 +18,21 @@ import { checkInvariants, hasCritical } from '@/modules/observability/invariants
  */
 export const dynamic = 'force-dynamic'
 
-export async function POST(request: Request): Promise<NextResponse> {
-  const env = getEnv()
+/**
+ * Both verbs, deliberately: Vercel's scheduler sends a `GET`, and a route that
+ * exported `POST` alone was a job that never ran. See `src/lib/cron-request.ts`.
+ */
+export async function GET(request: Request): Promise<NextResponse> {
+  return run(request)
+}
 
-  if (!env.CRON_SECRET) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  }
-  if (!authorised(request.headers.get('authorization'), env.CRON_SECRET)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+export async function POST(request: Request): Promise<NextResponse> {
+  return run(request)
+}
+
+async function run(request: Request): Promise<NextResponse> {
+  const refusal = cronGate(request)
+  if (refusal) return refusal
 
   try {
     const report = await checkInvariants()
@@ -68,7 +73,7 @@ export async function POST(request: Request): Promise<NextResponse> {
           `Invariant violation: ${critical.map((f) => `${f.key} (${String(f.count)})`).join(', ')}`,
         ),
         {
-          where: 'POST /api/cron/check-invariants',
+          where: '/api/cron/check-invariants',
           extra: {
             // Keys and counts, not rows. The summaries carry no guest data,
             // but the rule is to send field names rather than content.
@@ -92,15 +97,8 @@ export async function POST(request: Request): Promise<NextResponse> {
     })
   } catch (error) {
     // This branch *is* a monitoring failure: the queries themselves broke.
-    await reportError(error, { where: 'POST /api/cron/check-invariants' })
+    await reportError(error, { where: '/api/cron/check-invariants' })
     return NextResponse.json({ error: 'Invariant check failed' }, { status: 500 })
   }
 }
 
-function authorised(header: string | null, secret: string): boolean {
-  if (!header) return false
-  const presented = Buffer.from(header.replace(/^Bearer /i, ''), 'utf8')
-  const expected = Buffer.from(secret, 'utf8')
-  if (presented.length !== expected.length) return false
-  return timingSafeEqual(presented, expected)
-}

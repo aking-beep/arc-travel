@@ -1,6 +1,5 @@
-import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
-import { getEnv } from '@/lib/env'
+import { cronGate } from '@/lib/cron-request'
 import { reportError } from '@/lib/observability'
 import { dispatchQueued } from '@/modules/notifications/service'
 
@@ -27,16 +26,21 @@ export const dynamic = 'force-dynamic'
 /** Messages per invocation. Bounded so one run cannot exceed the function's budget. */
 const LIMIT = 50
 
+/**
+ * Both verbs, deliberately: Vercel's scheduler sends a `GET`, and a route that
+ * exported `POST` alone was a job that never ran. See `src/lib/cron-request.ts`.
+ */
+export async function GET(request: Request): Promise<NextResponse> {
+  return run(request)
+}
+
 export async function POST(request: Request): Promise<NextResponse> {
-  const env = getEnv()
+  return run(request)
+}
 
-  if (!env.CRON_SECRET) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  }
-
-  if (!authorised(request.headers.get('authorization'), env.CRON_SECRET)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+async function run(request: Request): Promise<NextResponse> {
+  const refusal = cronGate(request)
+  if (refusal) return refusal
 
   try {
     const outcome = await dispatchQueued({ limit: LIMIT })
@@ -56,15 +60,8 @@ export async function POST(request: Request): Promise<NextResponse> {
      */
     return NextResponse.json(outcome)
   } catch (error) {
-    await reportError(error, { where: 'POST /api/cron/dispatch-email' })
+    await reportError(error, { where: '/api/cron/dispatch-email' })
     return NextResponse.json({ error: 'Dispatch failed' }, { status: 500 })
   }
 }
 
-function authorised(header: string | null, secret: string): boolean {
-  if (!header) return false
-  const presented = Buffer.from(header.replace(/^Bearer /i, ''), 'utf8')
-  const expected = Buffer.from(secret, 'utf8')
-  if (presented.length !== expected.length) return false
-  return timingSafeEqual(presented, expected)
-}
