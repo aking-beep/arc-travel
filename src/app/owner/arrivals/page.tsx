@@ -37,7 +37,8 @@ export default async function ArrivalsPage({
       <div>
         <h1 className="font-display text-2xl font-semibold">Arrivals</h1>
         <p className="text-sand-600 mt-1 text-sm">
-          Next {window} days. What each guest told us, and what they have already booked.
+          Everyone in the building, and everyone arriving in the next {window} days. What each
+          guest told us, and what they have already booked.
         </p>
       </div>
 
@@ -48,11 +49,19 @@ export default async function ArrivalsPage({
           {[...grouped.entries()].map(([date, stays]) => (
             <section key={date}>
               <h2 className="text-sand-500 text-xs font-semibold tracking-wide uppercase">
-                {date === today ? `Today · ${date}` : date}
+                {date === today
+                  ? `Today · ${date}`
+                  : date < today
+                    ? `In house · arrived ${date}`
+                    : date}
               </h2>
               <div className="mt-2 space-y-3">
                 {stays.map((stay) => {
-                  const bookedItems = stay.orders.flatMap((o) => o.items)
+                  // The reference travels with the line, so the board can be
+                  // read against what a guest is holding.
+                  const bookedItems = stay.orders.flatMap((o) =>
+                    o.items.map((item) => ({ ...item, orderReference: o.reference })),
+                  )
                   const spend = stay.orders.reduce((n, o) => n + o.totalMinor, 0)
                   const hasTransport = bookedItems.some(
                     (item) => item.experience.category === 'TRANSPORT',
@@ -121,7 +130,10 @@ export default async function ArrivalsPage({
                               {bookedItems.map((item) => (
                                 <li key={item.id} className="tabular-nums">
                                   {toDateKey(item.slot.startsAt)} {toLocalTimeString(item.slot.startsAt)}{' '}
-                                  — {item.experience.titleEn} ×{item.quantity}
+                                  — {item.experience.titleEn} ×{item.quantity}{' '}
+                                  <span className="text-sand-500 font-mono text-xs">
+                                    {item.orderReference}
+                                  </span>
                                 </li>
                               ))}
                             </ul>
