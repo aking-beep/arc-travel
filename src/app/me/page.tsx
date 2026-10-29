@@ -1,20 +1,34 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { CalendarRange, Luggage, MapPin, Phone, ShoppingBasket, Sparkles } from 'lucide-react'
+import {
+  CalendarRange,
+  Clock,
+  Luggage,
+  MapPin,
+  Phone,
+  ShoppingBasket,
+  Sparkles,
+  Wallet,
+} from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button, LinkButton } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/states'
 import { DemoBanner } from '@/components/demo-banner'
 import { LocaleSwitcher } from '@/components/locale-switcher'
-import { Money } from '@/components/money'
+import { DemoFigure, Money } from '@/components/money'
 import { signOutAction } from '@/app/actions'
 import { getTranslator } from '@/lib/i18n/server'
 import type { AppLocale } from '@/lib/i18n'
 import { addDays, toDateKey, toLocalTimeString } from '@/lib/dates'
 import { OrderStatus, StayKind, StayStatus } from '@/lib/prisma-types'
 import { getActor } from '@/modules/auth/service'
-import { experienceTitle, getGuestAccount, type AccountStay } from '@/modules/guest/account'
+import {
+  experienceTitle,
+  getGuestAccount,
+  type AccountSpend,
+  type AccountStay,
+} from '@/modules/guest/account'
 import { listDirectStorefronts } from '@/modules/guest/direct'
 import { ClaimForm } from './claim-form'
 import { TripForm } from './trip-form'
@@ -34,10 +48,15 @@ export const metadata = { title: 'Your bookings · ARC Stay' }
  * it shows every booking the person has claimed rather than the one stay the
  * token in their hand happens to name. See ADR-039.
  */
-export default async function AccountPage() {
+export default async function AccountPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ unpaid?: string }>
+}) {
   const actor = await getActor()
   if (!actor) redirect('/sign-in?next=%2Fme')
 
+  const { unpaid } = await searchParams
   const { locale, t } = await getTranslator()
   const [account, storefronts] = await Promise.all([
     getGuestAccount(actor.userId),
@@ -50,6 +69,21 @@ export default async function AccountPage() {
   // A signed-in user whose account row vanished between the session and this
   // read. Sending them to sign in again is the honest answer.
   if (!account) redirect('/sign-in?next=%2Fme')
+
+  /*
+   * The unpaid notice, for the one state it is about.
+   *
+   * Matched against this person's own stays, so a crafted link cannot put a
+   * reference on somebody's account page — and only a stay with no order at
+   * all, which is what a till that committed and then failed to take the
+   * payment leaves behind. A stay reference is printed on this page, so
+   * without that second condition anybody could paste a *paid* trip's
+   * reference and be told nothing had been charged for it; and the same link,
+   * revisited after the trip was paid for in the portal, would keep saying so.
+   */
+  const unpaidStay = unpaid
+    ? (account.stays.find((stay) => stay.reference === unpaid && stay.orders.length === 0) ?? null)
+    : null
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -78,6 +112,27 @@ export default async function AccountPage() {
       </header>
 
       <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 px-5 py-8">
+        {/*
+         * The till committed an account and a trip and then could not take the
+         * payment. The storefront cannot say so itself — the basket it was
+         * holding is claimed, so that page has already fallen back to its empty
+         * state by the time anything could be rendered on it. The reference is
+         * matched against this person's own stays rather than printed from the
+         * URL, so a crafted link cannot put words on somebody's account page.
+         */}
+        {unpaidStay ? (
+          <Card className="border-terracotta-200 bg-terracotta-50">
+            <CardHeader>
+              <CardTitle className="text-base">{t('account.unpaidTitle')}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sand-700 text-sm">
+                {t('account.unpaidBody', { reference: unpaidStay.reference })}
+              </p>
+            </CardContent>
+          </Card>
+        ) : null}
+
         {account.stays.length === 0 ? (
           <EmptyState
             icon={<CalendarRange className="size-6" aria-hidden />}
@@ -86,6 +141,7 @@ export default async function AccountPage() {
           />
         ) : (
           <>
+            <SpendCard spend={account.spend} t={t} />
             <p className="text-sand-600 text-sm">{t('account.subtitle')}</p>
             {account.stays.map((stay) => (
               <StayCard key={stay.stayId} stay={stay} t={t} locale={locale} />
@@ -218,7 +274,22 @@ function StayCard({
           </div>
         </dl>
 
-        {/* --- The plan ------------------------------------------------------ */}
+        {/*
+         * --- The plan ------------------------------------------------------
+         *
+         * "Your plan" reads the *drafted* itinerary — the portal planner's
+         * `Itinerary` row — and a storefront purchase never writes one. So
+         * this section printed "No plan yet. Open your stay to build one."
+         * directly above a list of the things the person had just paid for,
+         * and told them they had stated no preferences on the same card. Both
+         * sentences were true of the data and absurd to the reader.
+         *
+         * A booking is a plan as far as the person who made it is concerned.
+         * The drafted itinerary still gets its own line when there is one,
+         * because the two are genuinely different — a draft can hold
+         * candidates nobody paid for — but "nothing here" is now said only
+         * when there is nothing.
+         */}
         <section>
           <h3 className="flex items-center gap-1.5 text-sm font-semibold">
             <Sparkles className="text-jade-700 size-4" aria-hidden />
@@ -230,10 +301,22 @@ function StayCard({
                   items: stay.itinerary.itemCount,
                   days: stay.itinerary.dayCount,
                 })
-              : t('account.planNone')}
+              : bookedItems.length > 0
+                ? t('account.planBooked', { items: bookedItems.length })
+                : t('account.planNone')}
           </p>
+          {/*
+           * Offered, not demanded — and only where it would still change
+           * something. Telling somebody who has just bought their trip that
+           * they have not answered our questions reads as a reproach for
+           * nothing.
+           */}
           {!stay.intakeCompleted ? (
-            <p className="text-sand-600 mt-1 text-sm">{t('account.intakeOutstanding')}</p>
+            <p className="text-sand-600 mt-1 text-sm">
+              {bookedItems.length > 0
+                ? t('account.intakeSharpens')
+                : t('account.intakeOutstanding')}
+            </p>
           ) : null}
           {stay.basketCount > 0 ? (
             <p className="text-sand-700 mt-1 flex items-center gap-1.5 text-sm">
@@ -241,6 +324,57 @@ function StayCard({
               {t('account.basket', { count: stay.basketCount })}
             </p>
           ) : null}
+        </section>
+
+        {/* --- The itinerary, day by day ------------------------------------ */}
+        <section>
+          <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+            <Clock className="text-jade-700 size-4" aria-hidden />
+            {t('account.scheduleTitle')}
+          </h3>
+          {stay.schedule.length === 0 ? (
+            <p className="text-sand-600 mt-1 text-sm">{t('account.scheduleNone')}</p>
+          ) : (
+            <ol className="mt-2 space-y-3">
+              {stay.schedule.map((day) => (
+                <li key={day.date || 'unscheduled'}>
+                  <p className="text-sand-500 text-xs font-medium tracking-wide uppercase tabular-nums">
+                    {day.date || t('account.scheduleUnscheduled')}
+                  </p>
+                  <ul className="border-sand-200 mt-1 divide-y rounded-xl border">
+                    {day.items.map((item) => (
+                      <li key={item.id} className="px-4 py-2.5 text-sm">
+                        <div className="flex flex-wrap items-baseline justify-between gap-2">
+                          <span className="min-w-0">
+                            <span className={item.cancelledAt ? 'text-sand-500 line-through' : ''}>
+                              {item.startsAt ? (
+                                <span className="tabular-nums">
+                                  {toLocalTimeString(item.startsAt)}{' '}
+                                </span>
+                              ) : null}
+                              {experienceTitle(item, locale)}
+                            </span>
+                            {item.quantity > 1 ? (
+                              <span className="text-sand-500"> ×{item.quantity}</span>
+                            ) : null}
+                          </span>
+                          <Money
+                            amountMinor={item.totalMinor}
+                            currency={item.currency}
+                            intent="neutral"
+                          />
+                        </div>
+                        <p className="text-sand-600 mt-0.5 text-xs">
+                          {item.supplierName}
+                          {item.meetingPoint ? ` · ${item.meetingPoint}` : ''}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ol>
+          )}
         </section>
 
         {/* --- What is booked ------------------------------------------------ */}
@@ -348,4 +482,111 @@ function timingLabel(stay: AccountStay, t: Translate): string {
   if (stay.daysUntilCheckIn === 0) return t('account.arrivesToday')
   if (stay.daysUntilCheckIn > 0) return t('account.arrivesInDays', { count: stay.daysUntilCheckIn })
   return t('account.past')
+}
+
+/**
+ * What the person has spent, and on what.
+ *
+ * One block per currency, never a single figure across them: an account can
+ * hold bookings at two properties pricing in different currencies, and one
+ * number over both has no unit. Gross and refunded are shown side by side
+ * rather than netted into one figure, because "you paid 4,000 and 1,200 came
+ * back" is something somebody can check against their bank and a net number is
+ * not.
+ */
+function SpendCard({ spend, t }: { spend: AccountSpend[]; t: Translate }) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <Wallet className="text-jade-700 size-4" aria-hidden />
+          <CardTitle className="text-base">{t('account.spendTitle')}</CardTitle>
+        </div>
+        <p className="text-sand-600 text-sm">{t('account.spendSub')}</p>
+      </CardHeader>
+      <CardContent>
+        {spend.length === 0 ? (
+          <p className="text-sand-600 text-sm">{t('account.spendNothing')}</p>
+        ) : (
+          <div className="space-y-5">
+            {spend.map((entry) => (
+              <div key={entry.currency}>
+                <dl className="grid grid-cols-3 gap-3 text-sm">
+                  <div>
+                    <dt className="text-sand-500 text-xs tracking-wide uppercase">
+                      {t('account.spendGross')}
+                    </dt>
+                    <dd className="mt-0.5">
+                      {/* The headline figure, so it carries the demo marker.
+                          Neutral: guest spend is never summed with earnings
+                          or potential value (ADR-007). */}
+                      <DemoFigure>
+                        <Money
+                          amountMinor={entry.grossMinor}
+                          currency={entry.currency}
+                          intent="neutral"
+                          className="font-medium"
+                        />
+                      </DemoFigure>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-sand-500 text-xs tracking-wide uppercase">
+                      {t('account.spendRefunded')}
+                    </dt>
+                    <dd className="mt-0.5">
+                      <Money
+                        amountMinor={entry.refundedMinor}
+                        currency={entry.currency}
+                        intent="neutral"
+                      />
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-sand-500 text-xs tracking-wide uppercase">
+                      {t('account.spendNet')}
+                    </dt>
+                    <dd className="mt-0.5 font-medium">
+                      <Money
+                        amountMinor={entry.netMinor}
+                        currency={entry.currency}
+                        intent="neutral"
+                      />
+                    </dd>
+                  </div>
+                </dl>
+
+                {entry.byCategory.length > 0 ? (
+                  <ul className="border-sand-200 mt-3 divide-y rounded-xl border">
+                    {entry.byCategory.map((row) => (
+                      <li
+                        key={row.category}
+                        className="flex items-baseline justify-between gap-3 px-4 py-2.5 text-sm"
+                      >
+                        <span>
+                          {row.category}
+                          <span className="text-sand-500">
+                            {' '}
+                            · {t('account.spendItems', { count: row.itemCount })}
+                          </span>
+                        </span>
+                        {/* Deliberately not a DemoFigure: thirty badges down a
+                            column stop being read. The marker is on the
+                            headline above. */}
+                        <Money
+                          amountMinor={row.totalMinor}
+                          currency={entry.currency}
+                          intent="neutral"
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
 }

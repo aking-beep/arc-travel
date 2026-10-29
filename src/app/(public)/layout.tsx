@@ -5,6 +5,7 @@ import { ExploreMobileNav, ExploreNav, SavedToast } from '@/components/explore/n
 import { SavedProvider } from '@/components/explore/saved-store'
 import { getLocale } from '@/lib/i18n/server'
 import { getActor } from '@/modules/auth/service'
+import { countTripItems } from './trip-count'
 
 export const metadata: Metadata = {
   title: {
@@ -40,13 +41,17 @@ export const metadata: Metadata = {
  * sets `robots: { index: false }` and this metadata does not override it.
  */
 export default async function ExploreLayout({ children }: { children: React.ReactNode }) {
-  const [locale, actor] = await Promise.all([getLocale(), getActor()])
+  const [locale, actor, tripCount] = await Promise.all([
+    getLocale(),
+    getActor(),
+    countTripItems(),
+  ])
 
   return (
     <SavedProvider>
       <div data-surface="explore" className="flex min-h-dvh flex-col">
         <DemoBanner />
-        <ExploreNav locale={locale} signedIn={actor !== null} />
+        <ExploreNav locale={locale} signedIn={actor !== null} tripCount={tripCount} />
         <main className="flex-1 pb-20 md:pb-0">{children}</main>
         <ExploreFooter />
         <ExploreMobileNav locale={locale} />

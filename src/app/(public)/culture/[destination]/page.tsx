@@ -7,7 +7,7 @@ import { Money } from '@/components/money'
 import { IllustrativeNote, Shell } from '@/components/explore/editorial'
 import { PreparedAnswers } from '@/components/explore/prepared-answers'
 import { getTranslator } from '@/lib/i18n/server'
-import { cultureGuides, getCulture } from '@/modules/discovery/content/culture'
+import { cultureGuides, getCulture, LANGUAGE_GROUPS } from '@/modules/discovery/content/culture'
 import { destinations, getDestination } from '@/modules/discovery/content/destinations'
 import { experiences } from '@/modules/discovery/content/experiences'
 import { CONTENT_CURRENCY } from '@/modules/discovery/content/types'
@@ -130,15 +130,39 @@ export default async function CulturePage({
             </div>
           </Block>
 
+          {/*
+           * Grouped, because the section grew.
+           *
+           * Every destination but Puerto Escondido carried three phrases, so
+           * "a language guide" meant hello, thank you and one other word.
+           * Twelve lines in a flat grid is not better — somebody wanting to
+           * order, apologise for their Spanish or ask for help is scanning.
+           * Groups with no lines are skipped rather than rendered empty.
+           */}
           <Block title="Language essentials">
-            <div className="bg-line border-line grid gap-px overflow-hidden rounded-2xl border sm:grid-cols-2 md:grid-cols-3">
-              {guide.language.map((phrase) => (
-                <div key={phrase.phrase} className="bg-ivory p-5">
-                  <p className="text-xl italic">{phrase.phrase}</p>
-                  <p className="mt-1 text-sm">{phrase.meaning}</p>
-                  <p className="text-gold-deep mt-2 text-xs">{phrase.say}</p>
-                </div>
-              ))}
+            <div className="space-y-8">
+              {LANGUAGE_GROUPS.map((group) => {
+                const lines = guide.language.filter((phrase) => phrase.group === group)
+                if (lines.length === 0) return null
+                return (
+                  <section key={group}>
+                    <h3 className="text-muted text-xs font-medium tracking-wide uppercase">
+                      {group}
+                    </h3>
+                    <div className="bg-line border-line mt-3 grid gap-px overflow-hidden rounded-2xl border sm:grid-cols-2 md:grid-cols-3">
+                      {lines.map((phrase) => (
+                        <div key={phrase.phrase} className="bg-ivory p-5">
+                          <p className="text-xl italic">{phrase.phrase}</p>
+                          <p className="mt-1 text-sm">{phrase.meaning}</p>
+                          {phrase.say === '—' ? null : (
+                            <p className="text-gold-deep mt-2 text-xs">{phrase.say}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )
+              })}
             </div>
           </Block>
 
@@ -252,7 +276,7 @@ export default async function CulturePage({
         </div>
 
         <aside className="self-start lg:sticky lg:top-28">
-          <PreparedAnswers guide={guide} name={place.name} />
+          <PreparedAnswers guide={guide} name={place.name} destination={guide.destination} />
           <Link
             href={`/plan?destination=${place.slug}`}
             className="border-line hover:border-ink mt-6 flex items-center justify-between gap-3 rounded-2xl border p-5 transition-colors duration-150"

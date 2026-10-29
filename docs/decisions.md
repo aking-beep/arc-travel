@@ -2044,3 +2044,249 @@ guests that is not a simulation, it is forgery.
   figures on a surface that says so in a banner, so there is nothing to
   separate — the distinction ADR-007 cares about is earned against potential,
   and these are earned revenue in exactly the sense the demo means it.
+
+## ADR-045 — The public storefront sells, and the account arrives at the till
+
+**Status.** Accepted, 2026-10-29.
+
+**Context.** The property page ended at a button labelled "Open the guest
+portal demo". That was honest about what it was and useless as a product: the
+one surface a stranger arrives on could not sell anything. Every route into the
+guest surface began either at a front desk handing over a QR code or at
+`/sign-up/direct`, which asks somebody to create an account *before* they have
+decided to buy anything — the wrong way round for a person who has just read
+about a hotel.
+
+Meanwhile the whole apparatus a purchase needs already existed and was already
+tested: a `Cart`, dated departures with seat counts, `InventoryHold`,
+`checkout()` with its Serializable transaction and its ledger, and the
+conditions gate at the point of commitment. None of it was reachable from the
+front door.
+
+**Decision.** A visitor declares a trip window on a property page and gets a
+basket. That basket is an ordinary `Cart` with `guestId` and `stayId` null,
+addressed by a signed `arc_trip` cookie. They add real departures to it, at
+real prices, against real holds. At the till they are asked who they are, and
+in one transaction they get an account, a `DIRECT` trip (ADR-042) and that
+basket; then `checkout()` runs and they land signed in on the order.
+
+Five things make this safe rather than merely new.
+
+**The gate runs on a basket nobody owns.** `addToCart` gated only
+`if (cart.guestId)`. That was correct while every basket the product could
+produce had a guest behind it, and would have made "sign up after you pay" the
+one route to a booking the conditions gate never saw. The gate's inputs were
+never a `Guest` — they are a property and a stated ability — so that pair is
+now a `SlotAudience`, `evaluateSlotForGuest` reads one off the row, and a
+guestless basket is gated as somebody who has stated no ability. That is the
+strict case under ADR-017, not an exemption from it.
+
+**An unstated ability is asked for, not assumed.** ADR-017 means a visitor who
+says nothing is refused anything demanding — which, in Puerto Escondido, is
+most of the catalogue. So the trip panel asks, optionally, the same question
+the portal's intake asks. Declining is a real answer and the gate stays strict.
+A declaration lands on a *new* `Guest` row and never overwrites a recorded one:
+an ability a front desk wrote down is evidence, and letting the person being
+gated overwrite it would make the gate negotiable by its subject. `addToCart`'s
+`audience` argument is ignored the moment the basket has a guest, for the same
+reason, and there is a test that says so.
+
+**A half-filled basket is not a booking.** No `Stay` is written until somebody
+pays. A `Stay` with a hotel's name and a pair of dates on it is a booking as
+far as the arrivals board, the briefing and occupancy are concerned, and
+somebody who opened a page and changed their mind has booked nothing.
+
+**The basket id is a bearer credential, so the cookie is signed.** Whoever
+holds it can add to, empty and buy from that basket. The dates and the party
+size ride in the same envelope because they have nowhere else to live until the
+trip exists; signing those adds no secrecy, since they are the person's own
+declaration. The basket is re-read and re-checked on every action — still open,
+still this property's, still nobody's — rather than trusted from the cookie,
+and `cart.updateMany` with `guestId: null` in the `where` clause is what makes
+two tabs at one till safe.
+
+**The account is the one that already exists.** The address may belong to a
+credential-free placeholder a front desk created, which is theirs to take over,
+or to a real account, which is not. Both paths hand over to `establishAccount`
+(ADR-039), including its races. Somebody already signed in buys against their
+own account rather than being asked for a second one.
+
+**No room is sold.** ARC holds no room calendar — there is a `RoomType` with a
+published rate and no per-date inventory anywhere — so a basket line for a bed
+would be exactly the invented availability non-negotiable 2 refuses. The panel
+has said "availability lives with the hotel" since the port and it still does;
+the storefront says in as many words that it pays for experiences only. Whether
+a room should become a *request* the hotel confirms is a product decision, not
+a code one, and it is not taken here.
+
+**Consequences.**
+
+- The content-set stays have no hotel, no catalogue and no availability behind
+  them, so the panel on one offers no booking control at all. It says the
+  listing is illustrative and points at the live property. That is a worse
+  page and a true one; the alternative was a button that cannot be honoured,
+  which is what the portal-demo link was.
+- A refusal now has to name itself. `ConditionsGate` gained `blockers`, the
+  subset of `notes` that are reasons rather than caveats, because the
+  storefront greys out a departure and prints a reason, and `notes[0]` was
+  whichever sentence happened to be pushed first — usually "no reading for this
+  date, judged against the baseline", which is true of allowed departures too.
+- The default dates on a property page moved from a month out to a week. A
+  month was a neutral default for an estimator; it is past the horizon the
+  catalogue publishes departures for, so as a *booking* default it sent
+  everybody to an empty trip.
+- `/me` is no longer only an index. It carries what was spent, per currency and
+  per category, and the day-by-day itinerary of what was bought — built from
+  the order items rather than from a generated `Itinerary`, which is a proposal
+  and can hold candidates nobody paid for. Gross and refunded are reported side
+  by side rather than netted, and currencies are never summed, which is ADR-007's
+  instinct applied to a guest's own money.
+- Everything that can refuse a basket is checked *before* the till's
+  transaction, including the conditions gate against any ability already on
+  file for that address at that property. `checkout()` stays outside the
+  transaction (ADR-026), so there is a narrow state where an account, a stay
+  and a cart claim exist and an order does not — and the basket is claimed, so
+  `resumeVisitorTrip` will not hand it back. A failure there carries a
+  `CommittedTrip` on the error, and the action signs the person in and tells
+  them where their trip is rather than leaving them anonymous in front of a
+  storefront that has lost it. Nothing is charged in that state.
+- A trip window is a pair of calendar days in Puerto Escondido, so every
+  instant bounding one comes from `localInstant`. Built with `new Date()` from
+  a date string it is parsed in the server's zone, which on Vercel is UTC: the
+  catalogue then offered the evening before somebody's first day and hid the
+  last departure of their last day, while `addToVisitorTrip`, which compares
+  local date keys, disagreed with it in both directions.
+
+## ADR-046 — The traveller's journey, read end to end
+
+**Status.** Accepted, 29 October 2026.
+
+**Context.** Andrew walked the product as a guest — browsed, planned, bought,
+paid, made an account, opened the trip — and nothing he hit was a crash.
+Every complaint was a surface telling him something that was true of the data
+and absurd to the person reading it. The audit is
+`/mnt/project-files/audits/traveller-experience-audit.md`.
+
+The root cause is structural and worth stating plainly, because it will keep
+producing symptoms otherwise. **There are three trip planners**:
+
+| | What it is | What it can sell |
+| --- | --- | --- |
+| `/plan` | The illustrative planner over the editorial content set, eight destinations | Nothing |
+| `/book` | The storefront till (ADR-045), one property | Real departures, real seats |
+| `/g/<token>` | The gated portal planner behind a stay | Real departures, via the basket |
+
+A traveller moves between all three without being told the surface changed,
+and each handoff drops their work. The loudest control on every page — the
+dark pill in the nav — pointed at the one that cannot sell anything, and the
+link to the till appeared only once a trip already existed.
+
+**Decision.** The three stay three; merging them would mean one planner that
+is either gated everywhere or gated nowhere, and the gate is the product. What
+changes is that each one says what it is and hands off deliberately.
+
+**What was wrong, and is now not.**
+
+1. **`/plan` ignored `?destination=`.** Five pages linked with it; the page
+   destructured only `{ sample }`. Clicking Chamonix opened a Puerto Escondido
+   brief asking about surf. The slug is now resolved through `getDestination`
+   and the trip style comes from that destination's own `styles[0]`, so a
+   glacier town no longer defaults to "Surf & Ocean".
+
+2. **The same price rendered in two currencies on one journey.**
+   `formatMoney` fell back to the *currency's home locale*, and `es-MX` is the
+   one locale where MXN is a bare `$`. A visitor saw "$9,600" (real dollars,
+   the room estimate) above "$950 per person" and "$3,800" (pesos, about
+   US$200). The fallback is now `en-US`, which renders MXN as `MX$`, USD as
+   `$` and EUR as `€` — unambiguous whoever is reading. A unit test refuses a
+   bare `$` for anything that is not the dollar.
+
+3. **`/me` contradicted itself.** "Your plan — No plan yet. Open your stay to
+   build one." sat four lines above a list of what had just been bought,
+   because "Your plan" reads the portal planner's `Itinerary` row and a
+   storefront purchase never writes one. A booking is a plan to the person who
+   made it; the draft keeps its own line when there is one.
+
+4. **The portal showed a paying guest nothing they bought.** The page branches
+   on `intakeCompleted`, and a storefront purchase does not complete intake, so
+   the surface the confirmation sends people to offered a hotel blurb and
+   "Start planning". `listBookedItemsForStay` is scoped by `stayId` *and*
+   `guestId` in the `where` clause, and the order now renders above the plan on
+   every branch.
+
+5. **The portal basket read as data loss.** The storefront `Cart` is claimed
+   and closed at the till; the portal basket is the stay's own. Empty is
+   correct and indistinguishable from having lost a purchase, so that one
+   empty state says where the money went.
+
+6. **There was no step between shopping and paying.** Name, email, two
+   passwords, a terms box and "Pay and create my account" were in the basket
+   rail. `/book/review` is now the step: the window, the lines grouped by day,
+   the total, and the room exclusion stated *before* the button.
+
+7. **The planner's only exit was `localStorage`.** "Keep in this browser" is an
+   honest privacy statement and a terrible button. The planner now offers the
+   bookable property, carrying its dates, where the drafted destination has
+   one — and says plainly that the other seven are editorial and cannot be
+   bought, rather than implying they can.
+
+8. **Ten blank boxes where the real catalogue was.** ADR-025 and ADR-027 keep
+   stock photography off a live listing and that stands. What changes is that
+   the absence is *drawn*: a category mark and one line saying why there is no
+   photograph. A decision nobody can see is indistinguishable from a bug.
+
+9. **The bookable property was badged "Illustrative listing".** `provenance`
+   was not being passed to `ListingBadge` on `/stays/[slug]`, so the one
+   property a visitor can buy from told them it was a mock-up.
+
+10. **The demo banner contradicted the till.** "Nothing here is bookable and no
+    payment is taken" stopped being true when ADR-045 shipped, and it sat above
+    a basket and a pay button. The seats, holds, ledger and confirmations are
+    real; the money is what is not, and the banner now says that.
+
+11. **Seven of the eight local guides were one guide.** `content/culture.ts`
+    built them from a `generic()` helper, so Chamonix's local customs said
+    "beachwear belongs on the beach" and its seasons were "Peak — Busy". The
+    helper is gone and each guide is written for its place. The language
+    section went from three phrases to twelve or thirteen, grouped.
+
+12. **There was no support page.** `/support`, `/help`, `/contact` and `/faq`
+    all 404'd. `/support` now exists, linked from the footer and the
+    confirmation, and it prints the *hotel's* number rather than inventing an
+    ARC desk — ARC is not the supplier of anything here.
+
+13. **A guest could not keep their confirmation.** Demo mode forces
+    `MAIL_PROVIDER=log` (ADR-040), so nothing reaches an inbox. The
+    confirmation now says so — `canDeliverEmail()`, not "was it composed" —
+    and the page prints.
+
+**The AI guide panel.** `/culture/<destination>` carried a panel that counted
+keyword overlaps against the FAQ. It is now model-backed, and the permissions
+are the product's:
+
+- It reads **only that destination's guide**. The notes are its entire world,
+  and it is told not to supply anything from its own knowledge — a wrong bus
+  fare for a real place is worse than no answer.
+- **Safety, conditions, law, visas, borders and health are refused before a
+  model is reached**, by pattern, whatever the notes contain. Non-negotiable 1
+  says never claim something is safe; non-negotiable 8 says an advisory is
+  never law. A model must not answer "is Zicatela safe today" from prose
+  written last week, and the refusal names where the live answer lives.
+- It **decides nothing** — no tools, no write path, nothing the editorial
+  content did not already say. Non-negotiable 5 is unchanged.
+- Every call goes through `runAI`, so it is rate limited (bucketed per
+  destination, because the page is public and unauthenticated), screened for
+  injection, and recorded as an `AgentRun` with its cost. `runAI` never throws,
+  and the keyword matcher is computed first and kept — so an unset
+  `ANTHROPIC_API_KEY` costs the page nothing but the better answers.
+
+**Consequences.** `AI_PROVIDER=anthropic` and `ANTHROPIC_API_KEY` on the
+deployment are now what separates a real guide panel from the prepared one.
+That is a different key from the one `npm run simulate` needs: the simulation
+runs as a process on somebody's machine (ADR-043), this runs on the server.
+
+**What was deliberately not done.** The three planners were not merged. No
+room was made sellable — there is still no per-date room inventory, and
+ADR-045's refusal stands. No partner photography was invented; letting a
+partner upload their own image is the honest version of fixing the blank
+cards and it is a separate change.

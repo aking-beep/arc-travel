@@ -4,8 +4,10 @@ import { Band, IllustrativeNote, Shell } from '@/components/explore/editorial'
 import { TripPlanner } from '@/components/explore/trip-planner'
 import { addDays, toDateKey } from '@/lib/dates'
 import { getTranslator } from '@/lib/i18n/server'
+import { getDestination } from '@/modules/discovery/content/destinations'
 import { getSampleItinerary, sampleItineraries } from '@/modules/discovery/content/itineraries'
 import type { PlannerPreferences } from '@/modules/discovery/content/types'
+import { liveStay } from '@/modules/discovery/live'
 import { PUBLIC_DESTINATION } from '@/modules/discovery/service'
 
 export const metadata = { title: 'Plan' }
@@ -30,27 +32,57 @@ export const metadata = { title: 'Plan' }
 export default async function PlanPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sample?: string }>
+  searchParams: Promise<{ sample?: string; destination?: string }>
 }) {
   const { t, locale } = await getTranslator()
-  const { sample } = await searchParams
+  const { sample, destination } = await searchParams
 
   const now = new Date()
   const start = addDays(toDateKey(now), 45)
 
+  /*
+   * The destination the visitor clicked.
+   *
+   * Five surfaces link here as `/plan?destination=<slug>` — a destination page
+   * (twice), the local guide, the journal and an experience. This page read
+   * only `?sample=`, so every one of them dropped the slug and opened the
+   * planner on Puerto Escondido with a "Surf & Ocean" brief. Clicking Chamonix
+   * and being asked about surf is the bug that made the whole surface read as
+   * a mock-up.
+   *
+   * Resolved through `getDestination` rather than trusted: an unknown slug
+   * falls back to the public destination instead of putting an arbitrary
+   * string into the brief. `styles[0]` is the content set's own first answer
+   * for what a place is for, so the shape of the trip follows the place rather
+   * than being hardcoded to the one this demo started from.
+   */
+  const chosen = getDestination(destination) ?? getDestination(PUBLIC_DESTINATION)
+
   const defaultPrefs: PlannerPreferences = {
-    destination: PUBLIC_DESTINATION,
+    destination: chosen?.slug ?? PUBLIC_DESTINATION,
     startDate: start,
     endDate: addDays(start, 5),
     travelers: 2,
     budget: 'Comfort',
-    style: 'Surf & Ocean',
+    style: chosen?.styles[0] ?? 'Surf & Ocean',
     accommodation: 'Any',
     activities: ['Adventure', 'Food'],
     pace: 'Balanced',
   }
 
   const initialItinerary = getSampleItinerary(sample)
+
+  /*
+   * The one destination that can actually be bought, looked up here so the
+   * planner — a client component — can offer a real exit instead of only a
+   * `localStorage` write. `liveStay` returns null when no property is
+   * published, and the planner then says nothing is bookable rather than
+   * linking somewhere that cannot honour it.
+   */
+  const live = await liveStay(locale)
+  const bookable = live
+    ? { destination: live.destination, href: `/stays/${live.slug}`, propertyName: live.name }
+    : null
 
   return (
     <>
@@ -67,6 +99,7 @@ export default async function PlanPage({
             defaultPrefs={defaultPrefs}
             samples={sampleItineraries}
             initialItinerary={initialItinerary}
+            bookable={bookable}
           >
             <IllustrativeNote className="mt-12 max-w-2xl">
               {t('explore.planner.note')}

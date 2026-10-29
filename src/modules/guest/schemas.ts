@@ -156,3 +156,67 @@ export const additionalTripSchema = z
     path: ['toDate'],
     message: 'The last day cannot be before the first.',
   })
+
+/**
+ * A trip window declared from the public storefront, before any account.
+ *
+ * The same three facts `directTripSchema` carries and none of the identity:
+ * somebody browsing a hotel's storefront says when they are here and who with,
+ * fills a basket on it, and only then is asked who they are. Splitting the two
+ * is what lets the person buy first and sign up at the till.
+ */
+export const visitorTripSchema = z
+  .object({
+    propertySlug: z.string().trim().min(1, 'Choose where you want to book through.').max(120),
+    fromDate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD.'),
+    toDate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD.'),
+    partySize: z.coerce.number().int().min(1, 'At least one person.').max(12),
+    /**
+     * Where they say they stand in the water, or nothing.
+     *
+     * The same answer the portal's intake records, asked earlier because the
+     * conditions gate needs it earlier: ADR-017 means an unstated ability is
+     * refused anything demanding, so without this the storefront could not
+     * sell the surf catalogue at all — which, in Puerto Escondido, is most of
+     * it. Optional, and declining it is a real answer: the gate stays strict.
+     */
+    surfAbility: z
+      .enum(['BEGINNER', 'IMPROVER', 'INTERMEDIATE', 'ADVANCED', 'EXPERT'])
+      .nullish()
+      .transform((value) => value ?? null),
+  })
+  .strict()
+  .refine((v) => v.toDate >= v.fromDate, {
+    path: ['toDate'],
+    message: 'The last day cannot be before the first.',
+  })
+
+export type VisitorTripInput = z.infer<typeof visitorTripSchema>
+
+/**
+ * Who the person is, asked at the till.
+ *
+ * No booking reference and no property: the basket already names the hotel and
+ * the trip, and asking again would be asking them to retype what they have
+ * already told us. The address is new information, which is why it must be
+ * free of an existing account — `establishAccount` makes that judgement.
+ */
+export const visitorPurchaseSchema = z
+  .object({
+    name: z.string().trim().min(2, 'Tell us your name.').max(120),
+    email,
+    password,
+    confirmPassword: z.string(),
+    acceptedTerms: z.coerce.boolean(),
+  })
+  .strict()
+  .refine((v) => v.password === v.confirmPassword, {
+    path: ['confirmPassword'],
+    message: 'The two passwords do not match.',
+  })
+  .refine((v) => v.acceptedTerms, {
+    path: ['acceptedTerms'],
+    message: 'Accept the terms to continue.',
+  })
+
+export type VisitorPurchaseInput = z.infer<typeof visitorPurchaseSchema>

@@ -241,6 +241,9 @@ export async function getPublicProperty() {
       id: true,
       slug: true,
       name: true,
+      // The hotel is the first call for anything about a booking, so `/support`
+      // prints their own number rather than a support desk ARC does not staff.
+      contactPhone: true,
       tagline: true,
       description: true,
       houseNotes: true,

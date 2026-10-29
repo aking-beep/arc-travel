@@ -1,9 +1,12 @@
 import { prisma } from '@/lib/db'
 import { isCurrentlyVerified } from '@/modules/admin/verification'
 import { conflict, invalid, notFound } from '@/lib/errors'
-import { CartStatus, ExperienceStatus, SlotStatus } from '@/lib/prisma-types'
+import { type AbilityLevel, CartStatus, ExperienceStatus, SlotStatus } from '@/lib/prisma-types'
 import { getAvailability, placeHold, releaseHold, releaseHoldsForCart } from '@/modules/inventory/service'
-import { assertSlotSuitableForGuest } from '@/modules/destination/suitability'
+import {
+  assertSlotSuitableForAudience,
+  assertSlotSuitableForGuest,
+} from '@/modules/destination/suitability'
 import { track } from '@/modules/analytics/track'
 import { computeCartTotals, computeLinePrice } from './pricing'
 
@@ -121,6 +124,16 @@ export async function addToCart(options: {
   slotId: string
   quantity: number
   participantNotes?: string | null
+  /**
+   * Who to gate as, when the basket has no guest behind it yet.
+   *
+   * Ignored once it does: a `Guest` row is the authority on somebody's
+   * ability, and a caller must not be able to talk the gate into a looser
+   * answer than the one on file. Only the property-less case — a storefront
+   * basket filled before sign-up — uses it, and the ability in it is the
+   * person's own declaration, the same answer the portal's intake records.
+   */
+  audience?: { surfAbility: AbilityLevel | null } | null
   now?: Date
 }): Promise<{ cartId: string; holdExpiresAt: Date }> {
   const now = options.now ?? new Date()
@@ -205,8 +218,28 @@ export async function addToCart(options: {
     at: now,
   })
 
+  /*
+   * The gate, for whoever is holding this basket.
+   *
+   * This used to be `if (cart.guestId)`, which was safe only because every
+   * basket the product could produce had a guest behind it. A public
+   * storefront basket is filled before the person has an account, so the
+   * condition would have turned "sign up after you pay" into the one route to
+   * a booking the conditions gate never ran on. A basket with no guest is
+   * gated as somebody who has stated no ability, which is the ADR-017 case:
+   * the gate demands the harder level rather than relaxing.
+   */
   if (cart.guestId) {
     await assertSlotSuitableForGuest({ guestId: cart.guestId, slotId: slot.id, now })
+  } else {
+    await assertSlotSuitableForAudience({
+      audience: {
+        propertyId: cart.propertyId,
+        surfAbility: options.audience?.surfAbility ?? null,
+      },
+      slotId: slot.id,
+      now,
+    })
   }
 
   // Hold last. If capacity is gone we fail before writing a line the guest

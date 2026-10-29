@@ -6,7 +6,8 @@ import { IllustrativeNote, ListingBadge, Shell } from '@/components/explore/edit
 import { ImageGallery } from '@/components/explore/image-gallery'
 import { SaveButton } from '@/components/explore/save-button'
 import { StayEstimator } from '@/components/explore/stay-estimator'
-import { addDays, toDateKey } from '@/lib/dates'
+import { abilityField } from '@/app/(public)/book/ability-labels'
+import { addDays, isDateKey, toLocalDateKey } from '@/lib/dates'
 import { getTranslator } from '@/lib/i18n/server'
 import { getDestination } from '@/modules/discovery/content/destinations'
 import { experiences } from '@/modules/discovery/content/experiences'
@@ -37,8 +38,29 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
  * pulled a third-party frame into the page to do it. The written location note,
  * which is accurate, stays.
  */
-export default async function StayDetailPage({ params }: { params: Promise<{ slug: string }> }) {
+/**
+ * A party size from a query string.
+ *
+ * The planner links here with the number of travellers it drafted for. Bounded
+ * to what the estimator and the booking panel can honour, so a crafted
+ * `?party=900` produces the default rather than a panel quoting for a coach
+ * party the hotel does not have.
+ */
+function clampParty(value: string | undefined, fallback = 2): number {
+  const n = Number(value)
+  if (!Number.isInteger(n) || n < 1 || n > 12) return fallback
+  return n
+}
+
+export default async function StayDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>
+  searchParams: Promise<{ arrive?: string; depart?: string; party?: string }>
+}) {
   const { slug } = await params
+  const { arrive, depart, party } = await searchParams
   const { t, locale } = await getTranslator()
 
   // The real property first, for the reason in `../../experiences/[slug]`.
@@ -46,13 +68,52 @@ export default async function StayDetailPage({ params }: { params: Promise<{ slu
   const stay = live?.slug === slug ? live : getStay(slug)
   if (!stay) notFound()
   const destination = getDestination(stay.destination)
+  /*
+   * Only the live property can be sold from.
+   *
+   * The content set's stays have no hotel, no catalogue and no availability
+   * behind them, so the panel on one of those offers no booking control at
+   * all — it says the listing is illustrative and points at the one that is
+   * not. The page used to end at "Open the guest portal demo" on every listing
+   * alike, which was a tour of the product rather than a way to buy from it.
+   */
+  const bookable = live !== null && live.slug === slug
   const nearby = experiences.filter((e) => e.destination === stay.destination).slice(0, 3)
 
   // Dates are computed here, on the server, and handed to the client island as
   // props. Nothing below the fold reads a clock during render.
-  const today = toDateKey(new Date())
-  const defaultArrive = addDays(today, 30)
-  const defaultDepart = addDays(defaultArrive, 4)
+  /*
+   * `toLocalDateKey`, not `toDateKey(new Date())`.
+   *
+   * `toDateKey` slices a UTC instant, and the property is UTC-6: after 18:00
+   * in Puerto Escondido the server's calendar day has already rolled forward,
+   * so an arrival of *today* carried over from the planner read as past and
+   * was thrown away for a window a week out. Every trip window in the product
+   * is a local date key, which is the whole point of `DateKey`.
+   */
+  const today = toLocalDateKey(new Date())
+  /*
+   * A week out, not a month.
+   *
+   * The export's panel was an estimator and a month ahead was a neutral
+   * default for one. It is now also what the booking panel carries, and a
+   * month ahead is past the horizon the catalogue publishes departures for —
+   * so the default sent everybody to an empty trip page and the product's
+   * first impression was "nothing runs on those days".
+   */
+  /*
+   * Carried from the illustrative planner, when it sent somebody here.
+   *
+   * A visitor who drafted a plan for particular days should not have to type
+   * them again to buy it. Validated as date keys and clamped to today rather
+   * than trusted: a query string is not a brief, and an arrival in the past
+   * produces a window with no departures in it.
+   */
+  const fallbackArrive = addDays(today, 7)
+  const defaultArrive = isDateKey(arrive) && arrive >= today ? arrive : fallbackArrive
+  const defaultDepart =
+    isDateKey(depart) && depart > defaultArrive ? depart : addDays(defaultArrive, 4)
+  const defaultParty = clampParty(party)
 
   return (
     <Shell className="pt-6 pb-20 md:pt-10">
@@ -73,7 +134,22 @@ export default async function StayDetailPage({ params }: { params: Promise<{ slu
       <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <ListingBadge status={stay.verification} locale={locale} />
+            {/*
+             * `provenance` matters here and was not being passed.
+             *
+             * The live property carries `verification: 'illustrative'` because
+             * that union has one member; what distinguishes it from the
+             * content set is `provenance.kind === 'live'`. Without it this
+             * badge read "Illustrative listing" on the one property a visitor
+             * can actually buy from — telling them the thing they are about
+             * to pay for is a mock-up. It now reads "unverified", which is
+             * both true and the claim ADR-036 allows.
+             */}
+            <ListingBadge
+              status={stay.verification}
+              provenance={stay.provenance}
+              locale={locale}
+            />
             <span className="text-muted text-xs">{stay.type}</span>
           </div>
           <h1 className="mt-3 text-4xl tracking-tight md:text-6xl">{stay.name}</h1>
@@ -179,8 +255,11 @@ export default async function StayDetailPage({ params }: { params: Promise<{ slu
             currency={CONTENT_CURRENCY}
             defaultArrive={defaultArrive}
             defaultDepart={defaultDepart}
-            defaultParty={2}
-            portalHref="/sign-in"
+            defaultParty={defaultParty}
+            booking={
+              bookable ? { propertySlug: stay.slug, ability: abilityField(t, null) } : null
+            }
+            liveStayHref={live && !bookable ? `/stays/${live.slug}` : null}
           />
         </aside>
       </div>

@@ -92,6 +92,31 @@ test.describe('the public surface', () => {
       .toBe(true)
   })
 
+  test('the header clears the demo banner on the hero, and nowhere else', async ({ page }) => {
+    /*
+     * The nav lives in the layout, so the node survives a client navigation
+     * and an inline `top` written on one route outlives the trip to the next.
+     *
+     * On `/` the header is fixed over the hero photograph and the banner is
+     * in flow above it, so it has to offset itself by the banner or draw
+     * ivory controls on cream — nine of them, at a contrast ratio of 1.04,
+     * which is what `10-accessibility` caught. Everywhere else it is
+     * `sticky top-0`, and a leftover offset makes the bar stick a banner's
+     * height below the top of the viewport.
+     */
+    await page.goto('/')
+    const banner = page.locator('[data-demo-banner]')
+    const header = page.locator('header').first()
+    const bannerBottom = (await banner.boundingBox())?.height ?? 0
+    expect(bannerBottom).toBeGreaterThan(0)
+    expect((await header.boundingBox())?.y).toBeCloseTo(bannerBottom, 0)
+
+    // Client-side, as a visitor would: the offset must not come with it.
+    await page.getByRole('link', { name: 'Experiences', exact: true }).first().click()
+    await page.waitForURL('**/experiences')
+    await expect(header).toHaveCSS('top', '0px')
+  })
+
   test('the local guide reports conditions without ever calling them safe', async ({ page }) => {
     await page.goto('/culture/puerto-escondido')
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
