@@ -50,13 +50,19 @@ test.describe('one order across every role', () => {
     const reference = new URL(page.url()).pathname.split('/').pop()
     expect(reference).toMatch(/^ARC-/)
     if (reference === undefined) throw new Error('no order reference')
-    await expect(page.getByText(/Waiting on the partner to confirm/i)).toBeVisible()
+    /*
+      * `.first()`: the seed and the earlier specs leave this guest with other
+      * unconfirmed lines, and the whole suite running in order is the case
+      * that matters. The reference assertions below are what pin this test to
+      * *this* order.
+      */
+    await expect(page.getByText(/Waiting on the partner to confirm/i).first()).toBeVisible()
 
     // ---- The partner who has to deliver it sees it, by reference, as work
     // outstanding.
     await signInAs(page, PARTNER_EMAIL, '/partner/bookings')
     await expect(page.getByRole('heading', { name: /needs your confirmation/i })).toBeVisible()
-    await expect(page.getByText(reference)).toBeVisible()
+    await expect(page.getByText(reference).first()).toBeVisible()
 
     /*
      * And it is not yet in what they are owed: an unconfirmed booking is money
@@ -71,6 +77,18 @@ test.describe('one order across every role', () => {
     await signInAs(page, OWNER_EMAIL, '/owner/payouts')
     await expect(page.getByText(/held back/i).first()).toBeVisible()
     await expect(page.getByText(/Escuela Olas Verdes/).first()).toBeVisible()
+
+    /*
+     * And the hotel can find it from the reference alone, which is what a
+     * guest actually reads down the phone. This is the one operator screen the
+     * reference appears on, so it is asserted here rather than left to the
+     * integration test.
+     */
+    await page.goto(`/owner/lookup?ref=${reference}`)
+    await expect(page.getByText(reference).first()).toBeVisible()
+    await expect(
+      page.getByText(/Waiting on Escuela Olas Verdes to confirm/i).first(),
+    ).toBeVisible()
 
     await page.goto('/owner/briefing')
     const earnedAfter = parseMoney(
@@ -104,6 +122,10 @@ test.describe('one order across every role', () => {
 
     await page.context().clearCookies()
     await page.goto(`/g/${token}/order/${reference}`)
-    await expect(page.getByText(/Confirmed by the partner/i)).toBeVisible()
+    await expect(page.getByText(/Confirmed by the partner/i).first()).toBeVisible()
+
+    // And the desk's own lookup says the same thing, from the same row.
+    await signInAs(page, OWNER_EMAIL, `/owner/lookup?ref=${reference}`)
+    await expect(page.getByText(/Confirmed by Escuela Olas Verdes/i).first()).toBeVisible()
   })
 })

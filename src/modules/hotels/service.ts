@@ -1,7 +1,15 @@
 import { prisma } from '@/lib/db'
 import { conflict, forbidden, notFound } from '@/lib/errors'
 import { reportError } from '@/lib/observability'
-import { EmailKind, EntityStatus, InvitationKind, Role, StayKind, VerificationStatus } from '@/lib/prisma-types'
+import {
+  EmailKind,
+  EntityStatus,
+  InvitationKind,
+  Role,
+  StayKind,
+  StayStatus,
+  VerificationStatus,
+} from '@/lib/prisma-types'
 import { createInvitation } from '@/modules/auth/invitations'
 import {
   canComposeEmail,
@@ -13,7 +21,13 @@ import { partnerInvitation as partnerInvitationEmail } from '@/modules/notificat
 import { assertOrganizationAccess, assertPropertyAccess, type ActorContext } from '@/modules/tenancy/context'
 import { VERIFICATION_STANDING_SELECT } from '@/modules/admin/verification'
 import { recordAudit } from '@/modules/workflows/audit'
-import { amenitySchema, partnerInviteSchema, propertyProfileSchema, roomTypeSchema } from './schemas'
+import {
+  amenitySchema,
+  partnerInviteSchema,
+  propertyProfileSchema,
+  referenceLookupSchema,
+  roomTypeSchema,
+} from './schemas'
 
 /**
  * Property and partner management for the owner surface.
@@ -597,7 +611,19 @@ export async function listArrivals(
       // and nobody is coming to the desk for a key (ADR-042).
       kind: StayKind.HOTEL_RESERVATION,
       status: { in: ['BOOKED', 'IN_HOUSE'] },
-      checkIn: { gte: options.fromDate, lt: to },
+      /*
+       * Arriving in the window, or already in the building.
+       *
+       * The second half is not a nicety. A guest who checked in last week and
+       * booked a lesson this morning fell outside `checkIn >= today` entirely,
+       * so there was no operator screen anywhere that listed what they had
+       * bought — the hotel could see the money in the briefing and never the
+       * booking behind it.
+       */
+      OR: [
+        { checkIn: { gte: options.fromDate, lt: to } },
+        { status: StayStatus.IN_HOUSE, checkIn: { lt: options.fromDate } },
+      ],
     },
     orderBy: [{ checkIn: 'asc' }, { reference: 'asc' }],
     select: {
@@ -630,6 +656,7 @@ export async function listArrivals(
         where: { status: { in: ['CONFIRMED', 'PENDING'] } },
         select: {
           id: true,
+          reference: true,
           totalMinor: true,
           currency: true,
           items: {
@@ -647,3 +674,107 @@ export async function listArrivals(
 }
 
 export { assertOrganizationAccess }
+
+/**
+ * Finds a guest from a reference read down the phone.
+ *
+ * The hotel's screens were all aggregate: the briefing had the money, payouts
+ * had the held-back line, and the one place an order reference appeared at all
+ * was the *partner's* bookings page. So "my reference is ARC-X3M8-DN7N" had no
+ * answer anywhere on the operator side.
+ *
+ * Both references resolve here because the desk cannot be expected to know
+ * which one a guest is holding: `ARC-…` is an order, `STAY-…` is the stay, and
+ * a guest reads out whichever is in front of them.
+ *
+ * Scoped by `propertyId` in the `where` clause rather than checked afterwards
+ * — the guest-surface rule in `CLAUDE.md` applies just as well to an operator
+ * typing a reference they were given over the phone.
+ */
+export async function lookupReference(
+  actor: ActorContext,
+  propertyId: string,
+  raw: unknown,
+): Promise<{
+  reference: string
+  stays: Array<{
+    id: string
+    reference: string
+    kind: StayKind
+    status: StayStatus
+    checkIn: Date
+    checkOut: Date
+    portalToken: string
+    guest: { firstName: string; lastName: string } | null
+    orders: Array<{
+      id: string
+      reference: string
+      status: string
+      totalMinor: number
+      currency: string
+      items: Array<{
+        id: string
+        quantity: number
+        supplierConfirmedAt: Date | null
+        cancelledAt: Date | null
+        experience: { titleEn: string; supplier: { name: string } }
+        slot: { startsAt: Date }
+      }>
+    }>
+  }>
+}> {
+  await assertPropertyAccess(actor, propertyId, Role.OWNER, Role.STAFF, Role.ADMIN)
+
+  const { reference } = referenceLookupSchema.parse(raw)
+
+  const orderSelect = {
+    id: true,
+    reference: true,
+    status: true,
+    totalMinor: true,
+    currency: true,
+    items: {
+      select: {
+        id: true,
+        quantity: true,
+        supplierConfirmedAt: true,
+        cancelledAt: true,
+        // Through the experience: `OrderItem.supplierId` is a scalar, and the
+        // experience is where the relation lives.
+        experience: { select: { titleEn: true, supplier: { select: { name: true } } } },
+        slot: { select: { startsAt: true } },
+      },
+      orderBy: { id: 'asc' },
+    },
+  } as const
+
+  const stays = await prisma.stay.findMany({
+    where: {
+      propertyId,
+      OR: [{ reference }, { orders: { some: { reference } } }],
+    },
+    orderBy: { checkIn: 'desc' },
+    select: {
+      id: true,
+      reference: true,
+      kind: true,
+      status: true,
+      checkIn: true,
+      checkOut: true,
+      portalToken: true,
+      guest: { select: { firstName: true, lastName: true } },
+      /*
+       * A stay found by its own reference shows everything on it; a stay found
+       * by an order reference shows that order, because that is the one the
+       * guest is asking about.
+       */
+      orders: {
+        where: reference.startsWith('STAY-') ? {} : { reference },
+        orderBy: { createdAt: 'desc' },
+        select: orderSelect,
+      },
+    },
+  })
+
+  return { reference, stays }
+}

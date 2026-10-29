@@ -65,3 +65,21 @@ export const partnerInviteSchema = z.object({
    */
   contactLocale: z.enum(['EN', 'ES']).default('EN'),
 })
+
+/**
+ * What a front desk types in when a guest reads a reference down the phone.
+ *
+ * Deliberately permissive about shape and case: the person at the desk is
+ * copying what a guest is saying, and refusing `arc-x3m8-dn7n` for its case
+ * would be a worse answer than looking it up. It is not permissive about
+ * length, because an unbounded `contains` against two indexed columns is a
+ * scan somebody could ask for repeatedly.
+ */
+export const referenceLookupSchema = z.object({
+  reference: z
+    .string()
+    .trim()
+    .min(4, 'Enter the whole reference — ARC-1234-5678 or STAY-0001.')
+    .max(40)
+    .transform((value) => value.toUpperCase()),
+})
