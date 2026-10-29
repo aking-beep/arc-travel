@@ -10,6 +10,8 @@ import { getTranslator } from '@/lib/i18n/server'
 import { toDateKey, toLocalDateKey, toLocalTimeString } from '@/lib/dates'
 import { getActor } from '@/modules/auth/service'
 import { experienceTitle, getGuestOrder } from '@/modules/guest/account'
+import { canDeliverEmail } from '@/modules/notifications/service'
+import { PrintLink } from './print-link'
 
 export const metadata = { title: 'Your order · ARC Stay' }
 export const dynamic = 'force-dynamic'
@@ -40,6 +42,13 @@ export default async function OrderPage({
   const found = await getGuestOrder(actor.userId, reference)
   if (!found) notFound()
   const { stay, order } = found
+
+  /*
+   * Whether a confirmation will actually reach an inbox. Stricter than
+   * "was it composed": `canDeliverEmail` is false while the mailer only
+   * records, which is every demo deployment.
+   */
+  const mailIsDelivered = canDeliverEmail()
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -123,6 +132,44 @@ export default async function OrderPage({
           </CardContent>
         </Card>
 
+        {/*
+         * What happens next, and what does not.
+         *
+         * The page said "Paid. This is what you bought." and then stopped. A
+         * visitor who had just handed over money and made an account had no
+         * statement of whether an email was coming, nothing they could keep,
+         * and nowhere to ask a question — the commonest complaint about the
+         * whole flow, and all three are one card.
+         *
+         * The email line is the honest one rather than the reassuring one.
+         * Demo mode forces `MAIL_PROVIDER=log` (ADR-040), so a confirmation
+         * is written and recorded and never delivered. Telling somebody to
+         * check an inbox nothing will arrive in is how a support thread
+         * starts.
+         */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t('account.orderKeepTitle')}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sand-700 text-sm leading-relaxed">
+              {mailIsDelivered
+                ? t('account.orderEmailSent')
+                : t('account.orderEmailRecorded')}
+            </p>
+            <p className="text-sand-700 text-sm leading-relaxed">
+              {t('account.orderKeepBody', { reference: order.reference })}
+            </p>
+            <p className="text-sand-600 text-sm leading-relaxed">
+              {t('account.orderHelp')}{' '}
+              <Link href="/support" className="text-jade-800 underline underline-offset-4">
+                {t('account.orderHelpLink')}
+              </Link>
+              .
+            </p>
+          </CardContent>
+        </Card>
+
         <div className="flex flex-wrap items-center gap-3">
           <LinkButton href="/me">{t('account.orderBack')}</LinkButton>
           {stay.portalPath ? (
@@ -133,6 +180,13 @@ export default async function OrderPage({
               {t('account.openTrip')}
             </Link>
           ) : null}
+          {/*
+           * The one thing a guest could not do with this page: keep it. No
+           * email arrives in this deployment, so the browser's own print is
+           * the receipt. A plain link rather than a button, because it is a
+           * fallback and not the next step.
+           */}
+          <PrintLink label={t('account.orderPrint')} />
         </div>
       </main>
     </div>

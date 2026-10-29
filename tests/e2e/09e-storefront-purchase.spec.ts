@@ -44,8 +44,24 @@ test.describe('a visitor buying from the storefront', () => {
     await expect(departure).toBeVisible()
     await departure.click()
 
-    // Durable state, not the form message: the basket holds a line and a
-    // total. `revalidatePath` remounts the route and resets `useActionState`.
+    /*
+     * Durable state, not the form message: the basket holds a line and offers
+     * the way on. `revalidatePath` remounts the route and resets
+     * `useActionState`.
+     *
+     * The till moved off this page in ADR-046. The basket used to end at the
+     * payment form, which asked for a name, an address and a password beside
+     * a catalogue six thousand pixels tall and never read the trip back. The
+     * step between is `/book/review`.
+     */
+    const onward = page.getByRole('link', { name: /review and pay/i })
+    await expect(onward).toBeVisible()
+    await onward.click()
+    await page.waitForURL('**/book/review')
+
+    // The review step reads the trip back before anything is taken.
+    await expect(page.getByRole('heading', { name: /review your trip/i })).toBeVisible()
+    await expect(page.getByText(/does not hold their room calendar/i)).toBeVisible()
     await expect(page.getByRole('button', { name: /pay and create my account/i })).toBeVisible()
 
     const email = `storefront.${Date.now()}@example.com`

@@ -113,8 +113,16 @@ test.describe('guest checkout', () => {
     const firstReference = new URL(page.url()).pathname.split('/').pop()
 
     // Going back and resubmitting must not create a second order.
+    /*
+     * The same assertion — the basket is empty and no second order was
+     * written — on the copy ADR-046 gave it. A guest who had just paid was
+     * told "your basket is empty", which reads as the purchase having
+     * evaporated; it now says what is true, that the thing they bought is
+     * paid for and so is not in a basket.
+     */
     await page.goto(`/g/${GUEST_PORTAL_TOKENS.arrivingToday}/basket`)
-    await expect(page.getByText(/Your basket is empty/i)).toBeVisible()
+    await expect(page.getByText(/Nothing waiting to be paid for/i)).toBeVisible()
+    await expect(page.getByRole('link', { name: /see what you booked/i })).toBeVisible()
 
     expect(firstReference).toMatch(/^ARC-/)
   })

@@ -1,12 +1,10 @@
-import { randomUUID } from 'node:crypto'
 import Link from 'next/link'
-import { CalendarRange, Clock, Info, MapPin, ShieldCheck, Users } from 'lucide-react'
+import { ArrowRight, CalendarRange, Clock, Info, MapPin, ShieldCheck, Users } from 'lucide-react'
 import { Shell } from '@/components/explore/editorial'
 import { DemoFigure, Money } from '@/components/money'
 import { EmptyState } from '@/components/ui/states'
 import { toLocalDateKey, toLocalTimeString } from '@/lib/dates'
 import { getTranslator } from '@/lib/i18n/server'
-import { getActor } from '@/modules/auth/service'
 import {
   listVisitorListings,
   nextBookableDate,
@@ -14,7 +12,7 @@ import {
   type VisitorDeparture,
 } from '@/modules/guest/visitor'
 import { abilityField } from './ability-labels'
-import { ChangeTripForm, DepartureDay, PayForTripForm, RemoveLineForm } from './forms'
+import { ChangeTripForm, DepartureDay, RemoveLineForm } from './forms'
 import { readTripSession } from './session'
 
 export const metadata = { title: 'Your trip' }
@@ -37,9 +35,13 @@ export const dynamic = 'force-dynamic'
  * real seat counts, and it says who is behind each one and whether anybody has
  * checked them.
  */
-export default async function BookPage() {
-  const { t } = await getTranslator()
-  const [session, actor] = await Promise.all([readTripSession(), getActor()])
+export default async function BookPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ category?: string }>
+}) {
+  const { t, locale } = await getTranslator()
+  const [session, { category }] = await Promise.all([readTripSession(), searchParams])
   const trip = await resumeVisitorTrip(session)
 
   if (!trip) {
@@ -77,8 +79,26 @@ export default async function BookPage() {
       : null
 
   const inBasket = new Set(trip.cart.items.map((item) => item.slotId))
-  // Server-computed: the forms below must not read a clock during render.
-  const idempotencyKey = randomUUID()
+
+  /*
+   * A filter, because the page had no shape at all.
+   *
+   * Ten listings across five days, each with up to four departure times, in
+   * one undifferentiated column six thousand pixels tall — and the same
+   * sentence about stating your ability repeated on twenty rows. A visitor
+   * looking for "something on Thursday afternoon" had to read all of it.
+   *
+   * Filtering by category rather than by day on purpose: the days are already
+   * grouped inside each listing, and what somebody actually narrows by first
+   * is the kind of thing they want to do. Counted from the listings
+   * themselves, so a category with nothing running in this window never
+   * appears as an empty filter.
+   */
+  const categories = [...new Set(listings.map((listing) => listing.category))].sort()
+  const activeCategory = category && categories.includes(category) ? category : null
+  const shown = activeCategory
+    ? listings.filter((listing) => listing.category === activeCategory)
+    : listings
 
   return (
     <Shell className="pt-10 pb-20 md:pt-16">
@@ -132,6 +152,23 @@ export default async function BookPage() {
               {t('explore.book.catalogueLede')}
             </p>
 
+            {categories.length > 1 && listings.length > 0 ? (
+              <div className="mt-6 flex flex-wrap gap-2">
+                <FilterChip href="/book" active={activeCategory === null}>
+                  {t('explore.book.allCategories', { count: listings.length })}
+                </FilterChip>
+                {categories.map((name) => (
+                  <FilterChip
+                    key={name}
+                    href={`/book?category=${encodeURIComponent(name)}`}
+                    active={activeCategory === name}
+                  >
+                    {name}
+                  </FilterChip>
+                ))}
+              </div>
+            ) : null}
+
             {listings.length === 0 ? (
               <EmptyState
                 className="mt-6"
@@ -145,7 +182,7 @@ export default async function BookPage() {
               />
             ) : (
               <ul className="divide-line border-line mt-6 divide-y border-y">
-                {listings.map((listing) => (
+                {shown.map((listing) => (
                   <li key={listing.experienceId} className="py-6">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -180,6 +217,7 @@ export default async function BookPage() {
                         <Money
                           amountMinor={listing.unitPriceMinor}
                           currency={listing.currency}
+                          locale={locale}
                           intent="neutral"
                           className="font-medium"
                         />
@@ -294,22 +332,25 @@ export default async function BookPage() {
                   ) : null}
                 </div>
 
+                {/*
+                 * The basket ends here, and paying is its own page.
+                 *
+                 * This rail used to carry the lines, a name, an email, two
+                 * password fields, a terms checkbox and "Pay and create my
+                 * account" in one column — so a first purchase from a brand
+                 * nobody has heard of was a single click with no step that
+                 * said *this is your trip, confirm it*. `/book/review` is that
+                 * step: the days, the lines, the total and what is not
+                 * included, read back before anything is taken.
+                 */}
                 <div className="mt-5">
-                  <PayForTripForm
-                    idempotencyKey={idempotencyKey}
-                    signedInAs={actor?.email ?? null}
-                    labels={{
-                      name: t('explore.book.name'),
-                      email: t('explore.book.email'),
-                      password: t('explore.book.password'),
-                      confirmPassword: t('explore.book.confirmPassword'),
-                      passwordHint: t('explore.book.passwordHint'),
-                      terms: t('explore.book.terms'),
-                      submit: t('explore.book.pay'),
-                      pending: t('explore.book.paying'),
-                      signedIn: t('explore.book.signedIn'),
-                    }}
-                  />
+                  <Link
+                    href="/book/review"
+                    className="bg-ink text-ivory hover:bg-ink-soft flex w-full items-center justify-center gap-2 rounded-full px-4 py-3 text-sm transition-colors duration-150"
+                  >
+                    {t('explore.book.review')}
+                    <ArrowRight className="size-4" aria-hidden />
+                  </Link>
                 </div>
               </>
             )}
@@ -340,4 +381,36 @@ function groupByDay(
     days.set(departure.dateKey, bucket)
   }
   return [...days.entries()].map(([date, items]) => ({ date, departures: items }))
+}
+
+/**
+ * One category filter on the till.
+ *
+ * A link rather than a control: the page is a server component, the filter is
+ * a query parameter, and a visitor who narrows to "Adventure" and sends
+ * somebody the URL should get the same page back. No client JavaScript is
+ * involved in narrowing a list.
+ */
+function FilterChip({
+  href,
+  active,
+  children,
+}: {
+  href: string
+  active: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <Link
+      href={href}
+      aria-current={active ? 'true' : undefined}
+      className={
+        active
+          ? 'bg-ink text-ivory rounded-full px-3 py-1.5 text-xs whitespace-nowrap'
+          : 'border-line hover:border-ink rounded-full border px-3 py-1.5 text-xs whitespace-nowrap transition-colors duration-150'
+      }
+    >
+      {children}
+    </Link>
+  )
 }

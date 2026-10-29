@@ -1,12 +1,26 @@
 import Image from 'next/image'
 import Link from 'next/link'
-import { Clock, Gauge } from 'lucide-react'
+import {
+  Clock,
+  Compass,
+  Gauge,
+  Landmark,
+  Leaf,
+  Mountain,
+  Car,
+  UtensilsCrossed,
+} from 'lucide-react'
 import { Money } from '@/components/money'
 import { cn } from '@/lib/cn'
 import { createTranslator, type AppLocale } from '@/lib/i18n'
 import { getDestination } from '@/modules/discovery/content/destinations'
 import { CONTENT_CURRENCY } from '@/modules/discovery/content/types'
-import type { Destination, Experience, Property } from '@/modules/discovery/content/types'
+import type {
+  Destination,
+  Experience,
+  ExperienceCategory,
+  Property,
+} from '@/modules/discovery/content/types'
 import { ListingBadge } from './editorial'
 import { SaveButton } from './save-button'
 
@@ -185,6 +199,67 @@ export function PropertyCard({
   )
 }
 
+
+/**
+ * What a real supplier's listing shows where a photograph would be.
+ *
+ * ADR-025 and ADR-027 keep stock photography off a live listing: a licensed
+ * image of a real place, taken by nobody connected to the business selling
+ * the thing, is a claim the product has not earned. That decision is right
+ * and is not being overturned here.
+ *
+ * What was wrong is what it looked like. Ten published listings — the only
+ * part of the catalogue a visitor can actually buy — rendered as ten
+ * identical blank beige rectangles, three across, directly above fifteen
+ * illustrative ones that all had photographs. The commercial half of the page
+ * read as a failed load while the decorative half looked finished.
+ *
+ * So the absence is drawn on purpose: a category mark, the category named,
+ * and one line saying why there is nothing here. A visitor who reads it
+ * learns something true about ARC. A visitor who does not at least sees a
+ * card somebody designed.
+ *
+ * Purely decorative, so the mark is `aria-hidden` and the caption carries the
+ * meaning.
+ */
+const CATEGORY_MARK: Record<ExperienceCategory, typeof Compass> = {
+  Adventure: Mountain,
+  Culture: Landmark,
+  Wellness: Leaf,
+  Food: UtensilsCrossed,
+  Nature: Compass,
+  Transport: Car,
+}
+
+function ListingPlate({
+  category,
+  locale,
+}: {
+  category: ExperienceCategory
+  locale: AppLocale
+}) {
+  const t = createTranslator(locale)
+  const Mark = CATEGORY_MARK[category] ?? Compass
+
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center">
+      {/* A quiet repeating rule, so the plate is a surface rather than a gap. */}
+      <div
+        aria-hidden
+        className="absolute inset-0 opacity-[0.07]"
+        style={{
+          backgroundImage:
+            'repeating-linear-gradient(135deg, currentColor 0 1px, transparent 1px 9px)',
+        }}
+      />
+      <Mark className="text-muted relative size-7" aria-hidden />
+      <p className="text-muted relative text-[11px] leading-relaxed">
+        {t('explore.listing.noPhoto')}
+      </p>
+    </div>
+  )
+}
+
 export function ExperienceCard({
   experience,
   locale,
@@ -206,7 +281,9 @@ export function ExperienceCard({
             sizes="(max-width: 768px) 80vw, 33vw"
             className={HOVER_IMAGE}
           />
-        ) : null}
+        ) : (
+          <ListingPlate category={experience.category} locale={locale} />
+        )}
         <div className="absolute top-3 left-3">
           <ListingBadge
             status={experience.verification}

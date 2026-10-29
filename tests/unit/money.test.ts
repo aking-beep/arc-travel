@@ -112,5 +112,25 @@ describe('money', () => {
       expect(formatMoney(1, 'MXN')).toMatch(/0[.,]01/)
       expect(formatMoney(99, 'MXN')).toMatch(/0[.,]99/)
     })
+
+    /*
+     * The product puts a USD content set and an MXN catalogue on one journey:
+     * a visitor saw "$9,600" (real dollars, the room estimate) above "$950 per
+     * person" and "$3,800" on the till, which are pesos. The default used to
+     * be the currency's *home* locale, and `es-MX` is the one locale where
+     * MXN is a bare `$`.
+     */
+    it('never renders a currency as a bare $ unless it is the dollar', () => {
+      expect(formatMoney(95_000, 'MXN')).toContain('MX$')
+      expect(formatMoney(95_000, 'USD')).not.toContain('MX$')
+      expect(formatMoney(95_000, 'USD')).toContain('$')
+    })
+
+    it('stays unambiguous for a reader in either language', () => {
+      for (const locale of ['en', 'es']) {
+        // Either "MX$950" or "950 MXN" — what it must never be is "$950".
+        expect(formatMoney(95_000, 'MXN', locale)).toMatch(/MX\$|MXN/)
+      }
+    })
   })
 })

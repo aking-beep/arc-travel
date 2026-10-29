@@ -53,8 +53,13 @@ export async function ExploreFooter() {
             title={t('explore.footer.aboutHeading')}
             links={[
               ['/demo', t('explore.footer.demoSurfaces')],
+              // The page a guest looks for when something has gone wrong. It
+              // did not exist; every route a person would guess 404'd.
+              ['/support', t('explore.footer.help')],
+              ['/terms', t('explore.footer.terms')],
+              ['/privacy', t('explore.footer.privacy')],
               ...destinations
-                .slice(0, 3)
+                .slice(0, 2)
                 .map((d) => [`/destinations/${d.slug}`, d.name] as [string, string]),
             ]}
           />

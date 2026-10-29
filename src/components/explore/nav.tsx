@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BedDouble, Compass, Heart, Home, Menu, ShoppingBag, Sparkles, User, X } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { setLocaleAction, signOutAction } from '@/app/actions'
@@ -135,18 +135,75 @@ export function ExploreNav({
   const overHero = pathname === '/' || /^\/destinations\/[^/]+$/.test(pathname)
   const transparent = overHero && !scrolled && !open
 
+  /*
+   * Scroll, and keeping a `fixed` header out from under the demo banner.
+   *
+   * On the hero pages this header is fixed to the viewport so the photograph
+   * runs behind it, and `DemoBanner` is a sibling in normal flow above it — so
+   * at `top-0` the header was drawn over the banner. While unscrolled the
+   * header is transparent with `text-ivory` controls, which is legible over a
+   * dark photograph and invisible over the banner's cream. It passed the
+   * accessibility spec only because the banner was one line tall and most of
+   * each control's box still had the hero behind it; lengthening that sentence
+   * wrapped it to two lines and put nine controls at a contrast ratio of 1.04.
+   * ADR-038's point exactly — that was a contrast decision, not a copy one.
+   *
+   * So the header's `top` is however much of the banner is still on screen.
+   * Measured rather than hard-coded, because the height is whatever the text
+   * wraps to, which differs between English and Spanish and between
+   * viewports; observed, so a resize keeps it true; and written straight to
+   * the node rather than through state, because this runs on every scroll
+   * event. Zero outside demo mode, where there is no banner.
+   */
+  const header = useRef<HTMLElement>(null)
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 40)
-    onScroll()
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [])
+    const banner = overHero ? document.querySelector('[data-demo-banner]') : null
+    let bannerHeight = banner?.getBoundingClientRect().height ?? 0
+
+    /*
+     * Cleared, not merely left unset, when this is not a hero page.
+     *
+     * This component lives in the layout, so the node survives a client
+     * navigation. An inline `top` written on `/` outlives the trip to
+     * `/experiences` and overrides `sticky top-0` there — the bar then sticks
+     * a banner's height below the top of the viewport. Both the else branch
+     * and the cleanup remove the property rather than setting it to `0px`, so
+     * the class is what decides.
+     */
+    const place = () => {
+      setScrolled(window.scrollY > 40)
+      if (!header.current) return
+      if (overHero) {
+        const top = Math.max(0, bannerHeight - window.scrollY)
+        header.current.style.top = `${String(top)}px`
+      } else {
+        header.current.style.removeProperty('top')
+      }
+    }
+    place()
+
+    window.addEventListener('scroll', place, { passive: true })
+    const observer = banner
+      ? new ResizeObserver(() => {
+          bannerHeight = banner.getBoundingClientRect().height
+          place()
+        })
+      : null
+    if (banner) observer?.observe(banner)
+
+    return () => {
+      window.removeEventListener('scroll', place)
+      observer?.disconnect()
+      header.current?.style.removeProperty('top')
+    }
+  }, [overHero])
 
   return (
     <header
+      ref={header}
       className={cn(
-        'inset-x-0 top-0 z-50 border-b transition-colors duration-200',
-        overHero ? 'fixed' : 'sticky',
+        'inset-x-0 z-50 border-b transition-colors duration-200',
+        overHero ? 'fixed' : 'sticky top-0',
         transparent
           ? 'text-ivory border-transparent bg-transparent'
           : 'bg-ivory/95 text-ink border-line backdrop-blur',
@@ -256,6 +313,19 @@ export function ExploreNav({
               <span className="whitespace-nowrap">{t('common.signIn')}</span>
             </Link>
           )}
+          {/*
+           * The loudest control on the page, and it used to repeat the nav
+           * item two inches to its left — same words, same destination, the
+           * illustrative planner that cannot sell anything. Two buttons
+           * reading "Trip planning" pointing at one page is how a visitor
+           * concludes there is only one planner; there are three, and this is
+           * the one that books nothing.
+           *
+           * It keeps its destination — drafting a trip is a reasonable front
+           * door, and the planner now carries a real exit to the property
+           * that can be booked — but it says what it is, and it no longer
+           * duplicates its neighbour.
+           */}
           <Link
             href="/plan"
             className={cn(
@@ -263,7 +333,7 @@ export function ExploreNav({
               transparent ? 'bg-ivory text-ink hover:bg-paper' : 'bg-ink text-ivory hover:bg-ink-soft',
             )}
           >
-            {t('explore.nav.plan')}
+            {t('explore.nav.draftTrip')}
           </Link>
           <button
             type="button"

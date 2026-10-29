@@ -220,6 +220,22 @@ export function StayEstimator({
               </DemoFigure>
             </dd>
           </div>
+          {/*
+           * Said next to the figure, not under the button.
+           *
+           * On the bookable property this panel's largest number is a room
+           * estimate, and the button beneath it sells experiences and no room
+           * at all — ARC holds no room calendar, so a bed it confirmed would
+           * be the invented availability non-negotiable 2 refuses. The note
+           * existed, in small grey text, after the button. Somebody reading
+           * "$9,600" and pressing the nearest control had already formed the
+           * wrong idea by the time they reached it.
+           */}
+          {booking ? (
+            <p className="text-muted border-line border-t pt-3 text-xs leading-relaxed">
+              {t('explore.stay.estimateIsNotBooked')}
+            </p>
+          ) : null}
         </dl>
       )}
 
