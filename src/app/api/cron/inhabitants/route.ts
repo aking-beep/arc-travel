@@ -47,6 +47,21 @@ async function run(request: Request): Promise<NextResponse> {
 
   try {
     const result = await tick({ source: 'cron', actions: 3 })
+    /*
+     * Logged even when the roll came up empty, like the other three routes.
+     *
+     * This route printed nothing on a successful tick, and a run that does
+     * nothing is a legitimate outcome here — the weights decline more often
+     * than they act. So "ran and the town was quiet" and "was never invoked
+     * at all" produced exactly the same evidence: none. That ambiguity is
+     * what let the POST-only bug sit for a month (`src/lib/cron-request.ts`),
+     * and it is what made the fix hard to confirm afterwards.
+     */
+    console.log(
+      '[inhabitants] %d action(s): %s',
+      result.actions.length,
+      result.actions.map((action) => action.kind).join(', ') || 'none',
+    )
     return NextResponse.json({
       actions: result.actions.map((action) => action.summary),
       population: result.population,
