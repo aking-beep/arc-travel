@@ -2,7 +2,7 @@ import { prisma, type Prisma } from '@/lib/db'
 import { conflict, invalid, notFound } from '@/lib/errors'
 import { hashPassword } from '@/lib/password'
 import { assertWithinRateLimit, rateLimitSubject } from '@/lib/rate-limit'
-import { daysBetween, toDateKey, type DateKey } from '@/lib/dates'
+import { daysBetween, toDateKey, toLocalDateKey, type DateKey } from '@/lib/dates'
 import { fromPrismaLocale, type AppLocale } from '@/lib/i18n'
 import { OrderStatus, Role, StayKind, StayStatus } from '@/lib/prisma-types'
 import { recordAudit } from '@/modules/workflows/audit'
@@ -908,7 +908,10 @@ function scheduleFor(orders: AccountOrder[]): ScheduleDay[] {
 
   for (const order of orders) {
     for (const item of order.items) {
-      const key = item.startsAt ? toDateKey(item.startsAt) : ''
+      // The destination's day, not the server's. The time printed beside this
+      // is `toLocalTimeString`, so a UTC key put an 18:00 departure on
+      // tomorrow's heading with today's time under it.
+      const key = item.startsAt ? toLocalDateKey(item.startsAt) : ''
       const bucket = days.get(key) ?? []
       bucket.push({ ...item, orderReference: order.reference })
       days.set(key, bucket)

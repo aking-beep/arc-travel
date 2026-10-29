@@ -2141,3 +2141,18 @@ a code one, and it is not taken here.
   and can hold candidates nobody paid for. Gross and refunded are reported side
   by side rather than netted, and currencies are never summed, which is ADR-007's
   instinct applied to a guest's own money.
+- Everything that can refuse a basket is checked *before* the till's
+  transaction, including the conditions gate against any ability already on
+  file for that address at that property. `checkout()` stays outside the
+  transaction (ADR-026), so there is a narrow state where an account, a stay
+  and a cart claim exist and an order does not — and the basket is claimed, so
+  `resumeVisitorTrip` will not hand it back. A failure there carries a
+  `CommittedTrip` on the error, and the action signs the person in and tells
+  them where their trip is rather than leaving them anonymous in front of a
+  storefront that has lost it. Nothing is charged in that state.
+- A trip window is a pair of calendar days in Puerto Escondido, so every
+  instant bounding one comes from `localInstant`. Built with `new Date()` from
+  a date string it is parsed in the server's zone, which on Vercel is UTC: the
+  catalogue then offered the evening before somebody's first day and hid the
+  last departure of their last day, while `addToVisitorTrip`, which compares
+  local date keys, disagreed with it in both directions.

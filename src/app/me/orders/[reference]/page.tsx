@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DemoBanner } from '@/components/demo-banner'
 import { DemoFigure, Money } from '@/components/money'
 import { getTranslator } from '@/lib/i18n/server'
-import { toDateKey, toLocalTimeString } from '@/lib/dates'
+import { toDateKey, toLocalDateKey, toLocalTimeString } from '@/lib/dates'
 import { getActor } from '@/modules/auth/service'
 import { experienceTitle, getGuestOrder } from '@/modules/guest/account'
 
@@ -96,7 +96,7 @@ export default async function OrderPage({
                     {item.startsAt ? (
                       <span className="flex items-center gap-1.5 tabular-nums">
                         <Clock className="size-3.5" aria-hidden />
-                        {toDateKey(item.startsAt)} · {toLocalTimeString(item.startsAt)}
+                        {toLocalDateKey(item.startsAt)} · {toLocalTimeString(item.startsAt)}
                       </span>
                     ) : null}
                     {item.meetingPoint ? (

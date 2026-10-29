@@ -3,12 +3,13 @@ import { prisma } from '@/lib/db'
 import { isAppError, type AppError } from '@/lib/errors'
 import { hashPassword } from '@/lib/password'
 import { resetRateLimitCounters } from '@/lib/rate-limit'
-import { addDays, toDateKey } from '@/lib/dates'
+import { addDays, toDateKey, toLocalDateKey } from '@/lib/dates'
 import { AbilityLevel, CartStatus, ConditionsRisk, OrderStatus, StayKind } from '@/lib/prisma-types'
 import { addToCart, getOrCreateCart } from '@/modules/commerce/cart'
 import { getGuestAccount } from '@/modules/guest/account'
 import {
   addToVisitorTrip,
+  committedTripFrom,
   listVisitorListings,
   nextBookableDate,
   purchaseVisitorTrip,
@@ -464,5 +465,235 @@ describe('storefront purchase', () => {
       }),
       'SAFETY_CONSTRAINT',
     )
+  })
+})
+
+/**
+ * The window is a pair of days in Puerto Escondido, not in the server's zone.
+ *
+ * Vercel runs in UTC, six hours ahead of the destination, so a window built
+ * from `new Date('2026-11-09T23:59:59')` ended at 17:59 local. A last-light
+ * departure on the last day of somebody's trip was invisible, and one on the
+ * evening *before* their first day was on offer — and `addToVisitorTrip`,
+ * which compares local date keys, then refused the thing the page had just
+ * offered.
+ */
+describe('storefront window, in the destination’s own days', () => {
+  it('offers a last-light departure on the last day of the window', async () => {
+    const { fromDate, toDate } = window()
+    const tenant = await createTenant({ departureDate: toDate, departureTime: '18:00' })
+
+    // The premise: this departure is on `toDate` locally and the next day in UTC.
+    const slot = await prisma.availabilitySlot.findUniqueOrThrow({ where: { id: tenant.slotId } })
+    expect(toLocalDateKey(slot.startsAt)).toBe(toDate)
+    expect(toDateKey(slot.startsAt)).toBe(addDays(toDate, 1))
+
+    const listings = await listVisitorListings({
+      propertyId: tenant.propertyId,
+      fromDate,
+      toDate,
+      partySize: 2,
+    })
+    expect(listings.flatMap((l) => l.departures).map((d) => d.slotId)).toContain(tenant.slotId)
+
+    // And the two agree: what the page offered, the basket takes.
+    const session = await openTrip(tenant.propertyId)
+    await expect(
+      addToVisitorTrip({ session, slotId: tenant.slotId, quantity: 1 }),
+    ).resolves.toBeTruthy()
+  })
+
+  it('hides a last-light departure on the day before the window', async () => {
+    const { fromDate, toDate } = window()
+    const before = addDays(fromDate, -1)
+    const tenant = await createTenant({ departureDate: before, departureTime: '18:00' })
+
+    // The premise: local day is before the window, UTC day is its first day.
+    const slot = await prisma.availabilitySlot.findUniqueOrThrow({ where: { id: tenant.slotId } })
+    expect(toLocalDateKey(slot.startsAt)).toBe(before)
+    expect(toDateKey(slot.startsAt)).toBe(fromDate)
+
+    const listings = await listVisitorListings({
+      propertyId: tenant.propertyId,
+      fromDate,
+      toDate,
+      partySize: 2,
+    })
+    expect(listings.flatMap((l) => l.departures)).toHaveLength(0)
+  })
+})
+
+/**
+ * What the till re-checks, and what it refuses before it writes anything.
+ *
+ * Each of these was reachable: shrinking the window kept the lines (the page
+ * flags them deliberately) and pressing pay did not look again; and the gate's
+ * one realistic refusal ran *after* the account, the stay and the cart claim
+ * had committed, leaving somebody anonymous in front of a basket that was no
+ * longer theirs to resume.
+ */
+describe('the till, before it writes', () => {
+  it('refuses a line that falls outside the window, naming it', async () => {
+    const tenant = await createTenant()
+    const session = await openTrip(tenant.propertyId)
+    await addToVisitorTrip({ session, slotId: tenant.slotId, quantity: 2 })
+
+    // The window shrinks under the basket, as `changeTripAction` allows.
+    const shrunk: TripSession = {
+      ...session,
+      fromDate: addDays(today(), 1),
+      toDate: addDays(today(), 2),
+    }
+
+    await expectCode(
+      purchaseVisitorTrip({ session: shrunk, raw: buyer, idempotencyKey: 'outside-window' }),
+      'VALIDATION_FAILED',
+    )
+    // Nothing was written on the way to that refusal.
+    expect(await prisma.user.count({ where: { email: buyer.email } })).toBe(0)
+    expect(await prisma.stay.count({ where: { kind: StayKind.DIRECT } })).toBe(0)
+  })
+
+  it('applies the ability on file before it creates an account', async () => {
+    /*
+     * A returning person: a `Guest` row at this property, recorded as a
+     * beginner by whoever took their intake, buying a departure that demands
+     * more. The cookie says EXPERT, which is exactly what must not count.
+     */
+    const tenant = await createTenant({
+      conditionsSensitive: true,
+      maxSafeRisk: ConditionsRisk.HIGH,
+      conditions: { risk: ConditionsRisk.HIGH, minAbilityRequired: AbilityLevel.ADVANCED },
+    })
+    const property = await prisma.property.findUniqueOrThrow({ where: { id: tenant.propertyId } })
+    await prisma.guest.create({
+      data: {
+        organizationId: property.organizationId,
+        propertyId: property.id,
+        firstName: 'Ada',
+        lastName: 'Visitor',
+        email: buyer.email,
+        partySize: 2,
+        surfAbility: AbilityLevel.BEGINNER,
+      },
+    })
+
+    const session = await openTrip(tenant.propertyId, { surfAbility: AbilityLevel.EXPERT })
+    await addToVisitorTrip({ session, slotId: tenant.slotId, quantity: 1 })
+
+    await expectCode(
+      purchaseVisitorTrip({ session, raw: buyer, idempotencyKey: 'ability-on-file' }),
+      'SAFETY_CONSTRAINT',
+    )
+
+    // Refused before the account, the stay and the claim on the basket.
+    expect(await prisma.user.count({ where: { email: buyer.email } })).toBe(0)
+    expect(await prisma.stay.count({ where: { kind: StayKind.DIRECT } })).toBe(0)
+    const cart = await prisma.cart.findUniqueOrThrow({ where: { id: session.cartId } })
+    expect(cart.guestId).toBeNull()
+    expect(cart.status).toBe(CartStatus.OPEN)
+  })
+
+  /**
+   * A `Guest` row at this property may be held by a `User` whose own address
+   * is a different one — that is what claiming a booking with a
+   * hotel-recorded address produces (ADR-039). An unconditional link here
+   * handed the buyer somebody else's guest record, and their itinerary with
+   * it.
+   */
+  it('refuses to take over a guest record another account already holds', async () => {
+    const tenant = await createTenant()
+    const property = await prisma.property.findUniqueOrThrow({ where: { id: tenant.propertyId } })
+
+    const stranger = await prisma.user.create({
+      data: {
+        email: 'stranger@example.test',
+        name: 'Stranger',
+        passwordHash: await hashPassword('a-real-password-99'),
+      },
+    })
+    await prisma.guest.create({
+      data: {
+        organizationId: property.organizationId,
+        propertyId: property.id,
+        userId: stranger.id,
+        firstName: 'Shared',
+        lastName: 'Address',
+        email: 'desk-typo@example.test',
+        partySize: 2,
+      },
+    })
+
+    const buyerAccount = await prisma.user.create({
+      data: {
+        email: 'desk-typo@example.test',
+        name: 'Buyer',
+        passwordHash: await hashPassword('a-real-password-99'),
+      },
+    })
+
+    const session = await openTrip(tenant.propertyId)
+    await addToVisitorTrip({ session, slotId: tenant.slotId, quantity: 1 })
+
+    await expectCode(
+      purchaseVisitorTripForAccount({
+        session,
+        userId: buyerAccount.id,
+        idempotencyKey: 'stolen-guest',
+      }),
+      'CONFLICT',
+    )
+
+    // The stranger keeps their guest record, and nothing was charged.
+    const guest = await prisma.guest.findFirstOrThrow({ where: { email: 'desk-typo@example.test' } })
+    expect(guest.userId).toBe(stranger.id)
+    expect(await prisma.order.count()).toBe(0)
+  })
+
+  /**
+   * `committedTripFrom` is what the action uses to sign somebody in when the
+   * failure came after the commit. It must read nothing off an ordinary
+   * refusal, or a pre-transaction "your dates do not cover that" would sign a
+   * stranger in.
+   */
+  it('carries no committed trip on a refusal made before the commit', async () => {
+    const tenant = await createTenant()
+    const session = await openTrip(tenant.propertyId)
+
+    const error = await purchaseVisitorTrip({
+      session,
+      raw: buyer,
+      idempotencyKey: 'empty-basket',
+    }).catch((e: unknown) => e)
+
+    expect(codeOf(error)).toBe('VALIDATION_FAILED')
+    expect(committedTripFrom(error)).toBeNull()
+  })
+})
+
+/**
+ * The itinerary is grouped by the destination's days.
+ *
+ * The heading came from `toDateKey` (UTC) while the time under it came from
+ * `toLocalTimeString`, so an 18:00 departure sat under tomorrow's heading with
+ * today's time printed beneath it.
+ */
+describe('the itinerary’s days', () => {
+  it('puts a last-light departure on its local day, not the next UTC one', async () => {
+    const { fromDate, toDate } = window()
+    const tenant = await createTenant({ departureDate: toDate, departureTime: '18:00' })
+
+    const session = await openTrip(tenant.propertyId)
+    await addToVisitorTrip({ session, slotId: tenant.slotId, quantity: 1 })
+    const purchase = await purchaseVisitorTrip({
+      session,
+      raw: buyer,
+      idempotencyKey: 'evening-itinerary',
+    })
+
+    const view = await getGuestAccount(purchase.userId)
+    const schedule = view?.stays[0]?.schedule ?? []
+    expect(schedule.map((day) => day.date)).toEqual([toDate])
+    expect(toDate).not.toBe(addDays(fromDate, -1)) // the window is the one we think
   })
 })

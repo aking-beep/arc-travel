@@ -1,7 +1,13 @@
 import { prisma } from '@/lib/db'
-import { conflict, invalid, notFound } from '@/lib/errors'
+import { AppError, conflict, invalid, isAppError, notFound } from '@/lib/errors'
 import { hashPassword } from '@/lib/password'
-import { toDateKey, toLocalDateKey, type DateKey } from '@/lib/dates'
+import {
+  localInstant,
+  PUERTO_ESCONDIDO_UTC_OFFSET,
+  toDateKey,
+  toLocalDateKey,
+  type DateKey,
+} from '@/lib/dates'
 import {
   type AbilityLevel,
   CartStatus,
@@ -12,6 +18,7 @@ import {
 import { portalToken } from '@/lib/ids'
 import { VERIFICATION_STANDING_SELECT, isCurrentlyVerified } from '@/modules/admin/verification'
 import {
+  assertSlotSuitableForAudience,
   assertSlotSuitableForGuest,
   evaluateSlotsForAudience,
 } from '@/modules/destination/suitability'
@@ -195,6 +202,23 @@ function daysApart(from: DateKey, to: DateKey): number {
   return Math.round((b - a) / 86_400_000)
 }
 
+/*
+ * A trip window is a pair of calendar days in Puerto Escondido, and the
+ * instants that bound it have to be the destination's midnights — not the
+ * server's. `new Date('2026-11-05T00:00:00')` is parsed in whatever zone the
+ * process runs in, which on Vercel is UTC: six hours early, so the catalogue
+ * offered a departure on the evening before the window and hid one on its last
+ * evening, while `addToVisitorTrip` (which compares local date keys) refused
+ * the first and would have taken the second.
+ */
+function startOfLocalDay(key: DateKey): Date {
+  return localInstant(key, '00:00', PUERTO_ESCONDIDO_UTC_OFFSET)
+}
+
+function endOfLocalDay(key: DateKey): Date {
+  return new Date(localInstant(key, '00:00', PUERTO_ESCONDIDO_UTC_OFFSET).getTime() + 86_400_000 - 1)
+}
+
 export interface VisitorDeparture {
   slotId: string
   startsAt: Date
@@ -247,9 +271,9 @@ export async function listVisitorListings(options: {
 }): Promise<VisitorListing[]> {
   const now = options.now ?? new Date()
   // Never offer a departure that has already started, even on today's date.
-  const from = new Date(`${options.fromDate}T00:00:00`)
+  const from = startOfLocalDay(options.fromDate)
   const windowStart = from.getTime() > now.getTime() ? from : now
-  const to = new Date(`${options.toDate}T23:59:59`)
+  const to = endOfLocalDay(options.toDate)
   if (to.getTime() <= windowStart.getTime()) return []
 
   const experiences = await prisma.experience.findMany({
@@ -350,7 +374,7 @@ export async function nextBookableDate(options: {
   now?: Date
 }): Promise<DateKey | null> {
   const now = options.now ?? new Date()
-  const from = new Date(`${options.after}T23:59:59`)
+  const from = endOfLocalDay(options.after)
   const slot = await prisma.availabilitySlot.findFirst({
     where: {
       status: SlotStatus.OPEN,
@@ -444,6 +468,144 @@ export interface VisitorPurchase {
 }
 
 /**
+ * What a failure *after* the till's transaction still hands the caller.
+ *
+ * The account, the `DIRECT` stay and the cart claim commit together, and
+ * `checkout()` runs outside that transaction on purpose (ADR-026: confirming
+ * and then booking has a window that can only be closed with an automatic
+ * refund). So there is a narrow state where the person has an account and a
+ * stay and no order, and the basket — now claimed — is no longer something
+ * `resumeVisitorTrip` will return. Throwing a bare message there left them
+ * anonymous in front of a page that had lost their trip.
+ *
+ * Carried on the error instead, so the caller can still sign them in and put
+ * them somewhere their trip is visible. The realistic cause of a failure here
+ * — the conditions gate reading an ability on file — now happens before any of
+ * it is written; this is what is left.
+ */
+export interface CommittedTrip {
+  userId: string
+  guestId: string
+  stayId: string
+  stayReference: string
+  portalToken: string
+}
+
+export function committedTripFrom(error: unknown): CommittedTrip | null {
+  if (!isAppError(error)) return null
+  const details = error.details as { committedTrip?: CommittedTrip } | undefined
+  return details?.committedTrip ?? null
+}
+
+async function finishAtTill<T>(committed: CommittedTrip, work: () => Promise<T>): Promise<T> {
+  try {
+    return await work()
+  } catch (error) {
+    if (!isAppError(error)) throw error
+    const existing =
+      error.details && typeof error.details === 'object' ? (error.details as object) : {}
+    throw new AppError(error.code, error.message, { ...existing, committedTrip: committed })
+  }
+}
+
+/**
+ * The basket, as the till needs it: open, nobody's, this property's, not
+ * empty, and every line inside the window the person declared.
+ *
+ * The window is re-asserted here and not only in `addToVisitorTrip` because
+ * shrinking the dates deliberately keeps the lines — the page flags them and
+ * lets somebody widen the window again rather than silently emptying their
+ * basket. Without this, pressing pay was a way past that: the `Stay` is
+ * written from the window, so the departure would land on an itinerary with no
+ * day for it and on an arrivals board for a trip that had already ended.
+ */
+async function loadVisitorCartForPurchase(
+  cartId: string,
+  propertyId: string,
+  window: TripWindow,
+): Promise<{ id: string; items: { slotId: string; startsAt: Date; title: string }[] }> {
+  const cart = await prisma.cart.findUnique({
+    where: { id: cartId },
+    select: {
+      id: true,
+      status: true,
+      guestId: true,
+      propertyId: true,
+      items: {
+        select: {
+          slotId: true,
+          slot: { select: { startsAt: true } },
+          experience: { select: { titleEn: true } },
+        },
+      },
+    },
+  })
+  if (!cart) throw notFound('Basket')
+  if (cart.propertyId !== propertyId) throw notFound('Basket')
+  if (cart.status !== CartStatus.OPEN) throw conflict('This basket has already been checked out.')
+  if (cart.guestId !== null) throw conflict('This basket already belongs to an account.')
+  if (cart.items.length === 0) {
+    throw invalid('Your trip is empty. Add something to it before you pay.')
+  }
+
+  const items = cart.items.map((item) => ({
+    slotId: item.slotId,
+    startsAt: item.slot.startsAt,
+    title: item.experience.titleEn,
+  }))
+
+  for (const item of items) {
+    const day = toLocalDateKey(item.startsAt)
+    if (day < window.fromDate || day > window.toDate) {
+      // Named, not dropped: a line that vanished at the till reads as a
+      // pricing trick, and the person is the one who can fix it.
+      throw invalid(
+        `${item.title} on ${day} is outside the dates you gave. Change your dates or remove it before you pay.`,
+      )
+    }
+  }
+
+  return { id: cart.id, items }
+}
+
+/**
+ * The conditions gate, before anything is written.
+ *
+ * The basket was gated against the ability stated in the cookie. Somebody who
+ * has stayed at this property before has an ability *on file*, which the
+ * anonymous basket could not read and which the gate must prefer when it is
+ * the stricter answer. Running that check after the transaction committed —
+ * where it used to be — meant the one realistic refusal at the till happened
+ * when the account, the stay and the cart claim were already written and the
+ * person was not yet signed in. So it runs here, against the ability on file
+ * if there is one, and again against the `Guest` row once that exists.
+ */
+async function assertCartGatedForTill(options: {
+  propertyId: string
+  email: string
+  sessionAbility: AbilityLevel | null
+  items: { slotId: string }[]
+  now: Date
+}): Promise<void> {
+  const onFile = await prisma.guest.findFirst({
+    where: { propertyId: options.propertyId, email: options.email },
+    select: { surfAbility: true },
+    orderBy: { createdAt: 'desc' },
+  })
+  // No row, or a row that states nothing, is the strict case either way
+  // (ADR-017); the declaration only ever applies to a new `Guest`.
+  const surfAbility = onFile ? onFile.surfAbility : options.sessionAbility
+
+  for (const item of options.items) {
+    await assertSlotSuitableForAudience({
+      audience: { propertyId: options.propertyId, surfAbility },
+      slotId: item.slotId,
+      now: options.now,
+    })
+  }
+}
+
+/**
  * The till: an account, a trip and a paid order, in that order.
  *
  * The account and the trip are one transaction because an account with nothing
@@ -453,9 +615,13 @@ export interface VisitorPurchase {
  * nesting that inside a longer one would hold it open across a password hash
  * and widen every serialization conflict in the inventory module.
  *
- * If the gate refuses a line here, the person keeps the account and the trip
- * and is told which departure was refused. That is recoverable by them; a
- * refusal that also threw away the account they just created would not be.
+ * Everything that can refuse the basket on the way in — the window, the
+ * conditions gate including the ability on file, a taken address — is checked
+ * *before* that transaction, so the ordinary refusal costs nothing and the
+ * person is simply told which departure was the problem. A failure after the
+ * commit is not recoverable on its own: the basket is claimed and
+ * `resumeVisitorTrip` will not return it. That case carries a `CommittedTrip`
+ * on the error so the caller can still sign them in and show them the trip.
  */
 export async function purchaseVisitorTrip(options: {
   session: TripSession
@@ -476,23 +642,7 @@ export async function purchaseVisitorTrip(options: {
   assertWindowIsSensible(window, now)
   await guardDirectTrip({ clientKey: options.clientKey, propertyId: property.id, now })
 
-  const cart = await prisma.cart.findUnique({
-    where: { id: options.session.cartId },
-    select: {
-      id: true,
-      status: true,
-      guestId: true,
-      propertyId: true,
-      items: { select: { slotId: true } },
-    },
-  })
-  if (!cart) throw notFound('Basket')
-  if (cart.propertyId !== property.id) throw notFound('Basket')
-  if (cart.status !== CartStatus.OPEN) throw conflict('This basket has already been checked out.')
-  if (cart.guestId !== null) throw conflict('This basket already belongs to an account.')
-  if (cart.items.length === 0) {
-    throw invalid('Your trip is empty. Add something to it before you pay.')
-  }
+  const cart = await loadVisitorCartForPurchase(options.session.cartId, property.id, window)
 
   /*
    * Read for a readable message, and again inside the transaction, which is
@@ -508,6 +658,14 @@ export async function purchaseVisitorTrip(options: {
       'That email already has an ARC account. Sign in first, and your trip comes with you.',
     )
   }
+
+  await assertCartGatedForTill({
+    propertyId: property.id,
+    email: input.email,
+    sessionAbility: options.session.surfAbility,
+    items: cart.items,
+    now,
+  })
 
   const passwordHash = await hashPassword(input.password)
   const token = portalToken()
@@ -583,23 +741,29 @@ export async function purchaseVisitorTrip(options: {
   })
 
   /*
-   * The gate, again, now that we know who is asking.
-   *
-   * The basket was gated as somebody who had stated no ability, which is the
-   * conservative answer. A *returning* person — one who stayed here before and
-   * told a front desk they are a beginner — has an ability on file that the
-   * anonymous basket could not read, and the whole point of the gate is that
-   * the stricter answer wins. Before the money moves, not after.
+   * The gate once more, now against the `Guest` row itself rather than the
+   * ability we read off it before the write. `assertCartGatedForTill` is what
+   * makes a refusal here unlikely; this is what makes it impossible for the
+   * money to move past one.
    */
-  for (const item of cart.items) {
-    await assertSlotSuitableForGuest({ guestId: created.guestId, slotId: item.slotId, now })
+  const committed: CommittedTrip = {
+    userId: created.userId,
+    guestId: created.guestId,
+    stayId: created.stayId,
+    stayReference: created.reference,
+    portalToken: token,
   }
 
-  const order = await checkout({
-    cartId: cart.id,
-    guestId: created.guestId,
-    idempotencyKey: options.idempotencyKey,
-    now,
+  const order = await finishAtTill(committed, async () => {
+    for (const item of cart.items) {
+      await assertSlotSuitableForGuest({ guestId: created.guestId, slotId: item.slotId, now })
+    }
+    return checkout({
+      cartId: cart.id,
+      guestId: created.guestId,
+      idempotencyKey: options.idempotencyKey,
+      now,
+    })
   })
 
   await track({
@@ -660,23 +824,15 @@ export async function purchaseVisitorTripForAccount(options: {
   }
   assertWindowIsSensible(window, now)
 
-  const cart = await prisma.cart.findUnique({
-    where: { id: options.session.cartId },
-    select: {
-      id: true,
-      status: true,
-      guestId: true,
-      propertyId: true,
-      items: { select: { slotId: true } },
-    },
+  const cart = await loadVisitorCartForPurchase(options.session.cartId, property.id, window)
+
+  await assertCartGatedForTill({
+    propertyId: property.id,
+    email: account.email,
+    sessionAbility: options.session.surfAbility,
+    items: cart.items,
+    now,
   })
-  if (!cart) throw notFound('Basket')
-  if (cart.propertyId !== property.id) throw notFound('Basket')
-  if (cart.status !== CartStatus.OPEN) throw conflict('This basket has already been checked out.')
-  if (cart.guestId !== null) throw conflict('This basket already belongs to an account.')
-  if (cart.items.length === 0) {
-    throw invalid('Your trip is empty. Add something to it before you pay.')
-  }
 
   const token = portalToken()
 
@@ -694,10 +850,26 @@ export async function purchaseVisitorTripForAccount(options: {
       token,
     )
 
-    // The guest row at this property may predate the account; link it so the
-    // trip shows up under `/me`. ADR-039: a `Guest` is a person at one
-    // property, the account is the person.
-    await tx.guest.update({ where: { id: trip.guestId }, data: { userId: account.id } })
+    /*
+     * The guest row at this property may predate the account; link it so the
+     * trip shows up under `/me`. ADR-039: a `Guest` is a person at one
+     * property, the account is the person.
+     *
+     * Guarded, the way `addDirectTripToAccount` guards it. A `Guest` row may
+     * legitimately be held by a `User` whose own address is a different one —
+     * that is what claiming a booking with a hotel-recorded address produces —
+     * and an unconditional write here would have handed this account somebody
+     * else's guest record, and their itinerary with it.
+     */
+    const linked = await tx.guest.updateMany({
+      where: { id: trip.guestId, OR: [{ userId: null }, { userId: account.id }] },
+      data: { userId: account.id },
+    })
+    if (linked.count !== 1) {
+      throw conflict(
+        'This property already has a guest record for your email under another account. Sign in as that account, or ask the hotel to look.',
+      )
+    }
 
     const claimed = await tx.cart.updateMany({
       where: { id: cart.id, status: CartStatus.OPEN, guestId: null },
@@ -729,15 +901,24 @@ export async function purchaseVisitorTripForAccount(options: {
     return trip
   })
 
-  for (const item of cart.items) {
-    await assertSlotSuitableForGuest({ guestId: created.guestId, slotId: item.slotId, now })
+  const committed: CommittedTrip = {
+    userId: account.id,
+    guestId: created.guestId,
+    stayId: created.stayId,
+    stayReference: created.reference,
+    portalToken: token,
   }
 
-  const order = await checkout({
-    cartId: cart.id,
-    guestId: created.guestId,
-    idempotencyKey: options.idempotencyKey,
-    now,
+  const order = await finishAtTill(committed, async () => {
+    for (const item of cart.items) {
+      await assertSlotSuitableForGuest({ guestId: created.guestId, slotId: item.slotId, now })
+    }
+    return checkout({
+      cartId: cart.id,
+      guestId: created.guestId,
+      idempotencyKey: options.idempotencyKey,
+      now,
+    })
   })
 
   await track({

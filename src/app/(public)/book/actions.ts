@@ -8,6 +8,7 @@ import { toFormState, type FormState } from '@/lib/form-state'
 import { signInAs, getActor } from '@/modules/auth/service'
 import {
   addToVisitorTrip,
+  committedTripFrom,
   purchaseVisitorTrip,
   purchaseVisitorTripForAccount,
   removeFromVisitorTrip,
@@ -190,6 +191,26 @@ export async function payForTripAction(_prev: FormState, formData: FormData): Pr
 
     reference = purchase.orderReference
   } catch (error) {
+    /*
+     * A failure the till could not take back.
+     *
+     * The account, the trip and the claim on the basket committed; the order
+     * did not. Returning a form message alone would leave somebody anonymous
+     * in front of a storefront that no longer has their basket, with an
+     * account they do not yet know they have. So sign them in, drop the stale
+     * cookie, and let them read the message on `/me`, where the trip is.
+     */
+    const committed = committedTripFrom(error)
+    if (committed) {
+      await signInAs(committed.userId)
+      const store = await cookies()
+      store.delete(TRIP_COOKIE)
+      revalidatePath('/me')
+      return {
+        ...toFormState(error),
+        message: `${(error as Error).message} Your account and your trip (${committed.stayReference}) are saved — you are signed in, and nothing has been charged.`,
+      }
+    }
     return toFormState(error)
   }
 
