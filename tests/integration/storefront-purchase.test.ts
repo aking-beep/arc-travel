@@ -697,3 +697,46 @@ describe('the itinerary’s days', () => {
     expect(toDate).not.toBe(addDays(fromDate, -1)) // the window is the one we think
   })
 })
+
+/**
+ * The one state the till cannot take back, and what it hands over.
+ *
+ * `checkout()` is outside the till's transaction (ADR-026), so a basket that
+ * goes bad between the commit and the payment leaves an account, a `DIRECT`
+ * stay and a claimed cart with no order. The person is not signed in yet and
+ * `resumeVisitorTrip` will not return a claimed basket, so without the
+ * `CommittedTrip` on the error they are anonymous in front of a storefront
+ * that has lost their trip.
+ */
+describe('a failure after the till has committed', () => {
+  it('carries the account and the trip on the error', async () => {
+    const tenant = await createTenant()
+    const session = await openTrip(tenant.propertyId)
+    await addToVisitorTrip({ session, slotId: tenant.slotId, quantity: 1 })
+
+    // The hold lapses between the commit and the payment. `checkout()` refuses;
+    // the account, the stay and the claim are already written.
+    await prisma.inventoryHold.updateMany({
+      where: { cartId: session.cartId },
+      data: { expiresAt: new Date(Date.now() - 60_000) },
+    })
+
+    const error = await purchaseVisitorTrip({
+      session,
+      raw: buyer,
+      idempotencyKey: 'lapsed-hold',
+    }).catch((e: unknown) => e)
+
+    const committed = committedTripFrom(error)
+    expect(committed).not.toBeNull()
+    expect(committed?.userId).toBeTruthy()
+    expect(committed?.stayReference).toBeTruthy()
+
+    // What the error says is true: the account and the trip exist, the order
+    // does not, and the reference is one this person can be shown.
+    const account = await getGuestAccount(committed!.userId)
+    expect(account?.email).toBe(buyer.email)
+    expect(account?.stays.map((stay) => stay.reference)).toContain(committed!.stayReference)
+    expect(await prisma.order.count()).toBe(0)
+  })
+})

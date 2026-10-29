@@ -68,6 +68,14 @@ test.describe('a visitor buying from the storefront', () => {
     // A storefront trip is a trip, never a room booking. ADR-042.
     await expect(page.getByText('Trip — no room booked').first()).toBeVisible()
 
+    /*
+     * The unpaid-trip notice names a stay, and the name comes from this
+     * person's own stays rather than from the URL — a crafted link must not be
+     * able to put a reference, or any other words, on somebody's account page.
+     */
+    await page.goto('/me?unpaid=ARC-NOT-A-REAL-REFERENCE')
+    await expect(page.getByText(/it is not booked yet/i)).toHaveCount(0)
+
     await signOut(page)
   })
 

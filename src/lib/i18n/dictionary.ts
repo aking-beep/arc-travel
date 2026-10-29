@@ -106,6 +106,9 @@ export const dictionary = {
     'account.tripPending': 'Adding…',
     'account.tripAdded': 'Added. Open it above to start planning.',
     'account.nothingChanged': 'Claiming a booking does not change anything the property holds.',
+    'account.unpaidTitle': 'Your trip is saved, and it is not booked yet',
+    'account.unpaidBody':
+      'Something went wrong taking the payment for {reference}, so nothing has been charged and no seats have been taken. Your account and your trip are here. Start the trip again from the property page to book it.',
     'account.spendTitle': 'What you have spent',
     'account.spendSub': 'Across everything you have booked through ARC, per currency.',
     'account.spendGross': 'Paid',
@@ -730,6 +733,9 @@ export const dictionary = {
     'account.tripPending': 'Agregando…',
     'account.tripAdded': 'Agregado. Ábrelo arriba para empezar a planear.',
     'account.nothingChanged': 'Vincular una reserva no cambia nada de lo que el alojamiento tiene.',
+    'account.unpaidTitle': 'Tu viaje está guardado y todavía no está reservado',
+    'account.unpaidBody':
+      'Algo falló al cobrar {reference}, así que no se ha cobrado nada ni se ha ocupado ninguna plaza. Tu cuenta y tu viaje están aquí. Vuelve a empezar el viaje desde la página del alojamiento para reservarlo.',
     'account.spendTitle': 'Lo que has gastado',
     'account.spendSub': 'Sobre todo lo que has reservado con ARC, por moneda.',
     'account.spendGross': 'Pagado',

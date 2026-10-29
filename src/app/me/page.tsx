@@ -48,10 +48,15 @@ export const metadata = { title: 'Your bookings · ARC Stay' }
  * it shows every booking the person has claimed rather than the one stay the
  * token in their hand happens to name. See ADR-039.
  */
-export default async function AccountPage() {
+export default async function AccountPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ unpaid?: string }>
+}) {
   const actor = await getActor()
   if (!actor) redirect('/sign-in?next=%2Fme')
 
+  const { unpaid } = await searchParams
   const { locale, t } = await getTranslator()
   const [account, storefronts] = await Promise.all([
     getGuestAccount(actor.userId),
@@ -64,6 +69,8 @@ export default async function AccountPage() {
   // A signed-in user whose account row vanished between the session and this
   // read. Sending them to sign in again is the honest answer.
   if (!account) redirect('/sign-in?next=%2Fme')
+
+  const unpaidStay = unpaid ? (account.stays.find((stay) => stay.reference === unpaid) ?? null) : null
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -92,6 +99,27 @@ export default async function AccountPage() {
       </header>
 
       <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 px-5 py-8">
+        {/*
+         * The till committed an account and a trip and then could not take the
+         * payment. The storefront cannot say so itself — the basket it was
+         * holding is claimed, so that page has already fallen back to its empty
+         * state by the time anything could be rendered on it. The reference is
+         * matched against this person's own stays rather than printed from the
+         * URL, so a crafted link cannot put words on somebody's account page.
+         */}
+        {unpaidStay ? (
+          <Card className="border-terracotta-200 bg-terracotta-50">
+            <CardHeader>
+              <CardTitle className="text-base">{t('account.unpaidTitle')}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sand-700 text-sm">
+                {t('account.unpaidBody', { reference: unpaidStay.reference })}
+              </p>
+            </CardContent>
+          </Card>
+        ) : null}
+
         {account.stays.length === 0 ? (
           <EmptyState
             icon={<CalendarRange className="size-6" aria-hidden />}

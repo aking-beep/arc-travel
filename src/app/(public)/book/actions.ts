@@ -158,7 +158,7 @@ export async function removeFromTripAction(
  * checked out and a stale one would show them an empty storefront.
  */
 export async function payForTripAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  let reference: string
+  let destination: string
 
   try {
     const session = await currentTrip()
@@ -189,31 +189,28 @@ export async function payForTripAction(_prev: FormState, formData: FormData): Pr
     const store = await cookies()
     store.delete(TRIP_COOKIE)
 
-    reference = purchase.orderReference
+    destination = `/me/orders/${purchase.orderReference}`
   } catch (error) {
     /*
      * A failure the till could not take back.
      *
      * The account, the trip and the claim on the basket committed; the order
-     * did not. Returning a form message alone would leave somebody anonymous
-     * in front of a storefront that no longer has their basket, with an
-     * account they do not yet know they have. So sign them in, drop the stale
-     * cookie, and let them read the message on `/me`, where the trip is.
+     * did not. A `FormState` is no use here: the basket this page was holding
+     * is claimed, so `resumeVisitorTrip` returns nothing and the storefront
+     * re-renders as its own empty state — the message would be attached to a
+     * form that is no longer on the page. So sign them in, drop the stale
+     * cookie, and send them to `/me`, which says what happened beside the trip
+     * it is about.
      */
     const committed = committedTripFrom(error)
-    if (committed) {
-      await signInAs(committed.userId)
-      const store = await cookies()
-      store.delete(TRIP_COOKIE)
-      revalidatePath('/me')
-      return {
-        ...toFormState(error),
-        message: `${(error as Error).message} Your account and your trip (${committed.stayReference}) are saved — you are signed in, and nothing has been charged.`,
-      }
-    }
-    return toFormState(error)
+    if (!committed) return toFormState(error)
+
+    await signInAs(committed.userId)
+    const store = await cookies()
+    store.delete(TRIP_COOKIE)
+    destination = `/me?unpaid=${encodeURIComponent(committed.stayReference)}`
   }
 
   revalidatePath('/me')
-  redirect(`/me/orders/${reference}`)
+  redirect(destination)
 }
