@@ -61,6 +61,27 @@ export default async function ReviewTripPage() {
     byDay.set(day, [...(byDay.get(day) ?? []), item])
   }
 
+  /*
+   * The two things that can make a line unpayable, flagged here as well.
+   *
+   * `/book` marks a lapsed hold and a line that has fallen outside the
+   * declared dates; this page did not, and listed every line as if it were
+   * buyable. On the step whose entire job is to read the trip back, that is
+   * the worst place to be missing them: `loadVisitorCartForPurchase` refuses
+   * an out-of-window line at submit, so a visitor could read the page, agree
+   * with it, press the button and be told no — by a form message, about a day
+   * the page never flagged.
+   *
+   * An out-of-window line is a refusal, so the till is withheld and the page
+   * sends them back to change the dates or drop the line. A lapsed hold is
+   * only a warning: the seats may well still be there, `checkout()` is what
+   * decides, and `/book` treats it the same way.
+   */
+  const outsideWindow = (startsAt: Date) =>
+    toLocalDateKey(startsAt) < trip.session.fromDate ||
+    toLocalDateKey(startsAt) > trip.session.toDate
+  const blocked = trip.cart.items.filter((item) => outsideWindow(item.startsAt))
+
   return (
     <Shell className="pt-10 pb-20 md:pt-16">
       <p className="text-sm">
@@ -123,6 +144,16 @@ export default async function ReviewTripPage() {
                         {item.title}
                         {item.quantity > 1 ? (
                           <span className="text-muted"> ×{item.quantity}</span>
+                        ) : null}
+                        {item.holdExpiresAt === null ? (
+                          <span className="mt-1 block text-xs">
+                            {t('explore.book.holdLapsed')}
+                          </span>
+                        ) : null}
+                        {outsideWindow(item.startsAt) ? (
+                          <span className="mt-1 block text-xs">
+                            {t('explore.book.outsideWindow')}
+                          </span>
                         ) : null}
                       </span>
                       <Money
@@ -188,27 +219,49 @@ export default async function ReviewTripPage() {
               ) : null}
             </div>
 
-            <div className="mt-5">
-              <PayForTripForm
-                idempotencyKey={idempotencyKey}
-                signedInAs={actor?.email ?? null}
-                labels={{
-                  name: t('explore.book.name'),
-                  email: t('explore.book.email'),
-                  password: t('explore.book.password'),
-                  confirmPassword: t('explore.book.confirmPassword'),
-                  passwordHint: t('explore.book.passwordHint'),
-                  terms: t('explore.book.terms'),
-                  submit: t('explore.book.pay'),
-                  pending: t('explore.book.paying'),
-                  signedIn: t('explore.book.signedIn'),
-                }}
-              />
-            </div>
+            {blocked.length > 0 ? (
+              /*
+               * No till while a line cannot be paid for. The alternative is a
+               * button that collects a name, an address and a password and
+               * then refuses — which is the shape of the bug this page was
+               * added to fix, one step later.
+               */
+              <div className="mt-5 space-y-3">
+                <p className="text-sm leading-relaxed">
+                  {t('explore.book.reviewBlocked')}
+                </p>
+                <Link
+                  href="/book"
+                  className="bg-ink text-ivory hover:bg-ink-soft flex h-12 w-full items-center justify-center rounded-full text-sm transition-colors duration-150"
+                >
+                  {t('explore.book.backToTrip')}
+                </Link>
+              </div>
+            ) : (
+              <>
+                <div className="mt-5">
+                  <PayForTripForm
+                    idempotencyKey={idempotencyKey}
+                    signedInAs={actor?.email ?? null}
+                    labels={{
+                      name: t('explore.book.name'),
+                      email: t('explore.book.email'),
+                      password: t('explore.book.password'),
+                      confirmPassword: t('explore.book.confirmPassword'),
+                      passwordHint: t('explore.book.passwordHint'),
+                      terms: t('explore.book.terms'),
+                      submit: t('explore.book.pay'),
+                      pending: t('explore.book.paying'),
+                      signedIn: t('explore.book.signedIn'),
+                    }}
+                  />
+                </div>
 
-            <p className="text-muted mt-4 text-xs leading-relaxed">
-              {t('explore.book.reviewPaymentNote')}
-            </p>
+                <p className="text-muted mt-4 text-xs leading-relaxed">
+                  {t('explore.book.reviewPaymentNote')}
+                </p>
+              </>
+            )}
           </div>
         </aside>
       </div>

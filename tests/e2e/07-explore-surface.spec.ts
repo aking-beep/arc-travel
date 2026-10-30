@@ -117,14 +117,57 @@ test.describe('the public surface', () => {
     await expect(header).toHaveCSS('top', '0px')
   })
 
-  test('the local guide reports conditions without ever calling them safe', async ({ page }) => {
-    await page.goto('/culture/puerto-escondido')
-    await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+  test('a question the guide offers is answered by the editors who wrote it', async ({ page }) => {
+    /*
+     * Mexico City's own chip is "Is it safe to walk around?", and the guide
+     * panel's refusal guard matches the word "safe". Sent through the guard,
+     * the chip returned the generic borders-and-health refusal and the
+     * hand-written answer — which opens by refusing to call anywhere safe and
+     * then says what is actually true — was thrown away.
+     *
+     * An exact prepared question is answered from the notes and never reaches
+     * the model. The refusal still applies to anything typed.
+     */
+    await page.goto('/culture/mexico-city')
+    await page.getByRole('button', { name: 'Is it safe to walk around?' }).click()
 
-    const body = await page.locator('body').innerText()
-    // Non-negotiable 1. The gate returns "allowed"; editorial copy may not
-    // quietly promise what the gate refuses to.
-    expect(body).not.toMatch(/\bis safe\b|\bsafe to swim\b|\bsafe today\b/i)
+    await expect(page.getByText(/ARC does not tell anybody a place is safe/i)).toBeVisible()
+    await expect(page.getByText(/is editorial writing, last read through/i)).toHaveCount(0)
+  })
+
+  test('no local guide calls anything safe, in any destination', async ({ page }) => {
+    /*
+     * Every destination, not just the one this demo is set in.
+     *
+     * It checked Puerto Escondido alone, and the bespoke guides ADR-046 wrote
+     * for the other seven were never looked at: Lisbon and Ericeira both said
+     * "tap water is safe to drink", and Chamonix said "ARC does not tell
+     * anybody a route is safe" — a refusal, but the string is the string, and
+     * the guide panel's own subtitle was reworded for exactly that reason. A
+     * guard that covers one of eight pages is a guard that passes by luck.
+     *
+     * The FAQ *answers* still refuse in these words, and should: they are
+     * rendered only when somebody asks, which is what this reads the loaded
+     * page rather than the content module to allow.
+     */
+    for (const slug of [
+      'puerto-escondido',
+      'mexico-city',
+      'lombok',
+      'bali',
+      'lisbon',
+      'ericeira',
+      'chamonix',
+      'cape-town',
+    ]) {
+      await page.goto(`/culture/${slug}`)
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+
+      const body = await page.locator('body').innerText()
+      // Non-negotiable 1. The gate returns "allowed"; editorial copy may not
+      // quietly promise what the gate refuses to.
+      expect(body, slug).not.toMatch(/\bis safe\b|\bsafe to swim\b|\bsafe today\b/i)
+    }
   })
 
   test('the surface is readable in Spanish', async ({ page }) => {

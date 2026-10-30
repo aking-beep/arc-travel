@@ -111,9 +111,40 @@ export function PreparedAnswers({
    * about safety, conditions, law, borders or health, and it is shown as the
    * answer because it is the honest one.
    */
+  /*
+   * A question the editors wrote and the page offers is answered by them.
+   *
+   * The chips are `guide.faq` questions, and some of them are about exactly
+   * the subjects the model may not touch — Mexico City's is "Is it safe to
+   * walk around?", whose hand-written answer opens by refusing to call
+   * anywhere safe and then says what is actually true and useful. Sending that
+   * chip through `isRefusedSubject` returned the generic
+   * borders-and-health refusal and threw the editors' answer away: the
+   * question the page invites, swallowed by the guard, which is the failure
+   * that guard's own comment is about.
+   *
+   * So an exact prepared question short-circuits the model entirely. That is
+   * not a hole in the refusal: it is prose a person wrote and reviewed, which
+   * is the only thing on this surface allowed to discuss those subjects at
+   * all. A freely typed safety question still gets the refusal.
+   */
+  const preparedExactly = (question: string): string | null =>
+    guide.faq.find((entry) => entry.q.toLowerCase() === question.toLowerCase())?.a ?? null
+
   const ask = (question: string) => {
     const trimmed = question.trim()
     if (!trimmed || pending) return
+
+    const editorial = preparedExactly(trimmed)
+    if (editorial) {
+      setMessages((current) => [
+        ...current,
+        { from: 'visitor', text: trimmed },
+        { from: 'guide', text: editorial, via: 'prepared' },
+      ])
+      setInput('')
+      return
+    }
 
     const prepared = findAnswer(trimmed)
     setMessages((current) => [...current, { from: 'visitor', text: trimmed }])
