@@ -166,6 +166,24 @@ export default async function CulturePage({
             </div>
           </Block>
 
+          {/*
+           * Practical before cultural, because it is what a visitor opens
+           * this page holding. The guide panel could not answer "how do I get
+           * around" for any of the eight destinations, and it was right not
+           * to: nothing in the notes covered it. This is that content, and
+           * the model reads the same list.
+           */}
+          <Block title="Getting around">
+            <div className="grid gap-x-10 gap-y-6 sm:grid-cols-2">
+              {guide.gettingAround.map((item) => (
+                <div key={item.title} className="border-line border-t pt-4">
+                  <p className="text-xl">{item.title}</p>
+                  <p className="text-muted mt-2 text-sm leading-relaxed">{item.text}</p>
+                </div>
+              ))}
+            </div>
+          </Block>
+
           <Block title="Local customs">
             <ul className="space-y-3">
               {guide.customs.map((custom) => (
@@ -208,6 +226,36 @@ export default async function CulturePage({
               </div>
             </Block>
           </div>
+
+          {/*
+           * The honest end of an editorial guide.
+           *
+           * These notes are ARC's writing, not a record of a place, and they
+           * will not cover everything somebody needs. Naming where to go next
+           * — an official tourism body, not an aggregator — costs nothing and
+           * is the difference between a guide that stops and one that hands
+           * over. The same list is what the answer panel shows under a
+           * question it could not answer.
+           */}
+          {guide.elsewhere.length > 0 ? (
+            <Block title="Where to look next">
+              <ul className="space-y-4">
+                {guide.elsewhere.map((source) => (
+                  <li key={source.href} className="border-line border-t pt-4">
+                    <a
+                      href={source.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:text-sage text-xl underline underline-offset-4 transition-colors duration-150"
+                    >
+                      {source.label}
+                    </a>
+                    <p className="text-muted mt-2 text-sm leading-relaxed">{source.covers}</p>
+                  </li>
+                ))}
+              </ul>
+            </Block>
+          ) : null}
 
           <Block title="Seasonal considerations">
             <ol className="grid gap-6 md:grid-cols-3">

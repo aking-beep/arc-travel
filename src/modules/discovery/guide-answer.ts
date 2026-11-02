@@ -74,6 +74,7 @@ function notesFor(guide: CultureGuide, name: string): Record<string, unknown> {
     traditions: guide.traditions,
     language: guide.language,
     customs: guide.customs,
+    gettingAround: guide.gettingAround,
     responsibleTourism: guide.responsible,
     seasons: guide.seasons,
     community: guide.community,
@@ -95,6 +96,14 @@ const SYSTEM = [
   'Never state or imply that a place, a beach, a wave, a mountain or an activity is safe, and never describe current conditions. Those change by the hour and you are reading prose that may be months old.',
   'Never give legal, immigration, visa, border or medical advice, and never restate a travel advisory as though it were a rule. Set answered=false for these and say who to ask instead.',
   'Do not invent an experience, a price, an availability, a business name or a certification.',
+  /*
+   * The panel now shows a curated outbound source under any answer the notes
+   * could not supply, which makes "give me a link" a thing a visitor will
+   * reasonably ask. A model asked for a URL produces a plausible one, and a
+   * dead link on a real destination's page is worse than no link — so the
+   * links are rendered from `guide.elsewhere` and the model never writes one.
+   */
+  'Never write a URL, a web address or a domain name. If somebody needs a source you cannot supply, say so plainly; the page shows them where to look.',
   'Write two or three sentences in plain British English, in the same measured voice as the notes. No greeting, no sign-off, no lists.',
   'Put into drawnFrom the exact text of any prepared-answer questions you leaned on, and leave it empty if none.',
 ].join(' ')

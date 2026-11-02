@@ -163,6 +163,22 @@ test.describe('the public surface', () => {
       await page.goto(`/culture/${slug}`)
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
 
+      /*
+       * The practical half, on every guide rather than one.
+       *
+       * "How do I get around" was unanswerable for all eight, because the
+       * notes did not cover it anywhere. The content is what fixed that, so
+       * it is the content this guards — along with the outbound source,
+       * which the page renders and the model is forbidden to write.
+       */
+      await expect(page.getByRole('heading', { name: 'Getting around' }), slug).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Where to look next' }), slug).toBeVisible()
+      const source = page
+        .locator('a[rel="noopener noreferrer"][href^="https://"]')
+        .filter({ hasNot: page.locator('[aria-hidden]') })
+        .first()
+      await expect(source, slug).toBeVisible()
+
       const body = await page.locator('body').innerText()
       // Non-negotiable 1. The gate returns "allowed"; editorial copy may not
       // quietly promise what the gate refuses to.

@@ -43,6 +43,36 @@ export type CultureGuide = {
   language: LanguageLine[]
   responsible: string[]
   customs: string[]
+  /**
+   * How a visitor actually moves around, and what the choice costs them in
+   * time rather than money.
+   *
+   * Added because the guide could not answer "how do I get around" — the
+   * notes mentioned taxis twice, both times in passing, under etiquette and
+   * tipping. The model is told to say the notes do not cover something rather
+   * than invent, so it correctly said nothing useful, which read as the model
+   * being broken.
+   *
+   * Written to the same rule as the rest of this file: no fare, no timetable,
+   * no opening time. Those rot, and a wrong one for a real place somebody is
+   * about to travel to is the failure `guide-answer` exists to avoid. What
+   * does not rot is which modes exist, how you hail one, and how long things
+   * really take.
+   */
+  gettingAround: { title: string; text: string }[]
+  /**
+   * Where to look when these notes run out.
+   *
+   * Rendered from this list and never produced by the model — a hallucinated
+   * URL is the same class of mistake as a hallucinated bus fare, and a model
+   * asked for "a link" will supply a plausible one. The guide prompt forbids
+   * emitting a URL at all; the page and the panel link these.
+   *
+   * One source per destination, each an official tourism body rather than a
+   * blog or an aggregator, because this is what ARC is willing to send a
+   * guest to.
+   */
+  elsewhere: { label: string; href: string; covers: string }[]
   advisories: string[]
   seasons: { months: string; label: string; text: string }[]
   community: string[]
@@ -129,6 +159,15 @@ export const cultureGuides: CultureGuide[] = [
       'Cooking in a family kitchen with Doña Rosa',
       'Buying directly from Mixtec weavers at the Sunday market',
     ],
+    gettingAround: [
+      { title: 'Colectivos run the coast road', text: 'Shared vans and cars work the highway between the districts — El Adoquín, La Punta, Zicatela, Rinconada. You flag one from the roadside and say where you are going. They are how most people here move, and they stop when they are full.' },
+      { title: 'Taxis are unmetered', text: 'Agree the fare through the window before you get in, not after. Drivers expect the question and are not offended by it.' },
+      { title: 'The town is several walkable places, not one', text: 'Each district is small enough to cross on foot, and the ground between them is not — the hill between Zicatela and the centre is long and steep in the sun. Plan to walk within a neighbourhood and ride between them.' },
+      { title: 'A hire car is rarely worth it', text: 'Nothing a visitor usually wants is far enough to need one, parking is awkward near the beaches, and the colectivo-and-taxi habit is cheaper and less trouble.' },
+    ],
+    elsewhere: [
+      { label: 'Oaxaca state tourism board', href: 'https://www.oaxaca.travel/index.php/en-us/', covers: 'the state’s own pages on the coast, with current event and transport information' },
+    ],
     faq: [
       { q: 'Can I swim at Zicatela?', a: 'ARC will not tell you a beach is safe, and nobody should: the water changes by the hour. What we can tell you is that Zicatela is an exposed beach break with a heavy shore dump and strong rips, that the sheltered coves — Carrizalillo, Manzanillo and Puerto Angelito — are where the swimming and the beginner lessons happen, and that the local guide carries the most recent reading we have for each of them with the time it was taken. Read it, then ask a lifeguard.' },
       { q: 'Do I need to speak Spanish?', a: 'Not strictly — many people in tourism speak English — but basic greetings are appreciated and expected. In surrounding villages, Zapotec or Mixtec may be the first language.' },
@@ -202,6 +241,15 @@ export const cultureGuides: CultureGuide[] = [
       'Market tours in Mercado de Medellín or San Juan led by the traders themselves',
       'Chinampa farming at Xochimilco with the growers restoring the lake beds',
       'Buying crafts direct at the Ciudadela from the makers rather than resellers',
+    ],
+    gettingAround: [
+      { title: 'The Metro is the fastest way across', text: 'It is extensive and runs often, and a single rechargeable card works on it and on the Metrobús lines. Rush hours are genuinely crowded, and some cars are reserved for women and children.' },
+      { title: 'Book a car rather than hail one', text: 'Ride-hailing apps are the normal way visitors take a car here, and the fare and the route are fixed before you set off.' },
+      { title: 'It is bigger than it looks on a map', text: 'Roma, Condesa and the Centro Histórico are each walkable and close together; most other pairs of places on your list are not. Allow for the journey.' },
+      { title: 'The city sits high', text: 'Well above two thousand metres. Most people simply plan less into their first day than they expected to, and walk a little slower up the hills.' },
+    ],
+    elsewhere: [
+      { label: 'Mexico City’s own tourism site', href: 'https://mexicocity.cdmx.gob.mx/?lang=en', covers: 'the city government’s visitor pages, including transport and opening times' },
     ],
     faq: [
       { q: 'Is the altitude really a problem?', a: 'For most people it is two or three days of being slightly out of breath on stairs and sleeping badly the first night. Drink more water than feels necessary, eat lightly and leave the serious walking until day three. If you have a heart or lung condition, that is a conversation with your own doctor before you come, not with us.' },
@@ -277,6 +325,15 @@ export const cultureGuides: CultureGuide[] = [
       'Rinjani trekking booked through the Senaru porter cooperative',
       'Pottery at Banyumulek and weaving at Sukarara, bought from the makers',
     ],
+    gettingAround: [
+      { title: 'Scooters are the island’s transport', text: 'Almost everybody local is on one, and rental is informal and widely available. What a shop asks of you varies, so ask before you hand over money.' },
+      { title: 'A driver for the day crosses the island', text: 'Hiring a car with a driver is the ordinary way to get from one coast to another, and costs less than the distances suggest. Agree the day and the stops in advance.' },
+      { title: 'Boats go to the Gilis', text: 'Fast boats and the public ferry leave from the harbours on the north-west coast. Crossings are weather-dependent and the operator decides, not the timetable.' },
+      { title: 'Distances deceive', text: 'Roads wind, and a short line on a map can be two hours. Ask how long rather than how far.' },
+    ],
+    elsewhere: [
+      { label: 'Indonesia’s official tourism site', href: 'https://www.indonesia.travel/', covers: 'the national tourism board’s pages on Lombok and the islands around it' },
+    ],
     faq: [
       { q: 'How is it different from Bali?', a: 'Quieter, poorer, predominantly Muslim rather than Hindu, and with far less infrastructure. There is no Canggu here. That is most of the appeal and also the thing people are underprepared for — distances take longer than the map suggests and the roads are not good.' },
       { q: 'What should I wear?', a: 'Light, loose and covering shoulders and knees once you leave the beach. Women are not required to cover their hair except inside a mosque, where a scarf is offered. Men in shorts are fine in tourist areas, less so in a village.' },
@@ -350,6 +407,15 @@ export const cultureGuides: CultureGuide[] = [
       'Staying in a family compound in Sidemen or Munduk instead of a villa',
       'Subak rice-terrace walks guided by the farmers who manage the water system',
       'Cooking classes that start at the market with the person who shops there',
+    ],
+    gettingAround: [
+      { title: 'Journeys are measured in hours', text: 'The south is congested for much of the day, and two places that look close can be a long drive apart. Ask how long, and add to the answer.' },
+      { title: 'A driver by the day is the usual arrangement', text: 'Hiring a car and driver for a day is normal, unremarkable and how most visitors see more than one place in it.' },
+      { title: 'Ride-hailing is not accepted everywhere', text: 'Some areas have agreements that reserve pickups for local transport co-operatives, and an app will simply not find you there. It is a local arrangement, not a fault in the app.' },
+      { title: 'Scooters, with the same caution as anywhere', text: 'Widely rented and widely used. Traffic is dense and the rules are unwritten as much as written.' },
+    ],
+    elsewhere: [
+      { label: 'Indonesia’s official tourism site', href: 'https://www.indonesia.travel/', covers: 'the national tourism board’s pages on Bali, its regions and getting between them' },
     ],
     faq: [
       { q: 'Is Bali ruined?', a: 'The south — Kuta, Seminyak, Canggu — is heavily developed and the traffic is genuinely bad. Sidemen, Munduk, the north coast and most of the east are not. The island is small on a map and slow in practice, so the answer mostly depends on where you base yourself rather than how long you stay.' },
@@ -425,6 +491,15 @@ export const cultureGuides: CultureGuide[] = [
       'Tile workshops where you glaze your own rather than buy a salvaged one',
       'Buying at the Feira da Ladra from the traders, early, before the resellers',
     ],
+    gettingAround: [
+      { title: 'One card covers nearly everything', text: 'A rechargeable Viva Viagem card works on the metro, the buses, the trams and the funiculars, and is bought and topped up in any metro station.' },
+      { title: 'The lifts and funiculars are transport', text: 'They are not only a ride for the view. In a city built on hills they are the sensible way up, and the same card pays for them.' },
+      { title: 'Trains run along the coast and inland', text: 'The line west follows the river out to the coast, and another climbs to Sintra. Both leave from stations in the city and take well under an hour.' },
+      { title: 'The cobbles are the real obstacle', text: 'Calçada is beautiful, uneven and slippery when wet. Flat shoes with some grip change the day more than any ticket does.' },
+    ],
+    elsewhere: [
+      { label: 'Visit Lisboa, the city tourism board', href: 'https://www.visitlisboa.com/en/p/get-to-lisbon', covers: 'the official visitor site, including how to reach the city and move around it' },
+    ],
     faq: [
       { q: 'Do I need Portuguese?', a: 'No — English is widely spoken, more so than in most European capitals. A greeting in Portuguese before you switch is the whole courtesy, and it is noticed every time.' },
       { q: 'What is the couvert?', a: 'The bread, olives, butter or cheese that arrives before you ordered anything. It is not free and it is not a scam; it is a charge you can decline. “Não, obrigado” as it lands is completely normal.' },
@@ -498,6 +573,15 @@ export const cultureGuides: CultureGuide[] = [
       'Buying percebes and lobster at the harbour rather than from a menu in Lisbon',
       'Reef clean-ups run by the World Surfing Reserve stewards',
       'Staying in family guesthouses in Ribamar and the old town out of season',
+    ],
+    gettingAround: [
+      { title: 'The town is walkable end to end', text: 'The old centre, the harbour and the nearest beaches are all within a walk of each other, and the walk is the pleasant part.' },
+      { title: 'Buses connect Mafra and Lisbon', text: 'Regional buses run inland to Mafra and on towards Lisbon. They are the ordinary way to arrive without a car.' },
+      { title: 'A car earns its keep along the coast', text: 'The reserve stretches for kilometres and the breaks are spread along it. Without a car you will see the two nearest and not the rest.' },
+      { title: 'Parking is the summer problem', text: 'In season the spaces near the water fill early in the day. Parking further up the hill and walking down is the local habit.' },
+    ],
+    elsewhere: [
+      { label: 'Visit Portugal, the national tourism board', href: 'https://www.visitportugal.com/en', covers: 'official pages for the region, including transport and what is open when' },
     ],
     faq: [
       { q: 'Is this a good place to learn?', a: 'At Foz do Lizandro and São Julião, with a school, yes — they are sand-bottomed beach breaks with gentle days. The reefs are not, and Coxos is a wave for people who already know they are good enough. This product’s conditions gate will not offer a demanding departure to somebody who has stated no ability, and that is the same judgement.' },
@@ -573,6 +657,15 @@ export const cultureGuides: CultureGuide[] = [
       'Buying Beaufort, Reblochon and charcuterie at the Saturday market in town',
       'Glacier-retreat walks led by the valley’s own guides, who have watched it happen',
     ],
+    gettingAround: [
+      { title: 'The valley bus and train are included', text: 'Staying in the valley usually comes with a guest card from your accommodation, and it covers the bus along the valley and the train between the villages. Ask for it at check-in — it is easy not to be offered.' },
+      { title: 'The lifts are transport, not just skiing', text: 'They run in summer as well, and for many walks they are how you reach the start and how you get down again.' },
+      { title: 'Geneva is the airport', text: 'A little over an hour by road, with shared and private transfers running all day. The train is slower and involves changes.' },
+      { title: 'You will not need a car in the valley', text: 'Parking in the town is limited and the bus goes where you are going. A car matters only if you are leaving the valley.' },
+    ],
+    elsewhere: [
+      { label: 'Chamonix tourist office', href: 'https://en.chamonix.com/', covers: 'the valley’s official site, including lift opening, the guest card and getting here' },
+    ],
     faq: [
       { q: 'Do I need a guide?', a: 'For marked summer paths and pisted skiing, no. For anything on a glacier — the Vallée Blanche included — for any alpinism, and for off-piste, yes, and it is not a formality. The terrain here is reachable by cable car and lethal, which is an unusual combination and the reason the guides’ bureau is two hundred years old.' },
       { q: 'Will I feel the altitude?', a: 'Very likely at the Aiguille du Midi, which is 3,842 m and twenty minutes from the town at 1,035 m. Breathlessness, headache and nausea are common. Move slowly, do not go straight up on your first morning, and come down if it gets worse rather than waiting it out.' },
@@ -646,6 +739,15 @@ export const cultureGuides: CultureGuide[] = [
       'Fynbos foraging and coastal cooking with guides from the peninsula',
       'Langa and Khayelitsha walking tours run by people who live there',
       'Buying beadwork and ceramics direct at the Oranjezicht and Bay Harbour markets',
+    ],
+    gettingAround: [
+      { title: 'Distances are large', text: 'The city is spread along a coastline and around a mountain. Almost nothing on a visitor’s list is within walking distance of anything else on it.' },
+      { title: 'Most visitors use a car or an app', text: 'Ride-hailing works well across the city, and hiring a car is common for the peninsula and the winelands, where public transport does not go.' },
+      { title: 'MyCiTi buses cover some routes', text: 'The city’s own bus network runs on set corridors, including the airport and parts of the Atlantic seaboard, on a rechargeable card.' },
+      { title: 'The mountain has its own transport', text: 'A cableway runs to the top of Table Mountain when the wind allows, and the road up Signal Hill is open to cars. Both are weather-dependent and the operator decides.' },
+    ],
+    elsewhere: [
+      { label: 'Cape Town Tourism', href: 'https://www.capetown.travel/', covers: 'the city’s official visitor site, including transport, opening hours and what is running' },
     ],
     faq: [
       { q: 'Is it safe?', a: 'ARC does not tell anybody a place is safe, and Cape Town is a city where that answer matters. What is true: crime here is concentrated and situational rather than evenly spread, visitors are rarely targeted in the tourist areas by day, and almost every incident involving a visitor follows the same shapes — walking at night, hiking alone, a phone visible at a traffic light. Ask your accommodation about their specific streets, use a car after dark, and do not hike the mountain alone.' },
