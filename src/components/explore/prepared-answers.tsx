@@ -57,7 +57,7 @@ export function PreparedAnswers({
   /** The slug, so the server action can resolve the same guide server-side. */
   destination: string
 }) {
-  const opening = `Ask me about ${name} — etiquette, customs, seasons, the language, what to expect. I answer from notes ARC editors wrote about this place and nothing else, and I will tell you when they do not cover something.`
+  const opening = `Ask me about ${name} — getting around, etiquette, customs, seasons, the language, what to expect. I answer from notes ARC editors wrote about this place and nothing else, and when they do not cover something I will say so and show you where to look.`
 
   const [messages, setMessages] = useState<Message[]>([{ from: 'guide', text: opening }])
   const [input, setInput] = useState('')
@@ -96,7 +96,7 @@ export function PreparedAnswers({
     }
 
     if (bestScore >= MIN_MATCH_WORDS && best) return best.a
-    return `There is no prepared answer for that. Rather than guess at one, here is what I can point you to: the questions below, the etiquette and seasons sections on this page, and the dated ocean readings on the local guide.`
+    return `The notes do not cover that, and I would rather say so than guess. The page below has sections on getting around, etiquette, customs and seasons, and the source underneath this answer is where ARC would look next.`
   }
 
   /*
@@ -186,7 +186,8 @@ export function PreparedAnswers({
           */}
           Answered from notes ARC editors wrote about this place, and nothing else. It will not
           judge safety, describe what the sea is doing today, or answer anything about law, borders
-          or health — those need a current source, and it will say so.
+          or health — those need a current source, and it will say so. When the notes do not cover
+          something, it points you at one.
         </p>
       </div>
 
@@ -209,6 +210,35 @@ export function PreparedAnswers({
               <span className="text-ivory/40 mt-2 flex items-center gap-1 text-xs">
                 <Sparkles className="size-3" aria-hidden />
                 Written from the editors&rsquo; notes
+              </span>
+            ) : null}
+            {/*
+              Where to look next, under the answers that did not answer.
+              `prepared` is the keyword matcher admitting it has nothing, and
+              `refused` is the guide declining a subject it may not touch —
+              both are the moments a visitor is left holding the question.
+
+              Rendered from `guide.elsewhere`, never from the model: it is
+              forbidden to write a URL, because a plausible dead link on a
+              real destination's page is the same mistake as a plausible
+              wrong bus fare.
+            */}
+            {(message.via === 'prepared' || message.via === 'refused') &&
+            guide.elsewhere.length > 0 ? (
+              <span className="border-ivory/10 mt-3 block border-t pt-3">
+                <span className="text-ivory/40 block text-xs">Where to look next</span>
+                {guide.elsewhere.map((source) => (
+                  <a
+                    key={source.href}
+                    href={source.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-gold hover:text-ivory mt-1 block text-xs underline underline-offset-2 transition-colors duration-150"
+                  >
+                    {source.label}
+                    <span className="text-ivory/40 block no-underline">{source.covers}</span>
+                  </a>
+                ))}
               </span>
             ) : null}
           </div>
